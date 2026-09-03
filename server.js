@@ -73,11 +73,27 @@ function userToClient(row) {
     };
 }
 
+function readCookie(req, name) {
+    const c = req.headers.cookie;
+    if (!c) return null;
+    const m = c.match(new RegExp('(?:^|;\\s*)' + name + '=([^;]+)'));
+    return m ? decodeURIComponent(m[1]) : null;
+}
+
 function authenticateToken(req, res, next) {
-    const token = req.headers['authorization']?.split(' ')[1];
-    if (!token) return res.status(401).json({ error: 'no_token' });
+    /* توکن از هدر Authorization یا کوکی (برخی پراکسی‌ها هدر را حذف می‌کنند) */
+    let token = req.headers['authorization']?.split(' ')[1];
+    const fromCookie = !token;
+    if (fromCookie) token = readCookie(req, 'bfg_tok');
+    if (!token) {
+        console.warn(`⚠️ 401 بدون توکن: ${req.method} ${req.path} — هدر: ${req.headers['authorization'] ? 'موجود' : 'حذف‌شده'}، کوکی: ${req.headers.cookie ? 'موجود' : 'ندارد'}`);
+        return res.status(401).json({ error: 'no_token' });
+    }
     jwt.verify(token, JWT_SECRET, (err, user) => {
-        if (err) return res.status(403).json({ error: 'bad_token' });
+        if (err) {
+            console.warn(`⚠️ 403 توکن نامعتبر: ${req.method} ${req.path} (${fromCookie ? 'کوکی' : 'هدر'}) — ${err.message}`);
+            return res.status(403).json({ error: 'bad_token' });
+        }
         req.user = user;
         next();
     });
@@ -316,7 +332,8 @@ app.get(/^\/(?!api\/|socket\.io\/).*/, (req, res) => {
 
 /* ------------------------------ socket.io ---------------------------- */
 io.use((socket, next) => {
-    const token = socket.handshake.auth && socket.handshake.auth.token;
+    let token = socket.handshake.auth && socket.handshake.auth.token;
+    if (!token) token = readCookie(socket.request, 'bfg_tok');
     if (!token) return next(new Error('unauthorized'));
     jwt.verify(token, JWT_SECRET, (err, user) => {
         if (err) return next(new Error('unauthorized'));

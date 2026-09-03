@@ -17345,15 +17345,20 @@ async function api(path,opt){
  var h={'Content-Type':'application/json'};
  if(SYNC.tok)h.Authorization='Bearer '+SYNC.tok;
  var r=await fetch(path,{method:opt.method||'GET',headers:h,body:opt.body?JSON.stringify(opt.body):undefined});
- if(r.status===401||r.status===403){forceLogout();var er=new Error('auth');er.auth=true;throw er;}
+ if(r.status===401||r.status===403){
+  if(!opt.noLogout4xx)forceLogout();
+  var er=new Error('auth');er.auth=true;throw er;
+ }
  if(!r.ok){var code=r.status;try{var j=await r.json();code=j.error||r.status;}catch(e){} throw new Error('http_'+code);}
  return r.json();
 }
+function setTokCookie(t){document.cookie='bfg_tok='+encodeURIComponent(t)+'; path=/; SameSite=Lax; max-age=604800';}
+function clearTokCookie(){document.cookie='bfg_tok=; path=/; max-age=0';}
 function forceLogout(){
  if(!SYNC.tok)return;
- SYNC.tok=null;sessionStorage.removeItem('bfg_tok');sessionStorage.removeItem('bfg_me');
+ SYNC.tok=null;sessionStorage.removeItem('bfg_tok');sessionStorage.removeItem('bfg_me');clearTokCookie();
  toast('نشست شما منقضی شده است — دوباره وارد شوید',1);
- setTimeout(function(){location.reload();},900);
+ setTimeout(function(){location.reload();},1600);
 }
 
 /* --------------------- snapshot / rebuild / diff --------------------- */
@@ -17510,12 +17515,22 @@ async function uploadSeed(){
 /* ---------------------------- bootstrap ---------------------------- */
 async function bootstrapFromServer(){
  var boot;
- try{boot=await api('/api/bootstrap');}
- catch(e){if(e.auth)return;setOnline(false);SYNC.timer=setTimeout(bootstrapFromServer,8000);return;}
+ try{boot=await api('/api/bootstrap',{noLogout4xx:true});}
+ catch(e){
+  if(e.auth){
+   /* قبل از خروج اجباری چند بار تلاش مجدد (خطای گذرای شبکه/پراکسی) */
+   SYNC.ba=(SYNC.ba||0)+1;
+   if(SYNC.ba<=4){SYNC.timer=setTimeout(bootstrapFromServer,1500);return;}
+   SYNC.ba=0;forceLogout();return;
+  }
+  setOnline(false);SYNC.timer=setTimeout(bootstrapFromServer,8000);return;
+ }
+ SYNC.ba=0;
  setOnline(true);
  if(!boot.seeded){
   try{await uploadSeed();}catch(e2){if(e2.auth)return;}
-  try{boot=await api('/api/bootstrap');}catch(e3){SYNC.timer=setTimeout(bootstrapFromServer,8000);return;}
+  try{boot=await api('/api/bootstrap',{noLogout4xx:true});}
+  catch(e3){if(e3.auth){forceLogout();return;}SYNC.timer=setTimeout(bootstrapFromServer,8000);return;}
  }
 
  var cacheDB=DB||{};
@@ -17597,6 +17612,7 @@ doLogin=async function(){
  SYNC.tok=res.token;
  sessionStorage.setItem('bfg_tok',res.token);
  sessionStorage.setItem('bfg_me',res.user.id);
+ setTokCookie(res.token);
  ME=res.user;
  DB.logins=DB.logins||[];
  DB.logins.unshift({u:res.user.name,t:new Date().toISOString(),ip:'-',ok:true,dev:navigator.userAgent.includes('Mobile')?'موبایل':'دسکتاپ'});
@@ -17607,7 +17623,7 @@ doLogin=async function(){
 };
 
 var _logoutCore=logout;
-logout=function(){SYNC.tok=null;sessionStorage.removeItem('bfg_tok');_logoutCore();};
+logout=function(){SYNC.tok=null;sessionStorage.removeItem('bfg_tok');clearTokCookie();_logoutCore();};
 
 /* --------------------- شماره سند اتمیک سمت سرور --------------------- */
 window.allocSeq=async function(k){
@@ -17627,6 +17643,7 @@ window.bfgResetServer=async function(){
  try{if(SYNC.tok)await api('/api/admin/reset',{method:'POST'});}catch(e){}
  localStorage.removeItem('bfg_cmms_v1');
  localStorage.removeItem('bfg_shadow_v1');
+ clearTokCookie();
  location.reload();
 };
 
