@@ -398,49 +398,7 @@ html.dark .radio-card.sel{color:#6FB3F0}
   .topbar{padding:0 12px;gap:7px}
 }
 </style>
-<script src="/socket.io/socket.io.js">
-function setupSocket() {
-    socket = io();
-    
-    socket.on('data-changed', ({ collection, id, data }) => {
-        if (collection === 'wos' && DB.wos) {
-            if (data) {
-                const idx = DB.wos.findIndex(w => w.id === id);
-                if (idx >= 0) DB.wos[idx] = data;
-                else DB.wos.unshift(data);
-            } else {
-                DB.wos = DB.wos.filter(w => w.id !== id);
-            }
-            buildMenu();
-            if (CUR === 'wos') go('wos');
-        }
-        
-        if (collection === 'assets' && DB.assets) {
-            if (data) {
-                const idx = DB.assets.findIndex(a => a.id === id);
-                if (idx >= 0) DB.assets[idx] = data;
-                else DB.assets.unshift(data);
-            } else {
-                DB.assets = DB.assets.filter(a => a.id !== id);
-            }
-            buildMenu();
-            if (CUR === 'tree') go('tree');
-        }
-        
-        if (collection === 'requests' && DB.requests) {
-            if (data) {
-                const idx = DB.requests.findIndex(r => r.id === id);
-                if (idx >= 0) DB.requests[idx] = data;
-                else DB.requests.unshift(data);
-            } else {
-                DB.requests = DB.requests.filter(r => r.id !== id);
-            }
-            buildMenu();
-            if (CUR === 'requests') go('requests');
-        }
-    });
-}
-</script>
+<script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
 
@@ -881,10 +839,10 @@ function openReqForm(){
  </div>
  <div class="m-foot"><button class="btn btn-primary" onclick="saveReq()">ثبت درخواست</button><button class="btn btn-ghost" onclick="closeModal()">انصراف</button></div>`);
 }
-function saveReq(){
+async function saveReq(){
  const desc=$('#rqDesc').value.trim();
  if(!desc){toast('شرح درخواست الزامی است',1);return;}
- DB.seq.wr++;
+ DB.seq.wr=await allocSeq('wr');
  const r={id:uid(),no:'WR-1404-0'+DB.seq.wr,type:$('#rqType').value,unit:ME.unit,requester:ME.name,
   assetId:$('#rqAsset').value||null,desc,urgency:$('#rqUrg').value,impact:$('#rqImp').value==='1',
   status:'new',createdAt:new Date().toISOString(),history:[{t:new Date().toISOString(),x:'ثبت درخواست توسط '+ME.name}]};
@@ -917,9 +875,9 @@ function openReq(id){
   <button class="btn btn-ghost" onclick="window.print()">🖨️ چاپ</button>
  </div>`);
 }
-function approveReq(id){
+async function approveReq(id){
  const r=DB.requests.find(x=>x.id===id);
- DB.seq.wo++;
+ DB.seq.wo=await allocSeq('wo');
  const w={id:uid(),no:'WO-1404-0'+DB.seq.wo,type:r.type==='repair'?(r.urgency==='critical'?'BD':'CM'):r.type==='fab'?'FAB':'SRV',
   assetId:r.assetId,desc:r.desc,priority:r.urgency,assignee:null,status:'open',reqId:r.id,parts:[],times:{},createdAt:new Date().toISOString(),est:4};
  DB.wos.unshift(w);r.status='wo';
@@ -982,9 +940,9 @@ function openWOForm(){
  </div>
  <div class="m-foot"><button class="btn btn-primary" onclick="saveWO()">صدور دستورکار</button><button class="btn btn-ghost" onclick="closeModal()">انصراف</button></div>`);
 }
-function saveWO(){
+async function saveWO(){
  const desc=$('#woDesc').value.trim();if(!desc){toast('شرح کار الزامی است',1);return;}
- DB.seq.wo++;
+ DB.seq.wo=await allocSeq('wo');
  const w={id:uid(),no:'WO-1404-0'+DB.seq.wo,type:$('#woType').value,assetId:$('#woAsset').value||null,desc,
   priority:$('#woPr').value,assignee:$('#woTech').value||null,status:$('#woTech').value?'assigned':'open',
   ptw:$('#woPtw').value==='1',parts:[],times:{},createdAt:new Date().toISOString(),est:+$('#woEst').value||2};
@@ -1086,11 +1044,11 @@ function addPart(woId){
  </div>
  <div class="m-foot"><button class="btn btn-primary" onclick="savePart('${woId}')">رزرو و کسر از انبار</button><button class="btn btn-ghost" onclick="openWO('${woId}')">بازگشت</button></div>`);
 }
-function savePart(woId){
+async function savePart(woId){
  const w=DB.wos.find(x=>x.id===woId);const it=item($('#apItem').value);const q=+$('#apQty').value||1;
  if(q>it.stock){toast('موجودی کافی نیست! موجودی فعلی: '+fa(it.stock),1);return;}
  it.stock-=q;w.parts.push({itemId:it.id,qty:q});
- DB.seq.doc++;DB.stockDocs.unshift({id:uid(),no:'ISS-1404-'+DB.seq.doc,kind:'حواله',itemId:it.id,qty:q,at:new Date().toISOString(),by:ME.name,wo:w.no});
+ DB.seq.doc=await allocSeq('doc');DB.stockDocs.unshift({id:uid(),no:'ISS-1404-'+DB.seq.doc,kind:'حواله',itemId:it.id,qty:q,at:new Date().toISOString(),by:ME.name,wo:w.no});
  if(it.stock<it.min)notify('📦 هشدار: موجودی «'+it.name+'» به زیر نقطه سفارش رسید ('+fa(it.stock)+'/'+fa(it.min)+')');
  save();audit('حواله '+fa(q)+' عدد '+it.name+' برای '+w.no);toast('قطعه رزرو و حواله صادر شد 📦');openWO(woId);
 }
@@ -1348,9 +1306,9 @@ function openPM(id){
  </div>
  <div class="m-foot"><button class="btn btn-accent" onclick="genPMWO('${p.id}')">🛠️ صدور دستورکار PM</button><button class="btn btn-ghost" onclick="closeModal()">بستن</button></div>`);
 }
-function genPMWO(id){
+async function genPMWO(id){
  const p=DB.pms.find(x=>x.id===id);
- DB.seq.wo++;
+ DB.seq.wo=await allocSeq('wo');
  const w={id:uid(),no:'WO-1404-0'+DB.seq.wo,type:'PM',assetId:p.assetId,desc:p.title+' — چک‌لیست: '+p.checklist.join('، '),priority:'normal',assignee:null,status:'open',parts:[],times:{},createdAt:new Date().toISOString(),est:2};
  DB.wos.unshift(w);p.last=new Date().toISOString();
  save();audit('تولید دستورکار PM: '+w.no);notify('🔁 دستورکار PM '+w.no+' تولید و به صف تخصیص رفت');
@@ -1403,12 +1361,12 @@ function pgInv(){
  ${DB.stockDocs.slice(0,8).map(d=>{const it=item(d.itemId);return `<tr><td class="mono">${d.no}</td><td><span class="badge ${d.kind==='رسید'?'b-green':'b-orange'}">${d.kind}</span></td><td>${esc(it.name)}</td><td>${fa(d.qty)} ${it.unit}</td><td>${d.wo||'—'}</td><td>${jDate(d.at)}</td><td>${esc(d.by)}</td></tr>`;}).join('')}
  </tbody></table></div></div>`;
 }
-function stockDoc(itemId,kind){
+async function stockDoc(itemId,kind){
  const it=item(itemId);
  const q=prompt(kind+' — تعداد ('+it.unit+'):','1');if(!q||isNaN(q)||+q<=0)return;
  if(kind==='حواله'&&+q>it.stock){toast('موجودی کافی نیست!',1);return;}
  it.stock+=kind==='رسید'?+q:-q;
- DB.seq.doc++;
+ DB.seq.doc=await allocSeq('doc');
  DB.stockDocs.unshift({id:uid(),no:(kind==='رسید'?'RCV':'ISS')+'-1404-'+DB.seq.doc,kind,itemId,qty:+q,at:new Date().toISOString(),by:ME.name});
  if(it.stock<it.min)notify('📦 موجودی «'+it.name+'» زیر نقطه سفارش رفت');
  save();audit('سند '+kind+' — '+it.name+' × '+q);toast('سند '+kind+' صادر شد 🧾');go('inv');
@@ -1535,10 +1493,10 @@ function openPTWForm(){
  </div>
  <div class="m-foot"><button class="btn btn-primary" onclick="savePTW()">صدور و امضای دیجیتال</button><button class="btn btn-ghost" onclick="closeModal()">انصراف</button></div>`);
 }
-function savePTW(){
+async function savePTW(){
  const checks=[...document.querySelectorAll('.ptChk')];
  if(!checks.every(c=>c.checked)){toast('تمام آیتم‌های چک‌لیست ایمنی باید تأیید شوند!',1);return;}
- DB.seq.ptw++;
+ DB.seq.ptw=await allocSeq('ptw');
  const p={id:uid(),no:'PTW-1404-0'+DB.seq.ptw,type:$('#ptType').value,woId:$('#ptWo').value||null,
   from:new Date().toISOString(),to:daysAhead(+$('#ptDays').value||1),status:'active',issuer:ME.name,holder:$('#ptHolder').value,checks:checks.map(c=>c.checked)};
  DB.permits.unshift(p);
@@ -1980,7 +1938,7 @@ function pgProfile(){
  <div class="card" style="margin-top:16px"><h3><span class="ic">💾</span>پشتیبان‌گیری و داده (پنل Admin)</h3>
   <div style="display:flex;gap:9px;flex-wrap:wrap">
    <button class="btn btn-accent" onclick="backup()">⬇️ دانلود نسخه پشتیبان (JSON)</button>
-   <button class="btn btn-danger" onclick="if(confirm('همه داده‌ها به حالت نمونه اولیه بازنشانی شود؟')){localStorage.removeItem('bfg_cmms_v1');location.reload();}">♻️ بازنشانی داده نمونه</button>
+   <button class="btn btn-danger" onclick="bfgResetServer()">♻️ بازنشانی داده نمونه</button>
   </div>
   <div class="muted" style="margin-top:9px">در استقرار واقعی: پشتیبان‌گیری خودکار روزانه + ساعتی از PostgreSQL و فایل‌ها (FR-BCK-01) روی سرور 2.179.95.13.</div></div>`;
 }
@@ -2129,10 +2087,10 @@ function wizNext(){
  if(miss.length){toast('فیلدهای الزامی: '+miss.join('، '),1);return;}
  W.step++;renderWiz();
 }
-function saveReqWiz(){
+async function saveReqWiz(){
  const d=W.data;
  if(reqIsReq('urgency')&&!d.urgency){toast('میزان ضرورت الزامی است',1);return;}
- DB.seq.wr++;
+ DB.seq.wr=await allocSeq('wr');
  const r={id:uid(),no:'WR-1404-0'+DB.seq.wr,type:d.actionType==='fab'?'fab':d.actionType==='service'?'service':'repair',
   unit:d.unit,requester:ME.name,assetId:d.assetId||null,desc:d.desc,urgency:d.urgency||'normal',
   impact:d.stopProd==='yes',status:'new',createdAt:new Date().toISOString(),
@@ -2262,9 +2220,9 @@ function viewMedia(woId,phase,i){
 }
 
 /* HSE permit request from WO */
-function requestPTW(woId){
+async function requestPTW(woId){
  const w=DB.wos.find(x=>x.id===woId);
- DB.seq.ptw++;
+ DB.seq.ptw=await allocSeq('ptw');
  const p={id:uid(),no:'PTW-1404-0'+DB.seq.ptw,type:'loto',woId:w.id,from:new Date().toISOString(),to:daysAhead(1),
   status:'pending',issuer:null,holder:w.assignee?user(w.assignee).name:ME.name,checks:[],requestedBy:ME.name,requestedAt:new Date().toISOString()};
  DB.permits.unshift(p);save();audit('ارسال درخواست مجوز '+p.no+' به واحد HSE برای '+w.no);
@@ -4761,7 +4719,7 @@ openWOForm=function(){
  sel.addEventListener('change',function(){$('#ptwSection').style.display=this.value==='1'?'block':'none';});
 };
 const _saveWOV10=saveWO;
-saveWO=function(){
+saveWO=async function(){
  const needPtw=$('#woPtw')&&$('#woPtw').value==='1';
  const ptwData=needPtw?{type:$('#wpType').value,risk:$('#wpRisk').value,safety:$('#wpSafety').value,
   ppe:[...document.querySelectorAll('.wpPPE:checked')].map(c=>c.value),approver:$('#wpApprover').value}:null;
@@ -4769,7 +4727,7 @@ saveWO=function(){
  _saveWOV10();
  if(DB.wos.length>before&&ptwData){
   const w=DB.wos[0];
-  DB.seq.ptw++;
+  DB.seq.ptw=await allocSeq('ptw');
   const p={id:uid(),no:'PTW-1404-0'+DB.seq.ptw,type:ptwData.type,woId:w.id,from:new Date().toISOString(),to:daysAhead(1),
    status:'pending',issuer:null,holder:w.assignee?(user(w.assignee)||{}).name:ME.name,requestedBy:ME.name,requestedAt:new Date().toISOString(),
    risk:ptwData.risk,conditions:ptwData.safety,ppe:ptwData.ppe,approverId:ptwData.approver,checks:[],
@@ -6439,11 +6397,11 @@ approveReq=function(id){
   <button class="btn btn-ghost" onclick="closeModal()">انصراف</button>
  </div>`);
 };
-function approveReqDo(id){
+async function approveReqDo(id){
  const r=DB.requests.find(x=>x.id===id);
  const techId=$('#apTech').value||null;
  const tech=techId?user(techId):null;
- DB.seq.wo++;
+ DB.seq.wo=await allocSeq('wo');
  const w={id:uid(),no:'WO-1404-0'+DB.seq.wo,
   type:r.type==='repair'?(r.urgency==='critical'?'BD':'CM'):r.type==='fab'?'FAB':'SRV',
   assetId:r.assetId,desc:r.desc+($('#apNote').value.trim()?'\n📌 یادداشت PM: '+$('#apNote').value.trim():''),
@@ -6767,7 +6725,7 @@ function vehChecklist(id){
  </div>
  <div class="m-foot"><button class="btn btn-primary" onclick="vehChkSave('${id}')">ثبت بازرسی</button><button class="btn btn-ghost" onclick="closeModal()">انصراف</button></div>`,true);
 }
-function vehChkSave(id){
+async function vehChkSave(id){
  const a=asset(id);const v=a.veh;
  const km=+$('#vcKm').value||v.km;
  const items=[...document.querySelectorAll('.vcItem')].map(s=>({item:s.dataset.item,state:s.value}));
@@ -6780,7 +6738,7 @@ function vehChkSave(id){
  else if(bad.length)notify('⚠️ بازرسی '+a.name+': '+fa(bad.length)+' مورد نیازمند تعمیر/تعویض');
  closeModal();
  if(bad.length&&confirm(fa(bad.length)+' مورد نیازمند اقدام است. دستورکار CM صادر شود؟')){
-  DB.seq.wo++;
+  DB.seq.wo=await allocSeq('wo');
   DB.wos.unshift({id:uid(),no:'WO-1404-0'+DB.seq.wo,type:'CM',assetId:a.id,
    desc:'رفع ایرادات بازرسی هفتگی '+a.name+': '+bad.map(x=>x.item+' ('+x.state+')').join('، '),
    priority:bad.some(x=>x.state==='بحرانی')?'critical':'high',assignee:null,status:'open',parts:[],times:{},createdAt:new Date().toISOString(),est:3});
@@ -17361,3 +17319,326 @@ save();
 setTimeout(()=>{try{const t=runQA();console.log('BFG CMMS v'+BFG_VERSION_40+' — QA: '+t.filter(x=>x[1]).length+'/'+t.length+' passed');}catch(e){}},1900);
 </script>
 </body></html>
+<script>
+/* ======================================================================
+   BFG SYNC ENGINE v2 — اتصال فرانت به سرور (PostgreSQL + Socket.IO)
+   سرور = منبع حقیقت | localStorage = کش آفلاین | سینک لحظه‌ای دوطرفه
+   ====================================================================== */
+(function(){
+'use strict';
+
+var LOCAL_ONLY=['notifs','notifLog','panelCfg','backups','backupCfg','trash','logins','seq'];
+var SYNC={
+ tok:sessionStorage.getItem('bfg_tok')||null,
+ sock:null, shadow:{}, pushing:false, timer:null, booted:false, failed:{}, failedToast:0,
+ src:'c'+Math.random().toString(36).slice(2,10), online:true
+};
+window.BFG_SYNC=SYNC;
+
+function loadShadow(){try{SYNC.shadow=JSON.parse(localStorage.getItem('bfg_shadow_v1'))||{};}catch(e){SYNC.shadow={};}}
+function persistShadow(){try{localStorage.setItem('bfg_shadow_v1',JSON.stringify(SYNC.shadow));}catch(e){}}
+function isLocal(k){return LOCAL_ONLY.indexOf(k)>=0;}
+
+/* ------------------------------ API ------------------------------ */
+async function api(path,opt){
+ opt=opt||{};
+ var h={'Content-Type':'application/json'};
+ if(SYNC.tok)h.Authorization='Bearer '+SYNC.tok;
+ var r=await fetch(path,{method:opt.method||'GET',headers:h,body:opt.body?JSON.stringify(opt.body):undefined});
+ if(r.status===401||r.status===403){forceLogout();var er=new Error('auth');er.auth=true;throw er;}
+ if(!r.ok){var code=r.status;try{var j=await r.json();code=j.error||r.status;}catch(e){} throw new Error('http_'+code);}
+ return r.json();
+}
+function forceLogout(){
+ if(!SYNC.tok)return;
+ SYNC.tok=null;sessionStorage.removeItem('bfg_tok');sessionStorage.removeItem('bfg_me');
+ toast('نشست شما منقضی شده است — دوباره وارد شوید',1);
+ setTimeout(function(){location.reload();},900);
+}
+
+/* --------------------- snapshot / rebuild / diff --------------------- */
+function djb2(s){var h=5381,i;for(i=0;i<s.length;i++)h=((h<<5)+h+s.charCodeAt(i))>>>0;return h.toString(36);}
+function unwrap(d){return (d&&typeof d==='object'&&Object.keys(d).length===1&&('__v' in d))?d.__v:d;}
+
+function snapItem(e,ord){
+ if(e&&typeof e==='object'){
+  if(e.id==null){try{e.id=uid();}catch(_){e.id='x'+djb2(JSON.stringify(e));}}
+  return {id:String(e.id),ord:ord,data:e};
+ }
+ return {id:'p'+djb2(JSON.stringify(e))+'_'+(typeof e),ord:ord,data:{__v:e}};
+}
+function snapshotOf(v){
+ if(Array.isArray(v)){var n=v.length;return {kind:'arr',items:v.map(function(e,i){return snapItem(e,i-n);})};}
+ if(v&&typeof v==='object'){return {kind:'obj',items:Object.keys(v).map(function(k){return {id:k,ord:null,data:v[k]};})};}
+ return {kind:'val',items:v===undefined?[]:[{id:'_',ord:null,data:{__v:v}}]};
+}
+function sortItems(items){
+ return items.slice().sort(function(a,b){
+  var x=(a.ord==null)?9e15:a.ord, y=(b.ord==null)?9e15:b.ord;
+  return x===y?0:(x<y?-1:1);
+ });
+}
+function rebuild(snap){
+ if(!snap)return undefined;
+ if(snap.kind==='obj'){var o={};snap.items.forEach(function(it){o[it.id]=it.data;});return o;}
+ if(snap.kind==='val')return snap.items.length?unwrap(snap.items[0].data):undefined;
+ return sortItems(snap.items).map(function(it){return unwrap(it.data);});
+}
+function snapDiff(cur,prev){
+ var ups=[],del=[],pm={};
+ if(prev)prev.items.forEach(function(it){pm[it.id]=it;});
+ var keep={};
+ cur.items.forEach(function(it){
+  keep[it.id]=1;
+  var p=pm[it.id];
+  if(!p||JSON.stringify(p.data)!==JSON.stringify(it.data))ups.push(it);
+ });
+ if(prev)prev.items.forEach(function(it){if(!keep[it.id])del.push(it.id);});
+ return {upserts:ups,deletes:del};
+}
+
+/* --------------------- push: تغییرات محلی → سرور --------------------- */
+function markDirty(){
+ if(!SYNC.booted||!SYNC.tok)return;
+ if(SYNC.timer)clearTimeout(SYNC.timer);
+ SYNC.timer=setTimeout(pushNow,900);
+}
+async function pushNow(){
+ if(SYNC.pushing||!SYNC.tok)return;
+ SYNC.pushing=true;
+ try{
+  var cols={},k;
+  Object.keys(DB||{}).forEach(function(c){cols[c]=1;});
+  Object.keys(SYNC.shadow).forEach(function(c){cols[c]=1;});
+  for(k in cols){
+   if(isLocal(k))continue;
+   var cur=snapshotOf(DB[k]);
+   var curJ=JSON.stringify(cur.items);
+   if(SYNC.failed[k]===curJ)continue; /* قبلاً رد شده — تا تغییر بعدی صبر کن */
+   var d=snapDiff(cur,SYNC.shadow[k]);
+   if(!d.upserts.length&&!d.deletes.length)continue;
+   try{
+    await api('/api/sync/'+encodeURIComponent(k),{method:'POST',
+     body:{kind:cur.kind,upserts:d.upserts,deletes:d.deletes,src:SYNC.src}});
+    SYNC.shadow[k]=cur;delete SYNC.failed[k];persistShadow();setOnline(true);
+   }catch(e){
+    if(e.auth)return;
+    if(String(e.message).indexOf('http_')===0){
+     SYNC.failed[k]=curJ;
+     if(!SYNC.failedToast||Date.now()-SYNC.failedToast>15000){
+      SYNC.failedToast=Date.now();
+      toast('⛔ سرور ذخیره «'+k+'» را رد کرد: '+e.message.slice(5).replace(/_/g,' '),1);
+     }
+     continue;
+    }
+    setOnline(false);SYNC.timer=setTimeout(pushNow,8000);break;
+   }
+  }
+ }finally{SYNC.pushing=false;}
+}
+
+/* ------------------- apply: تغییرات سرور → محلی ------------------- */
+function applyRemote(ev){
+ if(!ev||ev.src===SYNC.src)return;
+ var col=ev.col;
+ if(!col||isLocal(col))return;
+ var snap=SYNC.shadow[col]||{kind:ev.kind||'arr',items:[]};
+ var map={};
+ snap.items.forEach(function(it){map[it.id]=it;});
+ (ev.upserts||[]).forEach(function(it){map[String(it.id)]={id:String(it.id),ord:(it.ord==null?null:it.ord),data:it.data};});
+ (ev.deletes||[]).forEach(function(id){delete map[String(id)];});
+ snap.items=Object.keys(map).map(function(k){return map[k];});
+ snap.kind=ev.kind||snap.kind;
+ SYNC.shadow[col]=snap;
+ DB[col]=rebuild(snap);
+ save();persistShadow();
+ rerenderRemote(col);
+}
+var _rrT=null,_rrToast=0;
+function rerenderRemote(col){
+ try{buildMenu();updateBadge();}catch(e){}
+ if(document.querySelector('#modalRoot .overlay')){
+  var n=Date.now();
+  if(n-_rrToast>8000){_rrToast=n;toast('↻ داده‌ها توسط کاربر دیگری به‌روز شد — پس از بستن پنجره نمایش تازه می‌شود');}
+  return;
+ }
+ if(_rrT)clearTimeout(_rrT);
+ _rrT=setTimeout(function(){try{go(CUR);}catch(e){}},350);
+}
+
+/* --------------------------- وضعیت شبکه --------------------------- */
+function setOnline(on){
+ SYNC.online=on;
+ var bar=document.getElementById('bfgNetBar');
+ if(on){if(bar)bar.remove();return;}
+ if(bar)return;
+ bar=document.createElement('div');
+ bar.id='bfgNetBar';
+ bar.style.cssText='position:fixed;bottom:12px;left:12px;z-index:99999;background:#DC2F2F;color:#fff;padding:7px 16px;border-radius:10px;font-size:12px;box-shadow:0 4px 14px rgba(0,0,0,.25);font-family:inherit';
+ bar.textContent='⚠️ ارتباط با سرور قطع است — تغییرات محلی ذخیره و پس از اتصال، خودکار سینک می‌شود';
+ document.body.appendChild(bar);
+}
+
+/* ------------------------------ socket ------------------------------ */
+function connectSocket(){
+ if(SYNC.sock||typeof io!=='function')return;
+ try{
+  var s=io({auth:{token:SYNC.tok}});
+  SYNC.sock=s;
+  s.on('sync',applyRemote);
+  s.on('connect',function(){setOnline(true);});
+  s.on('disconnect',function(){setOnline(false);});
+  s.on('connect_error',function(){setOnline(false);});
+  s.on('reset',function(){localStorage.removeItem('bfg_shadow_v1');location.reload();});
+  s.on('seeded',function(){if(SYNC.booted)bootstrapFromServer();});
+ }catch(e){}
+}
+
+/* ------------------------------ seed ------------------------------ */
+async function uploadSeed(){
+ var snapshots={};
+ Object.keys(DB||{}).forEach(function(k){
+  if(isLocal(k)||k==='users')return;
+  snapshots[k]=snapshotOf(DB[k]);
+ });
+ await api('/api/seed',{method:'POST',body:{
+  users:(DB.users||[]).map(function(u){return Object.assign({},u);}),
+  snapshots:snapshots, seq:DB.seq||{}
+ }});
+}
+
+/* ---------------------------- bootstrap ---------------------------- */
+async function bootstrapFromServer(){
+ var boot;
+ try{boot=await api('/api/bootstrap');}
+ catch(e){if(e.auth)return;setOnline(false);SYNC.timer=setTimeout(bootstrapFromServer,8000);return;}
+ setOnline(true);
+ if(!boot.seeded){
+  try{await uploadSeed();}catch(e2){if(e2.auth)return;}
+  try{boot=await api('/api/bootstrap');}catch(e3){SYNC.timer=setTimeout(bootstrapFromServer,8000);return;}
+ }
+
+ var cacheDB=DB||{};
+ var oldShadow=SYNC.shadow||{};
+
+ /* تغییرات آفلاینِ هنوز ارسال‌نشده را نگه دار (diff کش با سایه قدیمی) */
+ var pending={};
+ Object.keys(cacheDB).forEach(function(k){
+  if(isLocal(k)||!oldShadow[k])return;
+  var d=snapDiff(snapshotOf(cacheDB[k]),oldShadow[k]);
+  if(d.upserts.length||d.deletes.length)pending[k]=d;
+ });
+
+ /* بازسازی از سرور — سرور منبع حقیقت است */
+ var newShadow={},rebuilt={},col;
+ for(col in boot.collections){var s=boot.collections[col];newShadow[col]={kind:s.kind,items:s.items};rebuilt[col]=rebuild(s);}
+ newShadow.users=snapshotOf(boot.users);rebuilt.users=boot.users.slice();
+
+ var seed0=seed(),merged={};
+ Object.keys(seed0).forEach(function(k){merged[k]=seed0[k];});
+ Object.keys(cacheDB).forEach(function(k){merged[k]=cacheDB[k];});
+ Object.keys(rebuilt).forEach(function(k){merged[k]=rebuilt[k];});
+ DB=merged;
+
+ /* پخش مجدد تغییرات آفلاین روی نسخه سرور تا در push بعدی ارسال شوند */
+ Object.keys(pending).forEach(function(k){
+  var snap=snapshotOf(DB[k]),map={};
+  snap.items.forEach(function(it){map[it.id]=it;});
+  pending[k].upserts.forEach(function(it){map[it.id]={id:it.id,ord:it.ord,data:it.data};});
+  pending[k].deletes.forEach(function(id){delete map[id];});
+  snap.items=Object.keys(map).map(function(kk){return map[kk];});
+  DB[k]=rebuild(snap);
+ });
+
+ SYNC.shadow=newShadow;persistShadow();
+ if(ME){
+  var me2=(DB.users||[]).find(function(x){return x.id===ME.id;})
+       ||(DB.users||[]).find(function(x){return x.u===ME.u;});
+  if(me2){ME=me2;sessionStorage.setItem('bfg_me',me2.id);}
+ }
+ save();
+ SYNC.booted=true;
+ connectSocket();
+ markDirty();
+ try{buildMenu();updateBadge();if(document.getElementById('app').style.display!=='none')go(CUR);}catch(e){}
+}
+
+/* --------------------------- ورود / خروج --------------------------- */
+function enterApp(){
+ document.getElementById('loginPage').style.display='none';
+ document.getElementById('app').style.display='block';
+ document.getElementById('uName').textContent=ME.name;
+ document.getElementById('uRole').textContent=(typeof ROLES!=='undefined'&&ROLES[ME.role])||ME.role;
+ document.getElementById('uAvatar').textContent=(ME.name||'؟').charAt(0);
+}
+
+doLogin=async function(){
+ var un=(document.getElementById('loginUser').value||'').trim();
+ var p=document.getElementById('loginPass').value;
+ if(!un||!p){toast('نام کاربری و رمز عبور را وارد کنید',1);return;}
+
+ var found=(DB.users||[]).find(function(x){return x.u===un&&x.active;});
+ if(found&&found.hr&&found.hr.twoFA){
+  var code=String(Math.floor(1000+Math.random()*9000));
+  var inp=prompt('🔐 ورود دومرحله‌ای فعال است.\nکد پیامک‌شده (نمونه دمو): '+code+'\nکد را وارد کنید:');
+  if(inp!==code){toast('کد دومرحله‌ای نادرست است',1);return;}
+ }
+
+ var res;
+ try{res=await api('/api/auth/login',{method:'POST',body:{username:un,password:p}});}
+ catch(e){
+  DB.logins=DB.logins||[];
+  DB.logins.unshift({u:un,t:new Date().toISOString(),ip:'-',ok:false,dev:navigator.userAgent.includes('Mobile')?'موبایل':'دسکتاپ'});save();
+  if(e.auth||String(e.message).indexOf('invalid')>=0){toast('نام کاربری یا رمز عبور نادرست است',1);}
+  else{toast('ارتباط با سرور برقرار نشد — دوباره تلاش کنید',1);}
+  return;
+ }
+
+ SYNC.tok=res.token;
+ sessionStorage.setItem('bfg_tok',res.token);
+ sessionStorage.setItem('bfg_me',res.user.id);
+ ME=res.user;
+ DB.logins=DB.logins||[];
+ DB.logins.unshift({u:res.user.name,t:new Date().toISOString(),ip:'-',ok:true,dev:navigator.userAgent.includes('Mobile')?'موبایل':'دسکتاپ'});
+ audit('ورود به سامانه');
+ enterApp();buildMenu();go('dash');updateBadge();
+ toast('خوش آمدید، '+res.user.name+' 👋');
+ bootstrapFromServer();
+};
+
+var _logoutCore=logout;
+logout=function(){SYNC.tok=null;sessionStorage.removeItem('bfg_tok');_logoutCore();};
+
+/* --------------------- شماره سند اتمیک سمت سرور --------------------- */
+window.allocSeq=async function(k){
+ if(SYNC.tok){
+  try{
+   var r=await api('/api/seq/next',{method:'POST',body:{key:k,cur:(DB.seq&&DB.seq[k])||0}});
+   return r.n;
+  }catch(e){}
+ }
+ DB.seq=DB.seq||{};
+ return (DB.seq[k]||0)+1;
+};
+
+/* --------------------- بازنشانی داده نمونه (سرور+کش) --------------------- */
+window.bfgResetServer=async function(){
+ if(!confirm('همه داده‌ها (روی سرور و این مرورگر) به حالت نمونه اولیه بازنشانی شود؟'))return;
+ try{if(SYNC.tok)await api('/api/admin/reset',{method:'POST'});}catch(e){}
+ localStorage.removeItem('bfg_cmms_v1');
+ localStorage.removeItem('bfg_shadow_v1');
+ location.reload();
+};
+
+/* ------------------------- اتصال save به سینک ------------------------- */
+var _saveLocal=save;
+save=function(){_saveLocal.apply(null,arguments);markDirty();};
+
+/* ------------------------------- boot ------------------------------- */
+SYNC.applyRemote=applyRemote; /* برای دیباگ/تست */
+loadShadow();
+if(SYNC.tok&&sessionStorage.getItem('bfg_me')){bootstrapFromServer();}
+
+})();
+
+</script>

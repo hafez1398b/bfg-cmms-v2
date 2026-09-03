@@ -21,18 +21,24 @@
 - فایلهای پروژه را به پوشه C:\bfg-cmms کپی کنید
 
 ### 4. تنظیم .env
-- فایل .env را ویرایش کنید:
+- فایل .env را بر اساس .env.example بسازید و ویرایش کنید:
   DATABASE_URL=postgres://postgres:your_password@localhost:5432/bfg_cmms
+  JWT_SECRET=<خروجی دستور: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))">
+- دیتابیس را بسازید: C:\Program Files\PostgreSQL\18\bin\psql.exe -U postgres -c "CREATE DATABASE bfg_cmms"
 
 ### 5. نصب وابستگیها
 - cd C:\bfg-cmms
 - npm install
 
 ### 6. اجرای Schema
-- C:\Program Files\PostgreSQL\18\bin\psql.exe -U postgres -d bfg_cmms -f C:\bfg-cmms\schema.sql
+- ✨ به‌صورت خودکار هنگام استارت سرور اعمال می‌شود.
+- اجرای دستی (اختیاری): C:\Program Files\PostgreSQL\18\bin\psql.exe -U postgres -d bfg_cmms -f C:\bfg-cmms\schema.sql
 
-### 7. ایجاد کاربر Admin
-- node create-admin.js
+### 7. اولین ورود
+- وارد شوید با: admin / 1234
+- در اولین ورود، داده‌ها (کاربران و اطلاعات پایه) به‌صورت خودکار روی سرور seed می‌شوند.
+- بلافاصله رمز admin را از ماژول «کاربران و نقش‌ها» تغییر دهید.
+- (اختیاری) ساخت admin سفارشی بدون داده دمو: node create-admin.js
 
 ### 8. اجرای سامانه با PM2
 - npm install -g pm2
