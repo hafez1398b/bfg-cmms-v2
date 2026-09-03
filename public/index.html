@@ -17344,7 +17344,9 @@ async function api(path,opt){
  opt=opt||{};
  var h={'Content-Type':'application/json'};
  if(SYNC.tok)h.Authorization='Bearer '+SYNC.tok;
- var r=await fetch(path,{method:opt.method||'GET',headers:h,body:opt.body?JSON.stringify(opt.body):undefined});
+ /* توکن در query هم می‌رود — اگر پراکسی هدر و کوکی را حذف کند باز کار می‌کند */
+ var url=path+(SYNC.tok?(path.indexOf('?')>=0?'&':'?')+'at='+encodeURIComponent(SYNC.tok):'');
+ var r=await fetch(url,{method:opt.method||'GET',headers:h,body:opt.body?JSON.stringify(opt.body):undefined});
  if(r.status===401||r.status===403){
   if(!opt.noLogout4xx)forceLogout();
   var er=new Error('auth');er.auth=true;throw er;
@@ -17654,6 +17656,15 @@ save=function(){_saveLocal.apply(null,arguments);markDirty();};
 /* ------------------------------- boot ------------------------------- */
 SYNC.applyRemote=applyRemote; /* برای دیباگ/تست */
 loadShadow();
+/* پاک‌سازی توکن خراب/قدیمی باقی‌مانده از نسخه‌های قبلی */
+if(SYNC.tok&&String(SYNC.tok).split('.').length!==3){
+ SYNC.tok=null;sessionStorage.removeItem('bfg_tok');sessionStorage.removeItem('bfg_me');clearTokCookie();
+}
+/* نشان نسخه سینک روی صفحه ورود — برای اطمینان از لود نسخه جدید */
+try{
+ var _lf=document.querySelector('.lh-foot');
+ if(_lf&&!_lf.dataset.syncTag){_lf.dataset.syncTag='1';_lf.innerHTML+=' <span style="opacity:.6">· sync v2.1</span>';}
+}catch(e){}
 if(SYNC.tok&&sessionStorage.getItem('bfg_me')){bootstrapFromServer();}
 
 })();

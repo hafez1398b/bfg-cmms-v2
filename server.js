@@ -58,6 +58,15 @@ if (pool.on) pool.on('error', (e) => console.error('PG pool error:', e.message))
 
 app.use(cors());
 app.use(express.json({ limit: '100mb' }));
+/* جلوگیری از کش HTML در مرورگر و پراکسی — همیشه آخرین نسخه لود شود */
+app.use((req, res, next) => {
+    if (req.path === '/' || req.path.endsWith('.html')) {
+        res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+        res.set('Pragma', 'no-cache');
+        res.set('Expires', '0');
+    }
+    next();
+});
 app.use(express.static(path.join(__dirname, 'public')));
 
 /* ------------------------------ helpers ------------------------------ */
@@ -85,6 +94,7 @@ function authenticateToken(req, res, next) {
     let token = req.headers['authorization']?.split(' ')[1];
     const fromCookie = !token;
     if (fromCookie) token = readCookie(req, 'bfg_tok');
+    if (!token && req.query && req.query.at) token = req.query.at;   /* مسیر اضطراری: query */
     if (!token) {
         console.warn(`⚠️ 401 بدون توکن: ${req.method} ${req.path} — هدر: ${req.headers['authorization'] ? 'موجود' : 'حذف‌شده'}، کوکی: ${req.headers.cookie ? 'موجود' : 'ندارد'}`);
         return res.status(401).json({ error: 'no_token' });
@@ -327,6 +337,7 @@ app.get('/api/health', async (req, res) => {
 
 /* SPA fallback */
 app.get(/^\/(?!api\/|socket\.io\/).*/, (req, res) => {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
