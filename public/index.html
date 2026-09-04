@@ -17887,3 +17887,32 @@ sttDemo=function(){
 })();
 
 </script>
+<script>
+/* SELEN_CFG — بارگذاری خودکار کلید DeepSeek از سرور (env: DEEPSEEK_API_KEY) بدون قرارگرفتن کلید در گیت */
+(function(){
+ 'use strict';
+ var keyLoaded=false;
+ async function selenServerKey(){
+  if(keyLoaded)return;
+  try{
+   if(!window.BFG_SYNC||!BFG_SYNC.booted)return;
+   if(!DB.aiCfg||DB.aiCfg.apiKey)return;
+   const j=await api('/api/config');
+   if(!j||!j.deepseek||!j.deepseek.key)return;
+   keyLoaded=true;
+   aiSet('provider','deepseek');
+   aiSet('baseUrl',j.deepseek.baseUrl);
+   aiSet('model',j.deepseek.model);
+   aiSet('visionModel',j.deepseek.model);
+   aiSet('apiKey',j.deepseek.key);
+   DB.settings=DB.settings||{};
+   DB.settings.ai={provider:'deepseek',endpoint:j.deepseek.baseUrl+'/chat/completions',model:j.deepseek.model,key:j.deepseek.key,vision:true};
+   save();
+   toast('🔑 کلید DeepSeek از سرور بارگذاری شد — «سلن» آنلاین است');
+  }catch(e){}
+ }
+ setInterval(function(){try{selenServerKey();}catch(e){}},15000);
+ if(document.readyState!=='loading')setTimeout(function(){try{selenServerKey();}catch(e){}},6000);
+ else document.addEventListener('DOMContentLoaded',function(){setTimeout(function(){try{selenServerKey();}catch(e){}},6000);});
+})();
+</script>

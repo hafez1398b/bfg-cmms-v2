@@ -330,6 +330,10 @@ app.post('/api/admin/reset', authenticateToken, requireAdmin, async (req, res) =
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+app.get('/api/config', authenticateToken, async (req, res) => {
+    const k = process.env.DEEPSEEK_API_KEY || '';
+    res.json({ deepseek: k ? { key: k, baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' } : null });
+});
 app.get('/api/health', async (req, res) => {
     try { await pool.query('SELECT 1'); res.json({ ok: true, db: true }); }
     catch (e) { res.status(503).json({ ok: false, db: false, error: e.message }); }
