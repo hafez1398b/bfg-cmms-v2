@@ -642,7 +642,7 @@ costEntries:[
 settings:{
  docCode:'BFG-FR-27-V2',docDate:'1405/03/02',
  reqRequired:{actionType:true,desc:true,urgency:true,unit:true,asset:false,serviceType:false,phone:false,needDate:false},
- ai:{provider:'openai',endpoint:'https://api.openai.com/v1/chat/completions',model:'gpt-4o-mini',key:'',vision:true},
+ ai:{provider:'deepseek',endpoint:'https://api.deepseek.com/v1/chat/completions',model:'deepseek-chat',key:'',vision:true},
 },
 seq:{wo:235,wr:115,ptw:46,doc:133},
 };
@@ -693,7 +693,7 @@ const MENU=[
  {id:'docs',ic:'🗄️',t:'کنترل مدارک'},
  {id:'hr',ic:'📅',t:'تقویم و مرخصی'},
  {g:'هوشمندسازی'},
- {id:'ai',ic:'🤖',t:'مرکز هوش مصنوعی'},
+ {id:'ai',ic:'🤖',t:'مرکز هوش مصنوعی سلن'},
  {id:'reports',ic:'📈',t:'گزارش‌ساز'},
  {g:'ایمنی و کنترل'},
  {id:'ptw',ic:'🦺',t:'مجوز کار (PTW)'},
@@ -1753,9 +1753,9 @@ function approveLeave(id){const l=DB.leaves.find(x=>x.id===id);l.status='approve
 
 /* ================= AI Center ================= */
 function pgAI(){
- return head('مرکز هوش مصنوعی','هوش مصنوعی')+`
+ return head('مرکز هوش مصنوعی «سلن»','هوش مصنوعی')+`
  <div class="card" style="margin-bottom:16px;background:linear-gradient(135deg,var(--primary),var(--accent));color:#fff;border:none">
-  <h3 style="color:#fff"><span class="ic" style="color:#fff">🤖</span>دستیار هوشمند نت — Chat with Data (FR-AI-05)</h3>
+  <h3 style="color:#fff"><span class="ic" style="color:#fff">🤖</span>دستیار هوشمند «سلن» — پرسش از داده‌های سامانه (FR-AI-05)</h3>
   <div style="display:flex;gap:9px;margin-top:8px;flex-wrap:wrap">
    <input id="aiQ" placeholder="مثلاً: MTTR خط ۱ در سه ماه گذشته چقدر بود؟" style="flex:1;min-width:220px;background:rgba(255,255,255,.94);border:none">
    <button class="btn" style="background:#fff;color:var(--primary)" onclick="aiAsk()">پرسش</button>
@@ -2150,12 +2150,12 @@ async function aiCall(messages,imageDataUrl){
    }
    const res=await fetch(cfg.endpoint,{method:'POST',
     headers:{'Content-Type':'application/json','Authorization':'Bearer '+cfg.key},
-    body:JSON.stringify({model:cfg.model,messages:[{role:'system',content:'تو دستیار هوشمند CMMS شرکت بسپار فوم غرب هستی. متخصص نگهداری و تعمیرات صنعتی. پاسخ فارسی، فنی، کوتاه و کاربردی بده.'},...msgs],max_tokens:700})});
+    body:JSON.stringify({model:cfg.model,messages:[{role:'system',content:'تو «سلن»، دستیار هوشمند CMMS شرکت بسپار فوم غرب، هستی. متخصص نگهداری و تعمیرات صنعتی. پاسخ فارسی، فنی، کوتاه و کاربردی بده.'},...msgs],max_tokens:700})});
    if(!res.ok)throw new Error('HTTP '+res.status);
    const j=await res.json();
    return {text:j.choices[0].message.content,online:true};
   }catch(e){
-   return {text:localAI(messages[messages.length-1].content,imageDataUrl)+'\n\n⚠️ اتصال به مدل آنلاین برقرار نشد ('+e.message+') — پاسخ از موتور تحلیلی داخلی ارائه شد.',online:false};
+   return {text:localAI(messages[messages.length-1].content,imageDataUrl)+'\n\n⚠️ اتصال به مدل آنلاین برقرار نشد ('+e.message+') — پاسخ از موتور دانش داخلی سلن ارائه شد.',online:false};
   }
  }
  return {text:localAI(messages[messages.length-1].content,imageDataUrl)+'\n\n💡 برای پاسخ‌های آنلاین GPT، کلید API را در «پروفایل ← تنظیمات هوش مصنوعی» ثبت کنید.',online:false};
@@ -2178,7 +2178,7 @@ async function aiAsk(){
  const box=$('#aiAnswer');box.style.display='block';
  box.innerHTML='<span class="ai-typing"><i></i><i></i><i></i></span> در حال تحلیل…';
  const r=await aiCall([{role:'user',content:q}]);
- box.innerHTML='🤖 '+esc(r.text).replace(/\n/g,'<br>')+`<div style="font-size:10.5px;opacity:.75;margin-top:6px">${r.online?'🌐 پاسخ آنلاین از مدل '+DB.settings.ai.model:'⚙️ موتور تحلیلی داخلی'} — پیشنهاد هوشمند</div>`;
+ box.innerHTML='🤖 '+esc(r.text).replace(/\n/g,'<br>')+`<div style="font-size:10.5px;opacity:.75;margin-top:6px">${r.online?'🌐 پاسخ آنلاین از مدل '+DB.settings.ai.model:'⚙️ موتور دانش داخلی سلن'} — پیشنهاد هوشمند</div>`;
  audit('پرسش از دستیار AI: '+q);
 }
 </script>
@@ -2421,7 +2421,7 @@ async function toggleRec(woId){
     const blob=new Blob(REC.chunks,{type:'audio/webm'});
     const url=URL.createObjectURL(blob);
     const au=$('#recAudio');au.src=url;au.style.display='block';
-    REC.audioUrl=url;
+    REC.audioUrl=url;REC.blob=blob;
     stream.getTracks().forEach(t=>t.stop());
     doSTT();
    };
@@ -2476,7 +2476,7 @@ pgProfile=function(){
    <div class="field"><label>Endpoint</label><input value="${esc(DB.settings.ai.endpoint)}" onchange="DB.settings.ai.endpoint=this.value;save()"></div>
   </div>
   <div class="field"><label>کلید API (OpenAI-compatible)</label><input type="password" value="${esc(DB.settings.ai.key)}" onchange="DB.settings.ai.key=this.value;save();toast(this.value?'کلید ذخیره شد — AI آنلاین فعال است 🌐':'کلید حذف شد — موتور داخلی فعال است')" placeholder="sk-…"></div>
-  <div class="muted">با ثبت کلید، دستیار AI در همه ماژول‌ها (مرکز AI، دستیار تکنسین، تحلیل تصویر) به مدل آنلاین متصل می‌شود؛ بدون کلید، موتور تحلیلی داخلی روی داده‌های سیستم پاسخ می‌دهد (Graceful Degradation — فصل ۲۲ SRS).</div></div>`;
+  <div class="muted">با ثبت کلید، دستیار AI در همه ماژول‌ها (مرکز AI، دستیار تکنسین، تحلیل تصویر) به مدل آنلاین متصل می‌شود؛ بدون کلید، موتور دانش داخلی سلن روی داده‌های سیستم پاسخ می‌دهد (Graceful Degradation — فصل ۲۲ SRS).</div></div>`;
  }
  return _pgProfileBase()+extra;
 };
@@ -4862,7 +4862,7 @@ function woAIPanel(w){
   <div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap">
    <div class="list-ic" style="background:linear-gradient(135deg,#8A6D1F,#D4AF37);color:#141414;font-size:19px">🤖</div>
    <div style="flex:1"><b>دستیار هوشمند نگهداری و تعمیرات بسپارفوم غرب</b>
-    <div class="muted">${online?'🌐 متصل به سرویس هوش مصنوعی ('+esc(DB.settings.ai.model)+') — تحلیل تصویر، ریشه‌یابی، مراحل تعمیر':'⚠️ سرویس AI آنلاین متصل نیست — پاسخ‌ها از موتور تحلیلی داخلی روی داده‌های سامانه ارائه می‌شود. اتصال: پروفایل ← تنظیمات AI'}</div></div>
+    <div class="muted">${online?'🌐 متصل به سرویس هوش مصنوعی ('+esc(DB.settings.ai.model)+') — تحلیل تصویر، ریشه‌یابی، مراحل تعمیر':'⚠️ سرویس AI آنلاین متصل نیست — پاسخ‌ها از موتور دانش داخلی سلن روی داده‌های سامانه ارائه می‌شود. اتصال: پروفایل ← تنظیمات AI'}</div></div>
    <button class="btn ${online?'btn-accent':'btn-ghost'}" onclick="openTechAssist('${w.id}')">💬 گفتگو و تحلیل تصویر</button>
   </div>
  </div>`;
@@ -8205,7 +8205,7 @@ if(!DB.aiCfg){
  save();
 }
 const AI_PROVIDERS={
- offline:{t:'حالت آفلاین — دانش داخلی سامانه',url:'',hint:'بدون نیاز به اینترنت؛ پاسخ‌ها از سوابق تجهیز و پایگاه دانش داخلی بسپار فوم غرب ساخته می‌شود.'},
+ offline:{t:'سلن — موتور دانش داخلی (آفلاین)',url:'',hint:'بدون نیاز به اینترنت؛ پاسخ‌ها از سوابق تجهیز و پایگاه دانش داخلی بسپار فوم غرب ساخته می‌شود.'},
  openai:{t:'OpenAI (سازگار با Chat Completions)',url:'https://api.openai.com/v1',hint:'کلید sk-… و مدل مانند gpt-4o-mini'},
  azure:{t:'Azure OpenAI',url:'https://<resource>.openai.azure.com',hint:'Endpoint منبع Azure + کلید + نام Deployment در فیلد مدل'},
  gemini:{t:'Google Gemini',url:'https://generativelanguage.googleapis.com/v1beta',hint:'کلید API گوگل + مدل gemini-1.5-flash'},
@@ -8223,7 +8223,7 @@ function aiOnline(){return DB.aiCfg.provider!=='offline'&&!!DB.aiCfg.apiKey&&!!a
 function aiBase(){return (DB.aiCfg.baseUrl||AI_PROVIDERS[DB.aiCfg.provider].url||'').replace(/\/$/,'');}
 function aiStatusChip(){
  const c=DB.aiCfg;
- if(c.provider==='offline')return `<span class="badge b-gray" title="${esc(c.lastMsg||'')}">⚪ آفلاین — دانش داخلی سامانه</span>`;
+ if(c.provider==='offline')return `<span class="badge b-gray" title="${esc(c.lastMsg||'')}">⚪ سلن — موتور دانش داخلی سامانه</span>`;
  if(!c.apiKey||!aiBase())return `<span class="badge b-orange">🟡 سرویس انتخاب شده اما کلید/آدرس ناقص است</span>`;
  if(c.status==='ok')return `<span class="badge b-green">🟢 متصل به ${esc(AI_PROVIDERS[c.provider].t)}</span>`;
  if(c.status==='fail')return `<span class="badge b-red" title="${esc(c.lastMsg||'')}">🔴 خطای اتصال — پاسخ از دانش داخلی</span>`;
@@ -8257,7 +8257,7 @@ function pgAICfg(){
    <div class="frow">${f('temperature','دقت/خلاقیت (Temperature)','0.2',0,'number')}${f('maxTokens','حداکثر توکن پاسخ','900',0,'number')}</div>
    ${f('timeout','مهلت پاسخ (ثانیه)','45',0,'number')}
    <button class="btn btn-accent" ${ed?'':'disabled'} onclick="aiTest()">🧪 تست اتصال و ثبت وضعیت</button>
-   `:`<div class="muted">در حالت آفلاین، دستیار هوشمند «بسپار فوم غرب» با پایگاه دانش داخلی، سوابق تعمیر همان تجهیز، قطعات مصرفی و چک‌لیست‌های ثبت‌شده پاسخ می‌دهد. برای فعال‌سازی تحلیل تصویر واقعی، سرویس ابری یا داخلی را انتخاب کنید.</div>`}
+   `:`<div class="muted">در حالت آفلاین، دستیار «سلن» با پایگاه دانش داخلی، سوابق تعمیر همان تجهیز، قطعات مصرفی و چک‌لیست‌های ثبت‌شده پاسخ می‌دهد. برای فعال‌سازی پاسخ آنلاین و تحلیل تصویر، سرویس DeepSeek یا سرویس داخلی سازمان را انتخاب و کلید را وارد کنید.</div>`}
   </div>
   <div class="card"><h3><span class="ic">🎙️</span>سرویس تبدیل گفتار به متن (STT فارسی)</h3>
    <div class="field"><label>سرویس تبدیل گفتار به متن</label>
@@ -8587,7 +8587,7 @@ function aiAssetContext(w){
   w?('دستورکار جاری: '+w.no+' — '+(w.title||'')+' — شرح: '+((w.desc||w.description||'')).slice(0,200)):''
  ].filter(Boolean).join('\n');
 }
-const AI_SYS='شما «دستیار هوشمند تعمیرات بسپار فوم غرب» هستید؛ کارشناس ارشد نگهداری و تعمیرات کارخانه تولید فوم پلی‌اورتان (اسفنج) در ایران. همیشه فارسی روان و فنی پاسخ بده. ساختار پاسخ: ۱) تشخیص/قطعات قابل مشاهده ۲) خرابی‌های محتمل ۳) علت ریشه‌ای (RCA) ۴) روش تعمیر مرحله‌به‌مرحله شماره‌دار ۵) هشدارهای ایمنی HSE و الزام Permit/LOTO ۶) ابزار و قطعات موردنیاز. از سوابق و داده‌های سامانه که در پیام کاربر آمده حتماً استفاده کن و اگر داده کافی نیست صریح بگو. هرگز اقدام اجرایی خودکار پیشنهاد نکن؛ تأیید انسانی الزامی است.';
+const AI_SYS='شما «سلن» — دستیار هوشمند تعمیرات بسپار فوم غرب — هستید؛ کارشناس ارشد نگهداری و تعمیرات کارخانه تولید فوم پلی‌اورتان (اسفنج) در ایران. همیشه فارسی روان و فنی پاسخ بده. ساختار پاسخ: ۱) تشخیص/قطعات قابل مشاهده ۲) خرابی‌های محتمل ۳) علت ریشه‌ای (RCA) ۴) روش تعمیر مرحله‌به‌مرحله شماره‌دار ۵) هشدارهای ایمنی HSE و الزام Permit/LOTO ۶) ابزار و قطعات موردنیاز. از سوابق و داده‌های سامانه که در پیام کاربر آمده حتماً استفاده کن و اگر داده کافی نیست صریح بگو. هرگز اقدام اجرایی خودکار پیشنهاد نکن؛ تأیید انسانی الزامی است.';
 
 /* wrap the existing WO assistant: keep persona, add real service + status chip */
 (function(){
@@ -17337,7 +17337,7 @@ window.BFG_SYNC=SYNC;
 
 function loadShadow(){try{SYNC.shadow=JSON.parse(localStorage.getItem('bfg_shadow_v1'))||{};}catch(e){SYNC.shadow={};}}
 function persistShadow(){try{localStorage.setItem('bfg_shadow_v1',JSON.stringify(SYNC.shadow));}catch(e){}}
-function isLocal(k){return LOCAL_ONLY.indexOf(k)>=0;}
+function isLocal(k){return k.charAt(0)==='_'||LOCAL_ONLY.indexOf(k)>=0;}
 
 /* ------------------------------ API ------------------------------ */
 async function api(path,opt){
@@ -17666,6 +17666,223 @@ try{
  if(_lf&&!_lf.dataset.syncTag){_lf.dataset.syncTag='1';_lf.innerHTML+=' <span style="opacity:.6">· sync v2.1</span>';}
 }catch(e){}
 if(SYNC.tok&&sessionStorage.getItem('bfg_me')){bootstrapFromServer();}
+
+})();
+
+</script>
+<script>
+/* ======================================================================
+ * SELEN v1 — دستیار هوشمند «سلن» بسپار فوم غرب
+ * ۱) سرویس DeepSeek (سازگار OpenAI) در فهرست ارائه‌دهندگان
+ * ۲) سیم‌کشی یکپارچه aiCall → لایه چندسرویسه aiCfg (همه فیچرهای AI)
+ * ۳) موتور دانش داخلی سلن — پاسخ محاسباتی واقعی از داده‌های زنده سامانه
+ * ۴) STT صادقانه: رونویسی ابری واقعی + خطاهای شفاف (بدون متن جعلی)
+ * ====================================================================== */
+(function(){
+'use strict';
+
+/* ---------- ۱) DeepSeek در AI_PROVIDERS (بازآرایی: دومین گزینه) ---------- */
+try{
+ var keep={};Object.keys(AI_PROVIDERS).forEach(function(k){keep[k]=AI_PROVIDERS[k];delete AI_PROVIDERS[k];});
+ AI_PROVIDERS.offline=keep.offline;
+ AI_PROVIDERS.deepseek={t:'DeepSeek (آنلاین — سازگار OpenAI)',url:'https://api.deepseek.com/v1',hint:'کلید API از platform.deepseek.com بگیرید و در فیلد زیر وارد کنید؛ مدل: deepseek-chat'};
+ Object.keys(keep).forEach(function(k){if(k!=='offline')AI_PROVIDERS[k]=keep[k];});
+}catch(e){}
+
+/* ---------- مدل پیش‌فرض هر سرویس هنگام تعویض ارائه‌دهنده ---------- */
+try{
+ var AI_DEFAULT_MODEL={deepseek:'deepseek-chat',openai:'gpt-4o-mini',gemini:'gemini-1.5-flash',azure:'gpt-4o-mini',custom:'llama3.1'};
+ var _aiSetP0=aiSet;
+ aiSet=function(k,v){
+  _aiSetP0(k,v);
+  if(k==='provider'){
+   var dm=AI_DEFAULT_MODEL[v];
+   if(dm){DB.aiCfg.model=dm;DB.aiCfg.visionModel=dm;save();toast('مدل پیش‌فرض «'+dm+'» تنظیم شد — تست اتصال را انجام دهید');}
+  }
+ };
+}catch(e){}
+
+/* ---------- مهاجرت تنظیمات قدیمی settings.ai به DeepSeek (اگر دست‌نخورده) ---------- */
+try{
+ if(DB.settings&&DB.settings.ai&&/openai\.com/.test(DB.settings.ai.endpoint||'')&&!DB.settings.ai.key){
+  DB.settings.ai.provider='deepseek';
+  DB.settings.ai.endpoint='https://api.deepseek.com/v1/chat/completions';
+  DB.settings.ai.model='deepseek-chat';
+  save();
+ }
+}catch(e){}
+
+/* ---------- ۲) aiCall یکپارچه: ابتدا aiCfg (DeepSeek/…) سپس settings.ai ---------- */
+aiCall=async function(messages,imageDataUrl){
+ var lastQ=messages[messages.length-1];
+ var lastText=typeof lastQ.content==='string'?lastQ.content:(lastQ.content||[]).map(function(p){return p.text||'';}).join(' ');
+ var sysText=(typeof AI_SYS!=='undefined')?AI_SYS:'تو «سلن»، دستیار هوشمند CMMS بسپار فوم غرب هستی. پاسخ فارسی، فنی و کاربردی بده.';
+ /* مسیر ۱: لایه چندسرویسه aiCfg */
+ if(typeof aiOnline==='function'&&aiOnline()){
+  var msgs=messages.map(function(m){return{role:m.role,content:m.content};});
+  if(imageDataUrl){var l=msgs[msgs.length-1];l.content=[{type:'text',text:typeof l.content==='string'?l.content:lastText},{type:'image_url',image_url:{url:imageDataUrl}}];}
+  var r=await aiChat([{role:'system',content:sysText}].concat(msgs),imageDataUrl?{model:DB.aiCfg.visionModel||DB.aiCfg.model}:{});
+  if(r.ok&&r.text)return{text:r.text,online:true};
+  return{text:localAI(lastText,imageDataUrl)+'\n\n⚠️ سلن آنلاین در دسترس نبود ('+(r.error||'')+') — پاسخ از موتور دانش داخلی.',online:false};
+ }
+ /* مسیر ۲: تنظیمات قدیمی settings.ai (سازگاری) */
+ var cfg=(DB.settings&&DB.settings.ai)||{};
+ if(cfg.key&&cfg.endpoint){
+  try{
+   var msgs2=messages.map(function(m){return{role:m.role,content:m.content};});
+   if(imageDataUrl){var l2=msgs2[msgs2.length-1];l2.content=[{type:'text',text:typeof l2.content==='string'?l2.content:lastText},{type:'image_url',image_url:{url:imageDataUrl}}];}
+   var res=await fetch(cfg.endpoint,{method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+cfg.key},
+    body:JSON.stringify({model:cfg.model||'deepseek-chat',messages:[{role:'system',content:sysText}].concat(msgs2),max_tokens:800})});
+   if(!res.ok)throw new Error('HTTP '+res.status);
+   var j=await res.json();
+   return{text:j.choices[0].message.content,online:true};
+  }catch(e){
+   return{text:localAI(lastText,imageDataUrl)+'\n\n⚠️ اتصال به مدل آنلاین برقرار نشد ('+e.message+') — پاسخ از موتور دانش داخلی سلن.',online:false};
+  }
+ }
+ /* مسیر ۳: موتور دانش داخلی سلن */
+ return{text:localAI(lastText,imageDataUrl)+'\n\n💡 «سلن» در حالت دانش داخلی فعال است — برای اتصال آنلاین (DeepSeek/…) از «تنظیمات AI و گفتار به متن» کلید را ثبت کنید.',online:false};
+};
+
+/* ---------- ۳) موتور دانش داخلی سلن v2 — محاسبات واقعی از DB ---------- */
+localAI=function(q,img){
+ q=String(q||'');
+ function sq(s){return String(s||'').replace(/[\s‌‏ـ​\u200c]/g,'').toLowerCase();}
+ var now=new Date(),d90=new Date(now.getTime()-90*864e5),soon30=new Date(now.getTime()+30*864e5);
+ var openWOs=DB.wos.filter(function(w){return['closed','cancel','done'].indexOf(w.status)<0;});
+ var lowStock=(DB.items||[]).filter(function(i){return+(i.stock||0)<+(i.min!=null?i.min:(i.min_stock||0));});
+ var pmDue=(DB.pms||[]).map(function(p){var last=p.lastRun||p.last_run||p.last;var iv=+(p.interval||p.interval_days||0);return{p:p,due:last?new Date(new Date(last).getTime()+iv*864e5):null};}).filter(function(x){return x.due&&x.due<now;});
+ var calDue=(DB.instruments||[]).map(function(i){var last=i.lastCal||i.last_cal;var iv=+(i.period||i.period_days||0);return{i:i,due:last?new Date(new Date(last).getTime()+iv*864e5):null};}).filter(function(x){return x.due&&x.due<soon30;});
+ var loansLate=(DB.toolLoans||[]).filter(function(l){return!(l.returned||l.returned_at)&&l.due&&new Date(l.due)<now;});
+ function findAsset(t){
+  var s=sq(t);if(s.length<3)return null;
+  return(DB.assets||[]).find(function(a){return a.name&&String(a.name).length>2&&sq(a.name)&&s.indexOf(sq(a.name).slice(0,Math.min(9,sq(a.name).length)))>=0;})
+       ||(DB.assets||[]).find(function(a){return a.code&&t.toUpperCase().indexOf(String(a.code).toUpperCase())>=0;})
+       ||(DB.assets||[]).find(function(a){return a.name&&sq(a.name).length>5&&sq(a.name).indexOf(s.slice(0,6))>=0;});
+ }
+ function namedOf(x){return x.no?('['+x.no+'] '):'';}
+ function assetWOs(a){return DB.wos.filter(function(w){return w.assetId===a.id;});}
+
+ if(img)return 'تحلیل تصویر — موتور دانش داخلی سلن: تصویر دریافت شد، اما پردازش بینایی ماشین فقط در حالت آنلاین (مدل Vision) ممکن است. در «تنظیمات AI» سرویس DeepSeek/OpenAI را متصل کنید؛ یا شرح خرابی را بنویسید تا از سوابق سامانه تحلیل بدهم.';
+
+ /* --- سلام --- */
+ if(/^(سلام|درود|hello|hi)/i.test(q)&&q.length<25)
+  return 'سلام! من «سلن» هستم — دستیار دانش‌داده نگهداری و تعمیرات بسپار فوم غرب 🤖\nالان '+fa(DB.wos.length)+' دستورکار، '+fa(DB.assets.length)+' تجهیز و '+fa((DB.items||[]).length)+' قلم انبار در اختیار من است. می‌توانی بپرسی:\n• وضعیت موجودی و اقلام زیر نقطه سفارش\n• دستورکارهای باز و معوقه، PM سررسید، کالیبراسیون\n• سوابق تعمیر یک تجهیز خاص (اسمش را بگو)\n• آمار هزینه‌ها و ابزار امانی';
+
+ /* --- تجهیز خاص --- */
+ var fa0=findAsset(q);
+ if(fa0&&/وضعیت|خراب|تعمیر|سابقه|مشکل|ارزیابی|تحلیل|توقف/.test(q)){
+  var ws=assetWOs(fa0),ows=ws.filter(function(w){return['closed','cancel','done'].indexOf(w.status)<0;});
+  var last3=ws.slice(0,3).map(function(w){return namedOf(w)+(WO_TYPE[w.type]||w.type)+' — '+((WO_ST[w.status]||[])[0]||w.status)+((w.report&&w.report.text)?(' — '+String(w.report.text).slice(0,60)):(w.desc?(' — '+String(w.desc).slice(0,60)):''));});
+  return 'تحلیل سلن برای «'+fa0.name+'» (کد '+(fa0.code||'—')+'):\n• وضعیت فعلی: '+((AS_ST[fa0.status]||[])[0]||fa0.status||'—')+' — در مجموع '+fa(ws.length)+' دستورکار ثبت شده ('+fa(ows.length)+' باز).\n• آخرین سوابق: '+(last3.join(' | ')||'سابقه‌ای نیست')+'\n• قطعات مصرفی ثبت‌شده: '+(ws.map(function(w){return(w.parts||[]).map(function(p){var it=item(p.itemId);return it?it.name:null;}).filter(Boolean);}).reduce(function(a,b){return a.concat(b);},[]).slice(0,6).join('، ')||'—')+'\nپیشنهاد: برای «'+fa0.name+'» چک‌لیست PM دوره‌ای و تاریخچه خرابی‌های مشابه را بازبینی کن; در صورت لزوم WO پیش‌بینانه بساز.';
+ }
+ /* --- موجودی / نقطه سفارش --- */
+ if(/موجودی|انبار|نقطه سفارش|کمبود|اتمام|قطعه/.test(q)&&/کالیبر/.test(q)===false){
+  if(!lowStock.length)return 'موجودی انبار سالم است ✅ هیچ قلمی زیر نقطه سفارش نیست ('+fa((DB.items||[]).length)+' قلم رصد می‌شود).';
+  return '⚠️ '+fa(lowStock.length)+' قلم زیر نقطه سفارش است (سلن): '+lowStock.slice(0,8).map(function(i){return i.name+' ('+fa(i.stock)+'/'+fa(i.min!=null?i.min:'—')+')';}).join('، ')+(lowStock.length>8?' و '+fa(lowStock.length-8)+' قلم دیگر':'')+'.\nپیشنهاد: درخواست خرید/رسید برای این اقلام صادر شود.';
+ }
+ /* --- PM عقب‌افتاده --- */
+ if(/پیا?م|نگهداری پیشگیرانه|سررسید|معوق|دیرکرد/.test(q)&&!/کالیبر|ابزار/.test(q)){
+  if(!pmDue.length)return 'PM عقب‌افتاده‌ای نیست ✅ ('+fa((DB.pms||[]).length)+' برنامه فعال). انطباق PM عالی است.';
+  return '⚠️ '+fa(pmDue.length)+' PM از سررسید گذشته است: '+pmDue.slice(0,6).map(function(x){var a=x.p.assetId?asset(x.p.assetId):null;return(x.p.title||'PM')+(a?(' — '+a.name):'')+' (سررسید '+jDate(x.due)+')';}).join('، ')+'.\nاقدام: در ماژول PM دکمه «صدور دستورکار» را بزن تا WO متناظر ساخته شود.';
+ }
+ /* --- کالیبراسیون --- */
+ if(/کالیبر/.test(q)){
+  if(!calDue.length)return 'ابزار سنجشی با سررسید نزدیک (۳۰ روز) وجود ندارد ✅';
+  return '🎯 برنامه کالیبراسیون پیش‌رو: '+calDue.map(function(x){return(x.i.name||x.i.code)+' — '+(x.due<now?'گذشته از سررسید':'سررسید '+jDate(x.due));}).join('، ')+'.\n'+(calDue.some(function(x){return x.due<now;})?'⚠️ موارد گذشته از سررسید باید فوراً از مدار خارج یا ارسال کالیبراسیون شوند.':'');
+ }
+ /* --- ابزار امانی --- */
+ if(/ابزار|امانی|اقراض/.test(q)){
+  if(!loansLate.length)return 'همه ابزارهای امانی سر موقع هستند ✅ ('+fa((DB.toolLoans||[]).length)+' سند امانت).';
+  return '🧰 '+fa(loansLate.length)+' ابزار امانی دیرکرد دارد: '+loansLate.slice(0,6).map(function(l){var t=DB.tools.find(function(x){return x.id===l.toolId||x.id===l.tool_id;});return(t?t.name:'ابزار')+' — '+(l.holder_name||l.holder||'')+' (سررسید '+jDate(l.due||l.returnDate)+')';}).join('، ')+'. پیگیری عودت لازم است.';
+ }
+ /* --- مرخصی --- */
+ if(/مرخص/.test(q)){
+  var onL=(DB.leaves||[]).filter(function(l){return l.status==='approved';});
+  return 'وضعیت مرخصی‌ها: '+fa(onL.length)+' مرخصی تأییدشده ثبت است. برای حضور امروز و مأموریت‌ها به «تقویم و مرخصی» مراجعه کن.';
+ }
+ /* --- هزینه --- */
+ if(/هزینه|بودجه/.test(q)){
+  var byKind={};(DB.costEntries||[]).forEach(function(e){byKind[e.kind]=(byKind[e.kind]||0)+(+e.amount||0);});
+  var total=(DB.costEntries||[]).reduce(function(s,e){return s+(+e.amount||0);},0);
+  return 'خلاصه هزینه‌های نت (سلن): مجموع '+money(total)+' ریال در '+fa((DB.costEntries||[]).length)+' سند — تفکیک: '+Object.keys(byKind).map(function(k){return k+' '+money(byKind[k]);}).join('، ')+'. جزئیات در ماژول «هزینه‌ها و بودجه».';
+ }
+ /* --- KPI --- */
+ if(/mttr|میانگین زمان تعمیر/i.test(q)){
+  var tt=DB.wos.filter(function(w){return w.times&&w.times.start&&w.times.end;}).map(function(w){return(new Date(w.times.end)-new Date(w.times.start))/36e5;}).filter(function(h){return h>0&&h<2000;});
+  if(!tt.length)return 'MTTR قابل محاسبه نیست — هنوز دستورکاری با زمان شروع/پایان ثبت‌شده کامل وجود ندارد. با ثبت زمان واقعی در گزارش کارها، سلن این شاخص را محاسبه می‌کند.';
+  var m=tt.reduce(function(a,b){return a+b;},0)/tt.length;
+  return 'MTTR محاسبه‌شده از '+fa(tt.length)+' دستورکار تکمیل‌شده: '+fa(m.toFixed(1))+' ساعت. (میانگین زمان از شروع تا پایان کار ثبت‌شده در سامانه)';
+ }
+ if(/mtbf/i.test(q)){
+  var bd=DB.wos.filter(function(w){return w.type==='BD'&&new Date(w.createdAt||0)>d90;}).length;
+  return 'شاخص MTBF از داده خرابی‌ها: '+fa(bd)+' خرابی اضطراری (BD) در ۹۰ روز گذشته ثبت شده. برای MTBF دقیق به ساعت کارکرد تجهیزات (در ماژول تجهیزات ثبت می‌شود) نیاز است؛ فعلاً تمرکز را روی کاهش BDها بگذار — پارتوی علت‌ها در گزارش‌ساز.';
+ }
+ /* --- دستورکار / آمار کلی --- */
+ if(/دستورکار|گزارش|آمار|وضعیت کلی|خلاصه/.test(q)){
+  var bySt={};DB.wos.forEach(function(w){bySt[w.status]=(bySt[w.status]||0)+1;});
+  return 'خلاصه وضعیت سامانه (سلن):\n• دستورکارها: '+fa(DB.wos.length)+' — باز '+fa(openWOs.length)+'، انجام‌شده '+fa(DB.wos.filter(function(w){return w.status==='done';}).length)+'، بسته '+fa(DB.wos.filter(function(w){return w.status==='closed';}).length)+'\n• درخواست‌های باز: '+fa((DB.requests||[]).filter(function(r){return['new','review'].indexOf(r.status)>=0;}).length)+'\n• اقلام زیر نقطه سفارش: '+fa(lowStock.length)+' — PM معوق: '+fa(pmDue.length)+'\nبرای جزئیات، موضوع را دقیق‌تر بپرس (مثلاً «اقلام زیر نقطه سفارش» یا نام تجهیز).';
+ }
+ /* --- خرابی / توقف --- */
+ if(/خرابی|توقف|پرتکرار|علت/.test(q)){
+  var cm=DB.wos.filter(function(w){return['BD','CM'].indexOf(w.type)>=0;});
+  var byA={};cm.forEach(function(w){var a=w.assetId?asset(w.assetId):null;if(a)byA[a.name]=(byA[a.name]||0)+1;});
+  var top=Object.keys(byA).sort(function(a,b){return byA[b]-byA[a];}).slice(0,3);
+  return 'تحلیل خرابی‌ها (سلن): '+fa(cm.length)+' مورد CM/BD ثبت شده. '+(top.length?('بیشترین تکرار: '+top.map(function(n){return n+' ('+fa(byA[n])+')';}).join('، ')+'. '):'')+'پارتوی علت‌ها در «گزارش‌ساز» قابل چاپ است. اقدام پیشنهادی: بازنگری PM تجهیزات پرتکرار و بررسی RCA روی آخرین خرابی.';
+ }
+ /* --- پیش‌فرض --- */
+ return 'سلن بر اساس داده‌های زنده سامانه ('+fa(DB.wos.length)+' دستورکار، '+fa(DB.assets.length)+' تجهیز، '+fa((DB.items||[]).length)+' قلم): موضوع «'+q.slice(0,60)+'» را رصد کردم. برای پاسخ دقیق‌تر یکی از این‌ها را بپرس:\n• اقلام زیر نقطه سفارش / موجودی انبار\n• PM معوق یا کالیبراسیون پیش‌رو\n• سوابق «نام تجهیز» (مثلاً پمپ تزریق)\n• خلاصه آمار / هزینه‌ها / ابزار امانی\nیا برای تحلیل عمیق متنی، DeepSeek را در تنظیمات AI وصل کنید.';
+};
+
+/* ---------- ۴) STT صادقانه — بدون متن جعلی ---------- */
+try{
+ doSTT=function(){
+  var box=$('#sttBox'),ta=$('#rpTextV'),st=$('#recStatus');
+  if(box)box.style.display='block';
+  var polish=function(t){return(typeof sttPolish==='function')?sttPolish(t):t;};
+  /* سرویس ابری (Whisper/…) */
+  if(DB.aiCfg.sttProvider!=='browser'){
+   if(st)st.textContent='⏳ ارسال فایل صوتی به سرویس رونویسی…';
+   sttCloud(REC.blob).then(function(r){
+    if(r.ok&&r.text){ta.value=polish(r.text);if(st)st.textContent='✅ گفتار توسط سرویس رونویسی به متن تبدیل شد — بازبینی کنید';}
+    else{if(st)st.textContent='🟡 سرویس رونویسی پاسخ نداد: '+(r.error||'')+' — متن را دستی بنویسید';}
+   });
+   return;
+  }
+  /* موتور مرورگر */
+  if(REC.srText&&REC.srText.trim()){
+   ta.value=polish(REC.srText.trim());
+   if(st)st.textContent='✅ گفتار با موتور مرورگر (fa-IR) به متن تبدیل شد — بازبینی کنید';
+   return;
+  }
+  var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){
+   if(st)st.textContent='🟡 این مرورگر Web Speech API ندارد — از Chrome/Edge استفاده کنید یا در «تنظیمات AI» سرویس Whisper را فعال کنید. فایل صوتی ذخیره است؛ متن را دستی بنویسید.';
+   return;
+  }
+  if(st)st.textContent='🟡 گفتاری تشخیص داده نشد — دوباره ضبط کنید یا متن را دستی بنویسید.';
+ };
+}catch(e){}
+
+/* ---------- sttDemo (دکمه قدیمی فرم گزارش) — رونویسی واقعی یک‌باره ---------- */
+sttDemo=function(){
+ var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+ if(!SR){toast('🟡 این مرورگر از گفتار به متن پشتیبانی نمی‌کند — از Chrome/Edge استفاده کنید یا از مودال «گزارش صوتی» (۱ دقیقه ضبط + رونویسی) استفاده کنید',1);return;}
+ try{
+  var sr=new SR();sr.lang='fa-IR';sr.interimResults=false;sr.continuous=false;
+  toast('🎙️ در حال شنیدن… صحبت کنید');
+  sr.onresult=function(e){
+   var txt='';for(var i=0;i<e.results.length;i++)txt+=e.results[i][0].transcript+' ';
+   var polish=function(t){return(typeof sttPolish==='function')?sttPolish(t):t;};
+   var t=$('#rpText');if(t){t.value=(t.value?t.value+' ':'')+polish(txt.trim());
+   if(typeof sttUsed!=='undefined')sttUsed=true;
+   toast('✅ متن گفتار درج شد — قابل ویرایش');}
+  };
+  sr.onerror=function(e){toast('⛔ خطای گفتار به متن: '+e.error,1);};
+  sr.start();
+ }catch(e){toast('خطا در شروع رونویسی',1);}
+};
 
 })();
 
