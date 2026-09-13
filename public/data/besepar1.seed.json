@@ -1,0 +1,2311 @@
+{
+  "version": "1405.1",
+  "factory": {
+    "id": "b1-site",
+    "code": "B1",
+    "name": "بسپار ۱"
+  },
+  "categories": [
+    {
+      "id": "b1-cat-1",
+      "code": "B1-CAT-01",
+      "name": "ماشین‌آلات تولید",
+      "sortOrder": 1
+    },
+    {
+      "id": "b1-cat-2",
+      "code": "B1-CAT-02",
+      "name": "عمرانی",
+      "sortOrder": 2
+    },
+    {
+      "id": "b1-cat-3",
+      "code": "B1-CAT-03",
+      "name": "ایمنی و پشتیبانی",
+      "sortOrder": 3
+    },
+    {
+      "id": "b1-cat-4",
+      "code": "B1-CAT-04",
+      "name": "برق",
+      "sortOrder": 4
+    },
+    {
+      "id": "b1-cat-5",
+      "code": "B1-CAT-05",
+      "name": "اداری",
+      "sortOrder": 5
+    },
+    {
+      "id": "b1-cat-6",
+      "code": "B1-CAT-06",
+      "name": "آی‌تی",
+      "sortOrder": 6
+    },
+    {
+      "id": "b1-cat-7",
+      "code": "B1-CAT-07",
+      "name": "ترابری",
+      "sortOrder": 7
+    },
+    {
+      "id": "b1-cat-8",
+      "code": "B1-CAT-08",
+      "name": "ابزارآلات",
+      "sortOrder": 8
+    },
+    {
+      "id": "b1-cat-9",
+      "code": "B1-CAT-09",
+      "name": "اندازه‌گیری",
+      "sortOrder": 9
+    },
+    {
+      "id": "b1-cat-10",
+      "code": "B1-CAT-10",
+      "name": "گیاهان",
+      "sortOrder": 10
+    }
+  ],
+  "technicians": [
+    {
+      "id": "b1-tech-mahmoud",
+      "username": "mahmoud.m",
+      "name": "محمود محمودآبادی",
+      "specialty": "تأسیسات و مکانیک"
+    },
+    {
+      "id": "b1-tech-ahmad",
+      "username": "ahmad.k",
+      "name": "احمد کاووسی",
+      "specialty": "برق صنعتی"
+    },
+    {
+      "id": "b1-tech-mohsen",
+      "username": "mohsen.p",
+      "name": "محسن پیرایش",
+      "specialty": "مکانیک"
+    },
+    {
+      "id": "b1-tech-nejat",
+      "username": "nejat.b",
+      "name": "نجات بابایی",
+      "specialty": "مکانیک صنعتی"
+    },
+    {
+      "id": "b1-tech-asghar",
+      "username": "asghar.r",
+      "name": "اصغر رضایی",
+      "specialty": "جوشکاری و تأسیسات"
+    },
+    {
+      "id": "b1-tech-ali",
+      "username": "ali.m",
+      "name": "علی محمدی",
+      "specialty": "دستگاه‌های تزریق"
+    }
+  ],
+  "equipment": [
+    {
+      "id": "b1-eq-p01",
+      "code": "B1P01",
+      "name": "دستگاه تزریق فوم فشار بالا MAMIX 12/28",
+      "category": "ماشین‌آلات تولید",
+      "type": "eq",
+      "status": "active",
+      "criticality": "A",
+      "model": "MAMIX 12/28",
+      "maker": "DUT Korea",
+      "location": "سالن تولید فوم - خط ۱ - نزدیک مخازن مواد",
+      "year": "۱۳۹۴",
+      "install": "۱۳۹۴/۰۷/۲۶",
+      "capacity": "۹۰۰ گرم/ثانیه",
+      "dailyHours": 5.5,
+      "criticalityScore": 100,
+      "keyParts": [
+        "پمپ هیدرولیک ۲۷L/min (۵۰۱۳۵۰)",
+        "الکتروموتور ۴۰۵kW",
+        "پک هیدرولیک ۶۰L",
+        "پمپ DMP-028 پولیول (۵۰۲۵۷۹)",
+        "پمپ DMP-012 ایزو (۵۴۱۰۴۸)",
+        "فیلتر هیدرولیک (۵۴۵۵۵۰)",
+        "آکومولاتور ۴L (۵۴۲۵۰۴)",
+        "آکومولاتور ۲L (۵۴۲۵۰۵)",
+        "شیر هیدرولیک ۴/۲ (۵۴۲۵۲۱)",
+        "هد تزریق ۵۰۰g/s (۵۰۲۹۱۴)",
+        "کلگی DHV1625 (۵۰۲۹۱۴)",
+        "کلگی DHV1218 (۵۰۲۹۱۵)",
+        "اکچویتور ۱/۴ اینچ (۵۴۲۵۰۸)",
+        "شیلنگ پنوماتیک ۱۰mm (۵۰۲۷۷۳)",
+        "رگولاتور باد ۱/۲ اینچ (۵۴۰۸۹۲)",
+        "تابلو برق B1P1E04",
+        "اینورتر ۵.۵kW (۵۴۴۴۳۷)",
+        "اینورتر ۷.۵kW (۵۰۱۱۶۵)",
+        "سنسور PT100 (۵۰۲۹۲۲)",
+        "کنتاکتور D18 (۵۰۴۲۳۹)",
+        "کنتاکتور D12 (۵۰۴۲۴۰)",
+        "کنتاکتور D32 (۵۴۱۵۶۴)",
+        "کلید حرارتی ۴-۶A (۵۴۲۵۱۳)",
+        "کلید حرارتی ۱۳-۱۸A (۵۴۲۵۱۲)",
+        "رله AHN12324 (۵۴۲۵۱۹)"
+      ],
+      "pm": {
+        "daily": [
+          "کنترل سرمایش، وایرینگ و گیج",
+          "بازدید پک هیدرولیک و Piping",
+          "نظافت فیلتر مواد",
+          "کنترل شیرهای پنوماتیک/هیدرولیک",
+          "کنترل فشار روغن و دمای مخازن"
+        ],
+        "weekly": [
+          "روغن‌کاری",
+          "نظافت عمومی",
+          "کنترل تسمه‌ها",
+          "کنترل سطح روغن هیدرولیک"
+        ],
+        "monthly": [
+          "کنترل روغن گیربکس/پمپ‌ها و هیدرولیک",
+          "نظافت فیلتر هیدرولیک/پولیول/ایزو",
+          "نظافت تابلو برق",
+          "کالیبراسیون نسبت اختلاط",
+          "کنترل عملکرد پمپ‌های DMP"
+        ],
+        "quarterly": [
+          "آچارکشی تابلو و پایه‌ها",
+          "بازدید پمپ‌های DMP",
+          "بررسی کلگی تزریق"
+        ],
+        "semiannual": [
+          "آچارکشی پایه موتور و نظافت پروانه",
+          "تعویض فیلتر هیدرولیک ۵۴۵۵۵۰"
+        ],
+        "annual": [
+          "تعویض روغن هیدرولیک ۵۰۳۳۴۹ و گیربکس",
+          "تست کنتاکتورها",
+          "ضخامت‌سنجی مخازن",
+          "کالیبراسیون سنسورها",
+          "بازدید شیرهای هیدرولیک",
+          "سرویس کلگی تزریق و پمپ‌های DMP"
+        ]
+      },
+      "dailyInspection": [
+        "دمای سرمایش کمتر از ۳۰°C",
+        "فشار هیدرولیک بین ۱۵۰ تا ۲۰۰ بار",
+        "بدون نشتی روغن یا مواد",
+        "بدون صدای غیرعادی پمپ‌ها",
+        "سلامت شیلنگ‌ها",
+        "سطح روغن بین MIN و MAX",
+        "دقت گیج‌ها",
+        "چراغ‌های سیگنال سبز",
+        "دمای مخازن بین ۲۰ تا ۲۵°C"
+      ],
+      "history": [
+        {
+          "date": "۱۴۰۲/۰۳/۳۰",
+          "type": "PM",
+          "title": "تعویض پک هیدرولیک",
+          "technician": "محمود محمودآبادی",
+          "durationHours": 4.0
+        },
+        {
+          "date": "۱۴۰۲/۰۶/۰۲",
+          "type": "PM",
+          "title": "تعویض پک هیدرولیک",
+          "technician": "محمود محمودآبادی",
+          "durationHours": 3.0
+        },
+        {
+          "date": "۱۴۰۲/۰۸/۲۷",
+          "type": "PM",
+          "title": "تعویض پک هیدرولیک",
+          "technician": "محمود محمودآبادی",
+          "durationHours": 4.0
+        },
+        {
+          "date": "۱۴۰۲/۰۸/۲۷",
+          "type": "EM",
+          "title": "خرابی سنسور پراکسی",
+          "technician": "احمد کاووسی",
+          "durationHours": 2.0
+        },
+        {
+          "date": "۱۴۰۲/۰۸/۲۷",
+          "type": "EM",
+          "title": "خرابی شیر برقی انبار مواد",
+          "technician": "احمد کاووسی",
+          "durationHours": 1.5
+        },
+        {
+          "date": "۱۴۰۲/۱۰/۱۰",
+          "type": "PM",
+          "title": "تعویض پک هیدرولیک",
+          "technician": "محمود محمودآبادی",
+          "durationHours": 3.5
+        },
+        {
+          "date": "۱۴۰۲/۱۰/۱۰",
+          "type": "EM",
+          "title": "خرابی سنسور پراکسی",
+          "technician": "احمد کاووسی",
+          "durationHours": 1.0
+        },
+        {
+          "date": "۱۴۰۲/۱۲/۲۵",
+          "type": "EM",
+          "title": "خرابی الکتروموتور",
+          "technician": "محسن پیرایش",
+          "durationHours": 8.0
+        },
+        {
+          "date": "۱۴۰۲/۱۲/۲۵",
+          "type": "PM",
+          "title": "تعویض پک هیدرولیک",
+          "technician": "محمود محمودآبادی",
+          "durationHours": 4.0
+        },
+        {
+          "date": "۱۴۰۲/۱۲/۲۵",
+          "type": "EM",
+          "title": "خرابی پمپ مواد (کاسه نمد)",
+          "technician": "محسن پیرایش",
+          "durationHours": 3.0
+        },
+        {
+          "date": "۱۴۰۲/۱۲/۲۵",
+          "type": "PM",
+          "title": "نظافت و آچارکشی تابلو برق",
+          "technician": "احمد کاووسی",
+          "durationHours": 2.0
+        },
+        {
+          "date": "۱۴۰۳/۰۱/۲۵",
+          "type": "PM",
+          "title": "نظافت فیلتر پولیول",
+          "technician": "محمود محمودآبادی",
+          "durationHours": 1.5
+        },
+        {
+          "date": "۱۴۰۳/۰۲/۲۷",
+          "type": "PM",
+          "title": "نظافت کلی دستگاه",
+          "technician": "نجات بابایی",
+          "durationHours": 4.0
+        },
+        {
+          "date": "۱۴۰۳/۰۳/۲۲",
+          "type": "EM",
+          "title": "خرابی جک کابینتی تابلو",
+          "technician": "احمد کاووسی",
+          "durationHours": 2.0
+        },
+        {
+          "date": "۱۴۰۳/۰۳/۲۲",
+          "type": "EM",
+          "title": "خرابی سنسور القایی",
+          "technician": "احمد کاووسی",
+          "durationHours": 1.5
+        },
+        {
+          "date": "۱۴۰۳/۰۵/۲۴",
+          "type": "PM",
+          "title": "بادگیری و آچارکشی کلی",
+          "technician": "نجات بابایی",
+          "durationHours": 6.0
+        },
+        {
+          "date": "۱۴۰۳/۰۶/۰۶",
+          "type": "EM",
+          "title": "خوردگی مخزن ایزو",
+          "technician": "اصغر رضایی",
+          "durationHours": 12.0
+        },
+        {
+          "date": "۱۴۰۴/۰۲/۲۴",
+          "type": "PM",
+          "title": "شارژ گاز سیستم خنک‌کننده",
+          "technician": "محمود محمودآبادی",
+          "durationHours": 3.0
+        }
+      ],
+      "panel": "B1P1E04"
+    },
+    {
+      "id": "b1-eq-p02",
+      "code": "B1P02",
+      "name": "دستگاه تزریق فوم فشار بالا MAMIX 12/28-DV1218",
+      "category": "ماشین‌آلات تولید",
+      "type": "eq",
+      "status": "active",
+      "criticality": "A",
+      "model": "MAMIX 12/28-DV1218",
+      "maker": "DUT Korea",
+      "location": "سالن تولید فوم - خط ۱ - کنار دستگاه تزریق ۱",
+      "year": "۱۳۹۴",
+      "install": "۱۳۹۴/۰۷/۲۶",
+      "capacity": "۵۰۰ گرم/ثانیه",
+      "dailyHours": 2.5,
+      "criticalityScore": 100,
+      "keyParts": [
+        "پمپ هیدرولیک ۲۷L/min (۵۰۱۳۵۰)",
+        "الکتروموتور ۴۰۵kW",
+        "پک هیدرولیک ۶۰L",
+        "پمپ DMP-028 پولیول (۵۰۲۵۷۹)",
+        "پمپ DMP-012 ایزو (۵۴۱۰۴۸)",
+        "فیلتر هیدرولیک (۵۴۵۵۵۰)",
+        "هد تزریق ۵۰۲۹۱۴",
+        "کلگی DHV1218 ۵۰۲۹۱۵",
+        "اکچویتور ۵۴۲۵۰۸",
+        "شیلنگ پنوماتیک ۵۰۲۷۷۳",
+        "تابلو برق B1P2E05",
+        "اینورتر ۵.۵kW ۵۴۴۴۳۷",
+        "سنسور PT100 ۵۰۲۹۲۲"
+      ],
+      "pm": {
+        "daily": [
+          "کنترل سرمایش، وایرینگ و گیج",
+          "بازدید پک هیدرولیک و Piping",
+          "نظافت فیلتر مواد",
+          "کنترل شیرهای پنوماتیک/هیدرولیک",
+          "کنترل فشار روغن و دمای مخازن"
+        ],
+        "weekly": [
+          "روغن‌کاری",
+          "نظافت عمومی",
+          "کنترل تسمه‌ها",
+          "کنترل سطح روغن هیدرولیک"
+        ],
+        "monthly": [
+          "کنترل روغن گیربکس/پمپ‌ها و هیدرولیک",
+          "نظافت فیلتر هیدرولیک/پولیول/ایزو",
+          "نظافت تابلو برق",
+          "کالیبراسیون نسبت اختلاط",
+          "کنترل عملکرد پمپ‌های DMP"
+        ],
+        "quarterly": [
+          "آچارکشی تابلو و پایه‌ها",
+          "بازدید پمپ‌های DMP",
+          "بررسی کلگی تزریق"
+        ],
+        "semiannual": [
+          "آچارکشی پایه موتور و نظافت پروانه",
+          "تعویض فیلتر هیدرولیک ۵۴۵۵۵۰"
+        ],
+        "annual": [
+          "تعویض روغن هیدرولیک ۵۰۳۳۴۹ و گیربکس",
+          "تست کنتاکتورها",
+          "ضخامت‌سنجی مخازن",
+          "کالیبراسیون سنسورها",
+          "بازدید شیرهای هیدرولیک",
+          "سرویس کلگی تزریق و پمپ‌های DMP"
+        ]
+      },
+      "pmNote": "فواصل با توجه به کارکرد کمتر بازنگری شود",
+      "history": [
+        {
+          "date": "۱۴۰۲/۰۲/۰۶",
+          "type": "PM",
+          "title": "تعویض پک هیدرولیک",
+          "technician": "محمود محمودآبادی",
+          "durationHours": 3.0
+        },
+        {
+          "date": "۱۴۰۲/۰۸/۲۷",
+          "type": "PM",
+          "title": "تعویض پک هیدرولیک",
+          "technician": "محمود محمودآبادی",
+          "durationHours": 4.0
+        },
+        {
+          "date": "۱۴۰۲/۱۰/۱۰",
+          "type": "PM",
+          "title": "تعویض پک هیدرولیک",
+          "technician": "محمود محمودآبادی",
+          "durationHours": 3.5
+        },
+        {
+          "date": "۱۴۰۲/۱۰/۱۰",
+          "type": "EM",
+          "title": "خرابی سنسور پراکسی",
+          "technician": "احمد کاووسی",
+          "durationHours": 1.5
+        },
+        {
+          "date": "۱۴۰۲/۱۰/۱۰",
+          "type": "EM",
+          "title": "خرابی شیر برقی انبار مواد",
+          "technician": "احمد کاووسی",
+          "durationHours": 1.0
+        },
+        {
+          "date": "۱۴۰۲/۱۲/۲۵",
+          "type": "EM",
+          "title": "خرابی الکتروموتور",
+          "technician": "محسن پیرایش",
+          "durationHours": 6.0
+        },
+        {
+          "date": "۱۴۰۲/۱۲/۲۵",
+          "type": "PM",
+          "title": "تعویض پک هیدرولیک",
+          "technician": "محمود محمودآبادی",
+          "durationHours": 4.0
+        },
+        {
+          "date": "۱۴۰۲/۱۲/۲۵",
+          "type": "EM",
+          "title": "خرابی پمپ مواد (کاسه نمد)",
+          "technician": "محسن پیرایش",
+          "durationHours": 2.5
+        },
+        {
+          "date": "۱۴۰۲/۱۲/۲۵",
+          "type": "PM",
+          "title": "نظافت و آچارکشی تابلو",
+          "technician": "احمد کاووسی",
+          "durationHours": 2.0
+        },
+        {
+          "date": "۱۴۰۳/۰۲/۲۷",
+          "type": "PM",
+          "title": "نظافت فیلتر ایزو",
+          "technician": "محمود محمودآبادی",
+          "durationHours": 1.0
+        },
+        {
+          "date": "۱۴۰۳/۰۵/۲۴",
+          "type": "PM",
+          "title": "بادگیری و آچارکشی دستگاه",
+          "technician": "نجات بابایی",
+          "durationHours": 4.0
+        },
+        {
+          "date": "۱۴۰۳/۰۵/۲۴",
+          "type": "EM",
+          "title": "خرابی سنسور حد پایین سطح مواد",
+          "technician": "احمد کاووسی",
+          "durationHours": 2.0
+        }
+      ],
+      "panel": "B1P2E05"
+    },
+    {
+      "id": "b1-eq-p06",
+      "code": "B1P06",
+      "name": "میز گردان ۱",
+      "category": "ماشین‌آلات تولید",
+      "type": "eq",
+      "status": "active",
+      "criticality": "A",
+      "maker": "ایران",
+      "location": "سالن تولید فوم - خط ۱",
+      "year": "۱۳۹۳",
+      "install": "۱۳۹۳/۰۴/۱۰",
+      "capacity": "۱۰ تن/روز",
+      "dailyHours": 7.5,
+      "criticalityScore": 100,
+      "keyParts": [
+        "میز دوار",
+        "قالب‌های آلومینیومی",
+        "یاتاقان‌ها ۵۰۲۹۲۱",
+        "شفت-درام",
+        "درب بازکن",
+        "سرو موتور الکتروگیربکس",
+        "گیربکس ۵۴۵۲۱۵",
+        "دنده شانه‌ای",
+        "سیستم گردش آب",
+        "هرزگرد",
+        "تابلو برق B1P6E6"
+      ],
+      "pm": {
+        "daily": [
+          "روغن‌کاری نقاط روغن‌خور",
+          "کنترل سنسور 0-1، هودها، شیلنگ آب، فن و روشنایی"
+        ],
+        "weekly": [
+          "بازدید گیربکس/سروموتور، دنده شانه‌ای و درب بازکن"
+        ],
+        "monthly": [
+          "گریس‌کاری شفت/یاتاقان با گریس نسوز",
+          "بازدید اورینگ هرزگرد"
+        ],
+        "quarterly": [
+          "بررسی گاید ریل"
+        ],
+        "annual": [
+          "تعویض روغن گیربکس با 85W90"
+        ]
+      },
+      "history": [
+        {
+          "date": "۱۴۰۲/۰۲/۱۰",
+          "type": "PM",
+          "title": "تعویض ۵ یاتاقان",
+          "technician": "محسن پیرایش",
+          "durationHours": 4.0
+        },
+        {
+          "date": "۱۴۰۲/۰۴/۱۲",
+          "type": "EM",
+          "title": "تعویض اورینگ",
+          "technician": "محمود محمودآبادی",
+          "durationHours": 2.0
+        },
+        {
+          "date": "۱۴۰۲/۰۴/۱۲",
+          "type": "EM",
+          "title": "شکستگی/جوشکاری",
+          "technician": "اصغر رضایی",
+          "durationHours": 1.5
+        },
+        {
+          "date": "۱۴۰۲/۰۸/۰۷",
+          "type": "EM",
+          "title": "تعویض یاتاقان",
+          "technician": "محسن پیرایش",
+          "durationHours": 3.0
+        },
+        {
+          "date": "۱۴۰۲/۱۲/۲۵",
+          "type": "EM",
+          "title": "خرابی الکتروموتور",
+          "technician": "احمد کاووسی",
+          "durationHours": 6.0
+        },
+        {
+          "date": "۱۴۰۲/۱۲/۲۵",
+          "type": "PM",
+          "title": "نظافت دستگاه",
+          "technician": "نجات بابایی",
+          "durationHours": 2.0
+        },
+        {
+          "date": "۱۴۰۳/۰۱/۲۵",
+          "type": "PM",
+          "title": "تعویض یاتاقان",
+          "technician": "محسن پیرایش",
+          "durationHours": 2.5
+        },
+        {
+          "date": "۱۴۰۳/۰۲/۲۷",
+          "type": "PM",
+          "title": "تعمیر و روانکاری شفت",
+          "technician": "محمود محمودآبادی",
+          "durationHours": 3.0
+        },
+        {
+          "date": "۱۴۰۳/۰۵/۰۲",
+          "type": "PM",
+          "title": "تعویض روغن گیربکس",
+          "technician": "محمود محمودآبادی",
+          "durationHours": 1.5
+        },
+        {
+          "date": "۱۴۰۴/۰۷/۲۷",
+          "type": "PM",
+          "title": "بازرسی یاتاقان‌ها",
+          "technician": "محسن پیرایش",
+          "durationHours": 2.0
+        }
+      ]
+    },
+    {
+      "id": "b1-eq-p07",
+      "code": "B1P07",
+      "name": "میز گردان ۲",
+      "category": "ماشین‌آلات تولید",
+      "type": "eq",
+      "status": "active",
+      "criticality": "A",
+      "maker": "ایران",
+      "location": "سالن تولید فوم - خط ۱",
+      "year": "۱۳۹۳",
+      "install": "۱۳۹۳/۰۴/۱۰",
+      "capacity": "۱۰ تن/روز",
+      "dailyHours": 5.5,
+      "criticalityScore": 100,
+      "pmRef": "B1P06",
+      "history": [
+        {
+          "date": "۱۴۰۲/۰۷/۱۸",
+          "type": "EM",
+          "title": "خرابی امرجنسی",
+          "technician": "احمد کاووسی",
+          "durationHours": 1.5
+        },
+        {
+          "date": "۱۴۰۲/۰۸/۲۲",
+          "type": "EM",
+          "title": "تعویض اورینگ",
+          "technician": "محمود محمودآبادی",
+          "durationHours": 1.5
+        },
+        {
+          "date": "۱۴۰۲/۰۸/۲۲",
+          "type": "EM",
+          "title": "شکستگی/جوشکاری",
+          "technician": "اصغر رضایی",
+          "durationHours": 2.0
+        },
+        {
+          "date": "۱۴۰۲/۱۰/۲۵",
+          "type": "EM",
+          "title": "تعویض میکروسوئیچ",
+          "technician": "احمد کاووسی",
+          "durationHours": 1.0
+        },
+        {
+          "date": "۱۴۰۲/۱۲/۲۵",
+          "type": "EM",
+          "title": "خرابی الکتروموتور",
+          "technician": "احمد کاووسی",
+          "durationHours": 5.0
+        },
+        {
+          "date": "۱۴۰۲/۱۲/۲۵",
+          "type": "PM",
+          "title": "نظافت دستگاه",
+          "technician": "نجات بابایی",
+          "durationHours": 2.0
+        },
+        {
+          "date": "۱۴۰۳/۰۵/۰۲",
+          "type": "PM",
+          "title": "تعویض شیر گازی",
+          "technician": "محمود محمودآبادی",
+          "durationHours": 1.0
+        },
+        {
+          "date": "۱۴۰۳/۰۵/۲۴",
+          "type": "PM",
+          "title": "جوشکاری گاید ریل",
+          "technician": "اصغر رضایی",
+          "durationHours": 2.5
+        },
+        {
+          "date": "۱۴۰۴/۰۸/۲۸",
+          "type": "PM",
+          "title": "گریس‌کاری شفت و یاتاقان",
+          "technician": "محمود محمودآبادی",
+          "durationHours": 1.5
+        }
+      ]
+    },
+    {
+      "id": "b1-eq-p08",
+      "code": "B1P08",
+      "name": "کانوایرها (۵ دستگاه)",
+      "category": "ماشین‌آلات تولید",
+      "type": "eq",
+      "status": "active",
+      "criticality": "B",
+      "maker": "ایران",
+      "location": "سالن تولید فوم - خطوط انتقال",
+      "year": "۱۳۹۶",
+      "capacity": "۵ دور/دقیقه",
+      "criticalityScore": 60,
+      "pm": {
+        "daily": [
+          "بازدید نوار نقاله"
+        ],
+        "weekly": [
+          "کنترل تسمه‌ها و تابلو برق"
+        ],
+        "monthly": [
+          "گریس‌کاری یاتاقان",
+          "روغن رولیک",
+          "آچارکشی و ریگلاژ"
+        ],
+        "quarterly": [
+          "کنترل روغن گیربکس"
+        ]
+      },
+      "history": [
+        {
+          "date": "۱۴۰۲/۱۲/۲۵",
+          "type": "EM",
+          "title": "خرابی الکتروموتور",
+          "technician": "احمد کاووسی",
+          "durationHours": 4.0
+        },
+        {
+          "date": "۱۴۰۲/۱۲/۲۵",
+          "type": "EM",
+          "title": "خرابی پولی درایو",
+          "technician": "محسن پیرایش",
+          "durationHours": 2.0
+        },
+        {
+          "date": "۱۴۰۲/۱۲/۲۵",
+          "type": "EM",
+          "title": "تعویض تسمه",
+          "technician": "محمود محمودآبادی",
+          "durationHours": 1.5
+        },
+        {
+          "date": "۱۴۰۲/۱۲/۲۵",
+          "type": "PM",
+          "title": "نظافت دستگاه",
+          "technician": "نجات بابایی",
+          "durationHours": 1.0
+        },
+        {
+          "date": "۱۴۰۳/۰۵/۰۲",
+          "type": "PM",
+          "title": "جوشکاری کراشر",
+          "technician": "اصغر رضایی",
+          "durationHours": 2.0
+        },
+        {
+          "date": "۱۴۰۴/۰۸/۱۰",
+          "type": "EM",
+          "title": "تعمیر کاسه نمد گیربکس",
+          "technician": "محسن پیرایش",
+          "durationHours": 3.0
+        }
+      ]
+    },
+    {
+      "id": "b1-eq-pf09",
+      "code": "B1PF09",
+      "name": "کمپرسور هوا ۱۰۰۰L",
+      "category": "ماشین‌آلات تولید",
+      "type": "eq",
+      "status": "active",
+      "criticality": "A",
+      "model": "FINI",
+      "maker": "FINI - Italy",
+      "year": "۱۳۹۴",
+      "capacity": "۸۶۰ لیتر/دقیقه",
+      "dailyHours": 8,
+      "criticalityScore": 95,
+      "keyParts": [
+        "گیج فشار ۵۴۲۸۱۴",
+        "Pressure Switch",
+        "رطوبت‌گیر",
+        "سختی‌گیر",
+        "شیر یکطرفه",
+        "سوپاپ اطمینان ۵۰۴۴۲۱",
+        "تابلو برق B1PF9E1",
+        "شیر تخلیه مخزن"
+      ],
+      "pm": {
+        "daily": [
+          "کنترل Pressure Switch، صدا و دما"
+        ],
+        "weekly": [
+          "بازدید گیج فشار"
+        ],
+        "quarterly": [
+          "روغن، سوپاپ اطمینان و آچارکشی تابلو"
+        ],
+        "annual": [
+          "تعویض تسمه"
+        ]
+      },
+      "history": [
+        {
+          "date": "۱۴۰۲/۰۶/۰۲",
+          "type": "PM",
+          "title": "تعویض تسمه و روغن",
+          "technician": "محمود محمودآبادی",
+          "durationHours": 2.0
+        },
+        {
+          "date": "۱۴۰۲/۱۲/۲۵",
+          "type": "EM",
+          "title": "تعمیر پرشر سوئیچ",
+          "technician": "احمد کاووسی",
+          "durationHours": 1.5
+        },
+        {
+          "date": "۱۴۰۲/۱۲/۲۵",
+          "type": "PM",
+          "title": "تعویض روغن",
+          "technician": "محمود محمودآبادی",
+          "durationHours": 1.0
+        },
+        {
+          "date": "۱۴۰۴/۰۹/۲۵",
+          "type": "EM",
+          "title": "تعویض سیلندر",
+          "technician": "محسن پیرایش",
+          "durationHours": 3.0
+        }
+      ]
+    },
+    {
+      "id": "b1-eq-pf10",
+      "code": "B1PF10",
+      "name": "دیگ آب گرم",
+      "category": "ماشین‌آلات تولید",
+      "type": "eq",
+      "status": "active",
+      "criticality": "A",
+      "maker": "ایران",
+      "year": "۱۴۰۲",
+      "capacity": "۱۵۰۰۰ کیلوکالری",
+      "criticalityScore": 100,
+      "keyParts": [
+        "چشمی UV",
+        "شیر گازی",
+        "رله گازی ۵۰۱۹۱۹",
+        "پمپ گازوئیل",
+        "پمپ آب ۵۴۲۴۶۲",
+        "گیج",
+        "ترموکوپل",
+        "PT100 ۵۰۲۹۲۲",
+        "تابلو برق"
+      ],
+      "pm": {
+        "daily": [
+          "گیج‌ها، رله گازی و آلارم",
+          "آب مخزن و دمپر",
+          "پمپ گازوئیل و پمپ آب",
+          "ترموستات"
+        ],
+        "monthly": [
+          "شیر گازی و چشمی UV"
+        ]
+      },
+      "history": []
+    },
+    {
+      "id": "b1-eq-pf11",
+      "code": "B1PF11",
+      "name": "چیلر تولید فوم",
+      "category": "ماشین‌آلات تولید",
+      "type": "eq",
+      "status": "active",
+      "criticality": "A",
+      "model": "۱۰تنی×6D75-1009",
+      "maker": "آمریکا",
+      "year": "۱۳۹۶",
+      "capacity": "۱۰ تن",
+      "dailyHours": 7,
+      "criticalityScore": 100,
+      "refrigerant": "R22",
+      "keyParts": [
+        "کمپرسور",
+        "گیج کمپرسور",
+        "مخزن آب ۵۰۰L",
+        "تابلو برق کنترل",
+        "فن‌ها",
+        "کندانسور",
+        "پمپ آب ۵۴۲۴۶۲",
+        "شیر سلونوئید ۵۰۲۳۲۳",
+        "ترموکوپل"
+      ],
+      "pm": {
+        "daily": [
+          "کنترل آب مخزن و پمپ گردش آب",
+          "کنترل فشار روغن/گاز R22"
+        ],
+        "monthly": [
+          "کنترل عملکرد چیلر و نظافت کندانسور"
+        ],
+        "annual": [
+          "شستشوی مدار آب",
+          "شارژ گاز R22 ۵۰۱۴۰۷ حسب نیاز",
+          "تست نشتی",
+          "تعویض روغن Suniso SL100"
+        ]
+      },
+      "history": [
+        {
+          "date": "۱۴۰۲/۰۲/۲۵",
+          "type": "PM",
+          "title": "شارژ گاز",
+          "technician": "محمود محمودآبادی",
+          "durationHours": 2.0
+        },
+        {
+          "date": "۱۴۰۲/۰۶/۲۰",
+          "type": "EM",
+          "title": "رفع نشتی",
+          "technician": "محمود محمودآبادی",
+          "durationHours": 3.0
+        },
+        {
+          "date": "۱۴۰۲/۰۷/۱۷",
+          "type": "PM",
+          "title": "شارژ گاز",
+          "technician": "محمود محمودآبادی",
+          "durationHours": 2.0
+        },
+        {
+          "date": "۱۴۰۲/۰۹/۰۹",
+          "type": "EM",
+          "title": "شارژ و رفع نشتی",
+          "technician": "محمود محمودآبادی",
+          "durationHours": 4.0
+        }
+      ]
+    },
+    {
+      "id": "b1-eq-af1",
+      "code": "B1AF1",
+      "name": "دیزل ژنراتور فوم",
+      "category": "برق",
+      "type": "eq",
+      "status": "active",
+      "criticality": "A",
+      "model": "Cummins 6CTAA803-G9",
+      "maker": "آمریکا/انگلستان",
+      "year": "۱۹۷۳",
+      "capacity": "۲۵۰kW",
+      "criticalityScore": 95,
+      "keyParts": [
+        "الکترودیزل ۶ سیلندر",
+        "مخزن سوخت",
+        "دینام شارژ باتری",
+        "ژنراتور ۲۵۰kW",
+        "تسمه پروانه AX49",
+        "باتری ۲۴V-150A",
+        "رادیات آب ۴۰L",
+        "فیلتر روغن KLF747 ۵۰۱۴۰۷",
+        "فیلتر گازوئیل KFF185 ۵۰۱۴۰۸"
+      ],
+      "pm": {
+        "weekly": [
+          "ثبت ساعت کار و شارژ گازوئیل"
+        ],
+        "monthly": [
+          "کنترل تسمه دینام و سطح روغن"
+        ],
+        "quarterly": [
+          "گریس‌کاری و آچارکشی"
+        ],
+        "annual": [
+          "تعویض روغن دیزل، فیلتر روغن و فیلتر گازوئیل"
+        ]
+      },
+      "history": []
+    },
+    {
+      "id": "b1-eq-ad6",
+      "code": "B1AD6",
+      "name": "درب ریلی خیابان ۶",
+      "category": "عمرانی",
+      "type": "eq",
+      "status": "active",
+      "criticality": "B",
+      "model": "NICE",
+      "location": "خیابان ۶",
+      "criticalityScore": 50,
+      "keyParts": [
+        "الکتروموتور درب ریلی ۱۱۰۰۳۷",
+        "دنده شانه‌ای",
+        "ریل شانه‌ای"
+      ],
+      "history": []
+    },
+    {
+      "id": "b1-temp-water-admin",
+      "code": "TMP-B1-ADM-WP",
+      "name": "پمپ آب ساختمان اداری",
+      "category": "اداری",
+      "type": "eq",
+      "status": "active",
+      "criticality": "B",
+      "requiresCoding": true,
+      "location": "ساختمان اداری",
+      "criticalityScore": 0,
+      "dataStatus": "needs-coding"
+    },
+    {
+      "id": "b1-temp-polyol-pipe",
+      "code": "TMP-B1-POL-PIPE",
+      "name": "خط لوله پولیول - انبار مواد",
+      "category": "ماشین‌آلات تولید",
+      "type": "eq",
+      "status": "active",
+      "criticality": "B",
+      "requiresCoding": true,
+      "location": "انبار مواد",
+      "criticalityScore": 0,
+      "dataStatus": "needs-coding"
+    },
+    {
+      "id": "b1-temp-iso-pump",
+      "code": "TMP-B1-ISO-PUMP",
+      "name": "پمپ ایزو - انبار مواد",
+      "category": "ماشین‌آلات تولید",
+      "type": "eq",
+      "status": "active",
+      "criticality": "B",
+      "requiresCoding": true,
+      "location": "انبار مواد",
+      "criticalityScore": 0,
+      "dataStatus": "needs-coding"
+    },
+    {
+      "id": "b1-temp-iso-motor",
+      "code": "TMP-B1-ISO-MOTOR",
+      "name": "الکتروموتور - انبار ایزو",
+      "category": "ماشین‌آلات تولید",
+      "type": "eq",
+      "status": "active",
+      "criticality": "B",
+      "requiresCoding": true,
+      "location": "انبار ایزو",
+      "criticalityScore": 0,
+      "dataStatus": "needs-coding"
+    },
+    {
+      "id": "b1-temp-blend-pumps",
+      "code": "TMP-B1-BLEND-PUMPS",
+      "name": "پمپ‌های بلندینگ پولیول - انبار مواد",
+      "category": "ماشین‌آلات تولید",
+      "type": "eq",
+      "status": "active",
+      "criticality": "B",
+      "requiresCoding": true,
+      "location": "انبار مواد",
+      "criticalityScore": 0,
+      "dataStatus": "needs-coding"
+    },
+    {
+      "id": "b1-eq-p08-1",
+      "code": "B1P08-1",
+      "name": "کانوایر افقی میز ۱",
+      "category": "ماشین‌آلات تولید",
+      "type": "eq",
+      "status": "active",
+      "criticality": "B",
+      "parentEquipment": "b1-eq-p08",
+      "spec": "موتور ۳kW/1430rpm، ۱۲ رولیک، ۱ درام درایو، ۴ یاتاقان",
+      "criticalityScore": 60
+    },
+    {
+      "id": "b1-eq-p08-2",
+      "code": "B1P08-2",
+      "name": "کراشر",
+      "category": "ماشین‌آلات تولید",
+      "type": "eq",
+      "status": "active",
+      "criticality": "B",
+      "parentEquipment": "b1-eq-p08",
+      "spec": "۲ موتور ۲.۲kW/1400rpm، زنجیر و دنده",
+      "criticalityScore": 60
+    },
+    {
+      "id": "b1-eq-p08-3",
+      "code": "B1P08-3",
+      "name": "کانوایر میز ۲",
+      "category": "ماشین‌آلات تولید",
+      "type": "eq",
+      "status": "active",
+      "criticality": "B",
+      "parentEquipment": "b1-eq-p08",
+      "spec": "موتور ۰.۵kW/1300rpm، گیربکس ایتالیا، نوار ۴.۵×۰.۶m",
+      "criticalityScore": 60
+    },
+    {
+      "id": "b1-eq-p08-4",
+      "code": "B1P08-4",
+      "name": "کانوایر ۲ تکه مموری",
+      "category": "ماشین‌آلات تولید",
+      "type": "eq",
+      "status": "active",
+      "criticality": "B",
+      "parentEquipment": "b1-eq-p08",
+      "spec": "موتور ۲.۲kW/1400rpm، ۲ درام درایو، نقاله ۱۰×۱m",
+      "criticalityScore": 60
+    },
+    {
+      "id": "b1-eq-p08-5",
+      "code": "B1P08-5",
+      "name": "کانوایر ۳ تکه فوم پلاس",
+      "category": "ماشین‌آلات تولید",
+      "type": "eq",
+      "status": "active",
+      "criticality": "B",
+      "parentEquipment": "b1-eq-p08",
+      "spec": "۳ موتور ۳kW/1430rpm، ۳ درام درایو، نقاله ۳۰×۱.۲۳m",
+      "criticalityScore": 60
+    }
+  ],
+  "spareParts": [
+    {
+      "id": "b1-item-1",
+      "code": "۵۴۱۰۴۸",
+      "name": "پمپ DMP-012",
+      "stock": 1,
+      "minStock": 1,
+      "priceToman": 45000000,
+      "unit": "عدد",
+      "keyFor": [
+        "b1-eq-p01",
+        "b1-eq-p02"
+      ],
+      "supplyStatus": "کافی"
+    },
+    {
+      "id": "b1-item-2",
+      "code": "۵۰۲۵۷۹",
+      "name": "پمپ DMP-028",
+      "stock": 2,
+      "minStock": 1,
+      "priceToman": 55000000,
+      "unit": "عدد",
+      "keyFor": [
+        "b1-eq-p01",
+        "b1-eq-p02"
+      ],
+      "supplyStatus": "کافی"
+    },
+    {
+      "id": "b1-item-3",
+      "code": "۵۰۱۳۵۰",
+      "name": "پمپ هیدرولیک ۲۷L",
+      "stock": 0,
+      "minStock": 1,
+      "priceToman": 38000000,
+      "unit": "عدد",
+      "keyFor": [
+        "b1-eq-p01",
+        "b1-eq-p02"
+      ],
+      "supplyStatus": "نیاز فوری"
+    },
+    {
+      "id": "b1-item-4",
+      "code": "۵۴۵۸۶۸",
+      "name": "پمپ دنده‌ای R45",
+      "stock": 4,
+      "minStock": 2,
+      "priceToman": 25000000,
+      "unit": "عدد",
+      "keyFor": [
+        "b1-eq-p01",
+        "b1-eq-p02"
+      ],
+      "supplyStatus": "کافی"
+    },
+    {
+      "id": "b1-item-5",
+      "code": "۵۰۲۴۵۱",
+      "name": "بلبرینگ ۶۲۰۵",
+      "stock": 15,
+      "minStock": 10,
+      "priceToman": 150000,
+      "unit": "عدد",
+      "keyFor": [
+        "b1-eq-p01",
+        "b1-eq-p02"
+      ],
+      "supplyStatus": "کافی"
+    },
+    {
+      "id": "b1-item-6",
+      "code": "۵۰۲۴۵۲",
+      "name": "بلبرینگ ۶۳۰۸",
+      "stock": 7,
+      "minStock": 5,
+      "priceToman": 250000,
+      "unit": "عدد",
+      "keyFor": [
+        "b1-eq-p01",
+        "b1-eq-p02"
+      ],
+      "supplyStatus": "کافی"
+    },
+    {
+      "id": "b1-item-7",
+      "code": "۵۰۲۱۵۰",
+      "name": "تسمه B47",
+      "stock": 2,
+      "minStock": 4,
+      "priceToman": 180000,
+      "unit": "عدد",
+      "keyFor": [
+        "b1-eq-p01",
+        "b1-eq-p02"
+      ],
+      "supplyStatus": "نیاز به تأمین"
+    },
+    {
+      "id": "b1-item-8",
+      "code": "۵۴۴۴۳۷",
+      "name": "اینورتر ۵.۵kW",
+      "stock": 1,
+      "minStock": 1,
+      "priceToman": 12000000,
+      "unit": "عدد",
+      "keyFor": [
+        "b1-eq-p01",
+        "b1-eq-p02"
+      ],
+      "supplyStatus": "کافی"
+    },
+    {
+      "id": "b1-item-9",
+      "code": "۵۰۱۱۶۵",
+      "name": "اینورتر ۷.۵kW",
+      "stock": 0,
+      "minStock": 1,
+      "priceToman": 15000000,
+      "unit": "عدد",
+      "keyFor": [
+        "b1-eq-p01",
+        "b1-eq-p02"
+      ],
+      "supplyStatus": "نیاز فوری"
+    },
+    {
+      "id": "b1-item-10",
+      "code": "۵۰۲۹۲۲",
+      "name": "سنسور PT100",
+      "stock": 2,
+      "minStock": 2,
+      "priceToman": 550000,
+      "unit": "عدد",
+      "keyFor": [
+        "b1-eq-p01",
+        "b1-eq-p02"
+      ],
+      "supplyStatus": "کافی"
+    },
+    {
+      "id": "b1-item-11",
+      "code": "۵۴۵۵۵۰",
+      "name": "فیلتر هیدرولیک",
+      "stock": 3,
+      "minStock": 2,
+      "priceToman": 420000,
+      "unit": "عدد",
+      "keyFor": [
+        "b1-eq-p01",
+        "b1-eq-p02"
+      ],
+      "supplyStatus": "کافی"
+    },
+    {
+      "id": "b1-item-12",
+      "code": "۵۰۲۷۷۶",
+      "name": "شیلنگ هیدرولیک ۳/۴",
+      "stock": 3,
+      "minStock": 5,
+      "priceToman": 250000,
+      "unit": "متر",
+      "keyFor": [
+        "b1-eq-p01",
+        "b1-eq-p02"
+      ],
+      "supplyStatus": "نیاز به تأمین"
+    },
+    {
+      "id": "b1-item-13",
+      "code": "۵۴۱۳۴۳",
+      "name": "کنتاکتور D18",
+      "stock": 7,
+      "minStock": 5,
+      "priceToman": 1200000,
+      "unit": "عدد",
+      "keyFor": [
+        "b1-eq-p01",
+        "b1-eq-p02"
+      ],
+      "supplyStatus": "کافی"
+    },
+    {
+      "id": "b1-item-14",
+      "code": "۵۴۱۳۴۷",
+      "name": "کنتاکتور D12",
+      "stock": 3,
+      "minStock": 2,
+      "priceToman": 950000,
+      "unit": "عدد",
+      "keyFor": [
+        "b1-eq-p01",
+        "b1-eq-p02"
+      ],
+      "supplyStatus": "کافی"
+    },
+    {
+      "id": "b1-item-15",
+      "code": "۵۴۱۵۶۴",
+      "name": "کنتاکتور D32",
+      "stock": 0,
+      "minStock": 2,
+      "priceToman": 1800000,
+      "unit": "عدد",
+      "keyFor": [
+        "b1-eq-p01",
+        "b1-eq-p02"
+      ],
+      "supplyStatus": "نیاز فوری"
+    },
+    {
+      "id": "b1-item-16",
+      "code": "۵۴۲۵۰۴",
+      "name": "آکومولاتور ۴L",
+      "stock": 0,
+      "minStock": 1,
+      "priceToman": 8000000,
+      "unit": "عدد",
+      "keyFor": [
+        "b1-eq-p01",
+        "b1-eq-p02"
+      ],
+      "supplyStatus": "نیاز فوری"
+    },
+    {
+      "id": "b1-item-17",
+      "code": "۵۴۲۵۰۵",
+      "name": "آکومولاتور ۲L",
+      "stock": 0,
+      "minStock": 1,
+      "priceToman": 6000000,
+      "unit": "عدد",
+      "keyFor": [
+        "b1-eq-p01",
+        "b1-eq-p02"
+      ],
+      "supplyStatus": "نیاز فوری"
+    },
+    {
+      "id": "b1-item-18",
+      "code": "۵۰۲۹۱۴",
+      "name": "کلگی DHV1625",
+      "stock": 1,
+      "minStock": 1,
+      "priceToman": 35000000,
+      "unit": "عدد",
+      "keyFor": [
+        "b1-eq-p01",
+        "b1-eq-p02"
+      ],
+      "supplyStatus": "کافی"
+    },
+    {
+      "id": "b1-item-19",
+      "code": "۵۴۲۵۱۳",
+      "name": "کلید حرارتی ۴-۶A",
+      "stock": 0,
+      "minStock": 2,
+      "priceToman": 450000,
+      "unit": "عدد",
+      "keyFor": [
+        "b1-eq-p01",
+        "b1-eq-p02"
+      ],
+      "supplyStatus": "نیاز فوری"
+    },
+    {
+      "id": "b1-item-20",
+      "code": "۵۴۲۵۱۴",
+      "name": "کلید حرارتی ۴-۱۰A",
+      "stock": 0,
+      "minStock": 2,
+      "priceToman": 450000,
+      "unit": "عدد",
+      "keyFor": [
+        "b1-eq-p01",
+        "b1-eq-p02"
+      ],
+      "supplyStatus": "نیاز فوری"
+    },
+    {
+      "id": "b1-item-21",
+      "code": "۵۴۲۵۱۵",
+      "name": "کلید حرارتی ۲۴-۳۲A",
+      "stock": 1,
+      "minStock": 2,
+      "priceToman": 650000,
+      "unit": "عدد",
+      "keyFor": [
+        "b1-eq-p01",
+        "b1-eq-p02"
+      ],
+      "supplyStatus": "نیاز به تأمین"
+    },
+    {
+      "id": "b1-item-22",
+      "code": "۵۴۲۵۱۹",
+      "name": "رله AHN12324",
+      "stock": 0,
+      "minStock": 2,
+      "priceToman": 350000,
+      "unit": "عدد",
+      "keyFor": [
+        "b1-eq-p01",
+        "b1-eq-p02"
+      ],
+      "supplyStatus": "نیاز فوری"
+    },
+    {
+      "id": "b1-item-23",
+      "code": "۱۱۰۰۳۷",
+      "name": "الکتروموتور درب ریلی",
+      "stock": 1,
+      "minStock": 1,
+      "priceToman": 8000000,
+      "unit": "عدد",
+      "keyFor": [
+        "b1-eq-ad6"
+      ],
+      "supplyStatus": "کافی"
+    },
+    {
+      "id": "b1-item-24",
+      "code": "TMP-RACK-GEAR",
+      "name": "دنده شانه‌ای درب ریلی",
+      "stock": 0,
+      "minStock": 1,
+      "priceToman": 3500000,
+      "unit": "عدد",
+      "keyFor": [
+        "b1-eq-ad6"
+      ],
+      "supplyStatus": "نیاز فوری"
+    },
+    {
+      "id": "b1-item-25",
+      "code": "TMP-RACK-RAIL",
+      "name": "ریل شانه‌ای درب ریلی",
+      "stock": 0,
+      "minStock": 1,
+      "priceToman": 2800000,
+      "unit": "عدد",
+      "keyFor": [
+        "b1-eq-ad6"
+      ],
+      "supplyStatus": "نیاز فوری"
+    }
+  ],
+  "pmPlans": [
+    {
+      "id": "b1-pm-b1p01-daily",
+      "assetId": "b1-eq-p01",
+      "title": "PM روزانه — دستگاه تزریق فوم فشار بالا MAMIX 12/28",
+      "frequency": "daily",
+      "intervalDays": 1,
+      "checklist": [
+        "کنترل سرمایش، وایرینگ و گیج",
+        "بازدید پک هیدرولیک و Piping",
+        "نظافت فیلتر مواد",
+        "کنترل شیرهای پنوماتیک/هیدرولیک",
+        "کنترل فشار روغن و دمای مخازن"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "b1-pm-b1p01-weekly",
+      "assetId": "b1-eq-p01",
+      "title": "PM هفتگی — دستگاه تزریق فوم فشار بالا MAMIX 12/28",
+      "frequency": "weekly",
+      "intervalDays": 7,
+      "checklist": [
+        "روغن‌کاری",
+        "نظافت عمومی",
+        "کنترل تسمه‌ها",
+        "کنترل سطح روغن هیدرولیک"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "b1-pm-b1p01-monthly",
+      "assetId": "b1-eq-p01",
+      "title": "PM ماهانه — دستگاه تزریق فوم فشار بالا MAMIX 12/28",
+      "frequency": "monthly",
+      "intervalDays": 30,
+      "checklist": [
+        "کنترل روغن گیربکس/پمپ‌ها و هیدرولیک",
+        "نظافت فیلتر هیدرولیک/پولیول/ایزو",
+        "نظافت تابلو برق",
+        "کالیبراسیون نسبت اختلاط",
+        "کنترل عملکرد پمپ‌های DMP"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "b1-pm-b1p01-quarterly",
+      "assetId": "b1-eq-p01",
+      "title": "PM فصلی — دستگاه تزریق فوم فشار بالا MAMIX 12/28",
+      "frequency": "quarterly",
+      "intervalDays": 90,
+      "checklist": [
+        "آچارکشی تابلو و پایه‌ها",
+        "بازدید پمپ‌های DMP",
+        "بررسی کلگی تزریق"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "b1-pm-b1p01-semiannual",
+      "assetId": "b1-eq-p01",
+      "title": "PM شش‌ماهه — دستگاه تزریق فوم فشار بالا MAMIX 12/28",
+      "frequency": "semiannual",
+      "intervalDays": 180,
+      "checklist": [
+        "آچارکشی پایه موتور و نظافت پروانه",
+        "تعویض فیلتر هیدرولیک ۵۴۵۵۵۰"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "b1-pm-b1p01-annual",
+      "assetId": "b1-eq-p01",
+      "title": "PM سالانه — دستگاه تزریق فوم فشار بالا MAMIX 12/28",
+      "frequency": "annual",
+      "intervalDays": 365,
+      "checklist": [
+        "تعویض روغن هیدرولیک ۵۰۳۳۴۹ و گیربکس",
+        "تست کنتاکتورها",
+        "ضخامت‌سنجی مخازن",
+        "کالیبراسیون سنسورها",
+        "بازدید شیرهای هیدرولیک",
+        "سرویس کلگی تزریق و پمپ‌های DMP"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "b1-pm-b1p02-daily",
+      "assetId": "b1-eq-p02",
+      "title": "PM روزانه — دستگاه تزریق فوم فشار بالا MAMIX 12/28-DV1218",
+      "frequency": "daily",
+      "intervalDays": 2,
+      "checklist": [
+        "کنترل سرمایش، وایرینگ و گیج",
+        "بازدید پک هیدرولیک و Piping",
+        "نظافت فیلتر مواد",
+        "کنترل شیرهای پنوماتیک/هیدرولیک",
+        "کنترل فشار روغن و دمای مخازن"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "b1-pm-b1p02-weekly",
+      "assetId": "b1-eq-p02",
+      "title": "PM هفتگی — دستگاه تزریق فوم فشار بالا MAMIX 12/28-DV1218",
+      "frequency": "weekly",
+      "intervalDays": 14,
+      "checklist": [
+        "روغن‌کاری",
+        "نظافت عمومی",
+        "کنترل تسمه‌ها",
+        "کنترل سطح روغن هیدرولیک"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "b1-pm-b1p02-monthly",
+      "assetId": "b1-eq-p02",
+      "title": "PM ماهانه — دستگاه تزریق فوم فشار بالا MAMIX 12/28-DV1218",
+      "frequency": "monthly",
+      "intervalDays": 45,
+      "checklist": [
+        "کنترل روغن گیربکس/پمپ‌ها و هیدرولیک",
+        "نظافت فیلتر هیدرولیک/پولیول/ایزو",
+        "نظافت تابلو برق",
+        "کالیبراسیون نسبت اختلاط",
+        "کنترل عملکرد پمپ‌های DMP"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "b1-pm-b1p02-quarterly",
+      "assetId": "b1-eq-p02",
+      "title": "PM فصلی — دستگاه تزریق فوم فشار بالا MAMIX 12/28-DV1218",
+      "frequency": "quarterly",
+      "intervalDays": 120,
+      "checklist": [
+        "آچارکشی تابلو و پایه‌ها",
+        "بازدید پمپ‌های DMP",
+        "بررسی کلگی تزریق"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "b1-pm-b1p02-semiannual",
+      "assetId": "b1-eq-p02",
+      "title": "PM شش‌ماهه — دستگاه تزریق فوم فشار بالا MAMIX 12/28-DV1218",
+      "frequency": "semiannual",
+      "intervalDays": 240,
+      "checklist": [
+        "آچارکشی پایه موتور و نظافت پروانه",
+        "تعویض فیلتر هیدرولیک ۵۴۵۵۵۰"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "b1-pm-b1p02-annual",
+      "assetId": "b1-eq-p02",
+      "title": "PM سالانه — دستگاه تزریق فوم فشار بالا MAMIX 12/28-DV1218",
+      "frequency": "annual",
+      "intervalDays": 365,
+      "checklist": [
+        "تعویض روغن هیدرولیک ۵۰۳۳۴۹ و گیربکس",
+        "تست کنتاکتورها",
+        "ضخامت‌سنجی مخازن",
+        "کالیبراسیون سنسورها",
+        "بازدید شیرهای هیدرولیک",
+        "سرویس کلگی تزریق و پمپ‌های DMP"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "b1-pm-b1p06-daily",
+      "assetId": "b1-eq-p06",
+      "title": "PM روزانه — میز گردان ۱",
+      "frequency": "daily",
+      "intervalDays": 1,
+      "checklist": [
+        "روغن‌کاری نقاط روغن‌خور",
+        "کنترل سنسور 0-1، هودها، شیلنگ آب، فن و روشنایی"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "b1-pm-b1p06-weekly",
+      "assetId": "b1-eq-p06",
+      "title": "PM هفتگی — میز گردان ۱",
+      "frequency": "weekly",
+      "intervalDays": 7,
+      "checklist": [
+        "بازدید گیربکس/سروموتور، دنده شانه‌ای و درب بازکن"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "b1-pm-b1p06-monthly",
+      "assetId": "b1-eq-p06",
+      "title": "PM ماهانه — میز گردان ۱",
+      "frequency": "monthly",
+      "intervalDays": 30,
+      "checklist": [
+        "گریس‌کاری شفت/یاتاقان با گریس نسوز",
+        "بازدید اورینگ هرزگرد"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "b1-pm-b1p06-quarterly",
+      "assetId": "b1-eq-p06",
+      "title": "PM فصلی — میز گردان ۱",
+      "frequency": "quarterly",
+      "intervalDays": 90,
+      "checklist": [
+        "بررسی گاید ریل"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "b1-pm-b1p06-annual",
+      "assetId": "b1-eq-p06",
+      "title": "PM سالانه — میز گردان ۱",
+      "frequency": "annual",
+      "intervalDays": 365,
+      "checklist": [
+        "تعویض روغن گیربکس با 85W90"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "b1-pm-b1p08-daily",
+      "assetId": "b1-eq-p08",
+      "title": "PM روزانه — کانوایرها (۵ دستگاه)",
+      "frequency": "daily",
+      "intervalDays": 1,
+      "checklist": [
+        "بازدید نوار نقاله"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "b1-pm-b1p08-weekly",
+      "assetId": "b1-eq-p08",
+      "title": "PM هفتگی — کانوایرها (۵ دستگاه)",
+      "frequency": "weekly",
+      "intervalDays": 7,
+      "checklist": [
+        "کنترل تسمه‌ها و تابلو برق"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "b1-pm-b1p08-monthly",
+      "assetId": "b1-eq-p08",
+      "title": "PM ماهانه — کانوایرها (۵ دستگاه)",
+      "frequency": "monthly",
+      "intervalDays": 30,
+      "checklist": [
+        "گریس‌کاری یاتاقان",
+        "روغن رولیک",
+        "آچارکشی و ریگلاژ"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "b1-pm-b1p08-quarterly",
+      "assetId": "b1-eq-p08",
+      "title": "PM فصلی — کانوایرها (۵ دستگاه)",
+      "frequency": "quarterly",
+      "intervalDays": 90,
+      "checklist": [
+        "کنترل روغن گیربکس"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "b1-pm-b1pf09-daily",
+      "assetId": "b1-eq-pf09",
+      "title": "PM روزانه — کمپرسور هوا ۱۰۰۰L",
+      "frequency": "daily",
+      "intervalDays": 1,
+      "checklist": [
+        "کنترل Pressure Switch، صدا و دما"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "b1-pm-b1pf09-weekly",
+      "assetId": "b1-eq-pf09",
+      "title": "PM هفتگی — کمپرسور هوا ۱۰۰۰L",
+      "frequency": "weekly",
+      "intervalDays": 7,
+      "checklist": [
+        "بازدید گیج فشار"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "b1-pm-b1pf09-quarterly",
+      "assetId": "b1-eq-pf09",
+      "title": "PM فصلی — کمپرسور هوا ۱۰۰۰L",
+      "frequency": "quarterly",
+      "intervalDays": 90,
+      "checklist": [
+        "روغن، سوپاپ اطمینان و آچارکشی تابلو"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "b1-pm-b1pf09-annual",
+      "assetId": "b1-eq-pf09",
+      "title": "PM سالانه — کمپرسور هوا ۱۰۰۰L",
+      "frequency": "annual",
+      "intervalDays": 365,
+      "checklist": [
+        "تعویض تسمه"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "b1-pm-b1pf10-daily",
+      "assetId": "b1-eq-pf10",
+      "title": "PM روزانه — دیگ آب گرم",
+      "frequency": "daily",
+      "intervalDays": 1,
+      "checklist": [
+        "گیج‌ها، رله گازی و آلارم",
+        "آب مخزن و دمپر",
+        "پمپ گازوئیل و پمپ آب",
+        "ترموستات"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "b1-pm-b1pf10-monthly",
+      "assetId": "b1-eq-pf10",
+      "title": "PM ماهانه — دیگ آب گرم",
+      "frequency": "monthly",
+      "intervalDays": 30,
+      "checklist": [
+        "شیر گازی و چشمی UV"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "b1-pm-b1pf11-daily",
+      "assetId": "b1-eq-pf11",
+      "title": "PM روزانه — چیلر تولید فوم",
+      "frequency": "daily",
+      "intervalDays": 1,
+      "checklist": [
+        "کنترل آب مخزن و پمپ گردش آب",
+        "کنترل فشار روغن/گاز R22"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "b1-pm-b1pf11-monthly",
+      "assetId": "b1-eq-pf11",
+      "title": "PM ماهانه — چیلر تولید فوم",
+      "frequency": "monthly",
+      "intervalDays": 30,
+      "checklist": [
+        "کنترل عملکرد چیلر و نظافت کندانسور"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "b1-pm-b1pf11-annual",
+      "assetId": "b1-eq-pf11",
+      "title": "PM سالانه — چیلر تولید فوم",
+      "frequency": "annual",
+      "intervalDays": 365,
+      "checklist": [
+        "شستشوی مدار آب",
+        "شارژ گاز R22 ۵۰۱۴۰۷ حسب نیاز",
+        "تست نشتی",
+        "تعویض روغن Suniso SL100"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "b1-pm-b1af1-weekly",
+      "assetId": "b1-eq-af1",
+      "title": "PM هفتگی — دیزل ژنراتور فوم",
+      "frequency": "weekly",
+      "intervalDays": 7,
+      "checklist": [
+        "ثبت ساعت کار و شارژ گازوئیل"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "b1-pm-b1af1-monthly",
+      "assetId": "b1-eq-af1",
+      "title": "PM ماهانه — دیزل ژنراتور فوم",
+      "frequency": "monthly",
+      "intervalDays": 30,
+      "checklist": [
+        "کنترل تسمه دینام و سطح روغن"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "b1-pm-b1af1-quarterly",
+      "assetId": "b1-eq-af1",
+      "title": "PM فصلی — دیزل ژنراتور فوم",
+      "frequency": "quarterly",
+      "intervalDays": 90,
+      "checklist": [
+        "گریس‌کاری و آچارکشی"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "b1-pm-b1af1-annual",
+      "assetId": "b1-eq-af1",
+      "title": "PM سالانه — دیزل ژنراتور فوم",
+      "frequency": "annual",
+      "intervalDays": 365,
+      "checklist": [
+        "تعویض روغن دیزل، فیلتر روغن و فیلتر گازوئیل"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "b1-pm-p01-filter-iso-monthly",
+      "assetId": "b1-eq-p01",
+      "title": "نظافت ماهانه فیلتر ایزو دستگاه تزریق ۱",
+      "frequency": "monthly",
+      "intervalDays": 30,
+      "checklist": [
+        "نظافت فیلتر ایزو",
+        "کنترل نشتی و ثبت نتیجه"
+      ],
+      "status": "active",
+      "sourceReference": "PM-M-005",
+      "recurring": true,
+      "confirmationStatus": "confirmed"
+    }
+  ],
+  "provisionalWorkOrders1405": [
+    {
+      "id": "b1-wo-1405-033",
+      "no": "WO-1405-033",
+      "title": "ریگلاژ درب ریلی و رفع شکستگی دنده شانه‌ای",
+      "assetId": "b1-eq-ad6",
+      "type": "BD",
+      "sourceType": "EM",
+      "periodLabel": "۱۴۰۵/۰۵/۲۸",
+      "month": "مرداد",
+      "assigneeId": "b1-tech-mahmoud",
+      "additionalAssigneeIds": [
+        "b1-tech-asghar"
+      ],
+      "status": "doing",
+      "priority": "high",
+      "confirmationStatus": "confirmed",
+      "notes": "محمود محمودآبادی: ریگلاژ؛ اصغر رضایی: جوشکاری/تعویض دنده"
+    },
+    {
+      "id": "b1-wo-1405-034",
+      "no": "WO-1405-034",
+      "title": "تعمیرات پمپ آب اداری",
+      "assetId": "b1-temp-water-admin",
+      "type": "BD",
+      "sourceType": "EM",
+      "periodLabel": "۱۴۰۵/۰۵",
+      "month": "مرداد",
+      "assigneeId": "b1-tech-mahmoud",
+      "assigneeProposed": true,
+      "status": "draft",
+      "confirmationStatus": "pending-confirmation",
+      "provisionalFields": [
+        "startTime",
+        "endTime",
+        "assigneeId"
+      ],
+      "notes": "اطلاعات ساعت و تعمیرکار از فایل مبدأ موجود نیست و باید توسط مسئول نت تأیید شود.",
+      "relatedAssetIds": [],
+      "candidateAssetIds": []
+    },
+    {
+      "id": "b1-wo-1405-035",
+      "no": "WO-1405-035",
+      "title": "تنظیم دنده شانه‌ی میز یک",
+      "assetId": "b1-eq-p06",
+      "type": "BD",
+      "sourceType": "PM/EM",
+      "periodLabel": "۱۴۰۵/۰۵",
+      "month": "مرداد",
+      "assigneeId": "b1-tech-nejat",
+      "assigneeProposed": true,
+      "status": "draft",
+      "confirmationStatus": "pending-confirmation",
+      "provisionalFields": [
+        "startTime",
+        "endTime",
+        "assigneeId"
+      ],
+      "notes": "اطلاعات ساعت و تعمیرکار از فایل مبدأ موجود نیست و باید توسط مسئول نت تأیید شود.",
+      "relatedAssetIds": [],
+      "candidateAssetIds": []
+    },
+    {
+      "id": "b1-wo-1405-036",
+      "no": "WO-1405-036",
+      "title": "تعویض شیر برقی مسیر چیلر دستگاه تزریق یک",
+      "assetId": "b1-eq-p01",
+      "type": "BD",
+      "sourceType": "EM",
+      "periodLabel": "۱۴۰۵/۰۵",
+      "month": "مرداد",
+      "assigneeId": "b1-tech-ahmad",
+      "assigneeProposed": true,
+      "status": "draft",
+      "confirmationStatus": "pending-confirmation",
+      "provisionalFields": [
+        "startTime",
+        "endTime",
+        "assigneeId"
+      ],
+      "notes": "اطلاعات ساعت و تعمیرکار از فایل مبدأ موجود نیست و باید توسط مسئول نت تأیید شود.",
+      "relatedAssetIds": [
+        "b1-eq-pf11"
+      ],
+      "candidateAssetIds": []
+    },
+    {
+      "id": "b1-wo-1405-038",
+      "no": "WO-1405-038",
+      "title": "تعویض سوکت پرشر سوئیچ 7733",
+      "assetId": "b1-eq-pf09",
+      "type": "BD",
+      "sourceType": "EM",
+      "periodLabel": "۱۴۰۵/۰۵",
+      "month": "مرداد",
+      "assigneeId": "b1-tech-ahmad",
+      "assigneeProposed": true,
+      "status": "draft",
+      "confirmationStatus": "pending-confirmation",
+      "provisionalFields": [
+        "startTime",
+        "endTime",
+        "assigneeId"
+      ],
+      "notes": "اطلاعات ساعت و تعمیرکار از فایل مبدأ موجود نیست و باید توسط مسئول نت تأیید شود.",
+      "relatedAssetIds": [],
+      "candidateAssetIds": []
+    },
+    {
+      "id": "b1-wo-1405-039",
+      "no": "WO-1405-039",
+      "title": "رفع نشتی لوله پولیول انبار مواد",
+      "assetId": "b1-temp-polyol-pipe",
+      "type": "BD",
+      "sourceType": "EM",
+      "periodLabel": "۱۴۰۵/۰۴",
+      "month": "تیر",
+      "assigneeId": "b1-tech-mahmoud",
+      "assigneeProposed": true,
+      "status": "draft",
+      "confirmationStatus": "pending-confirmation",
+      "provisionalFields": [
+        "startTime",
+        "endTime",
+        "assigneeId"
+      ],
+      "notes": "اطلاعات ساعت و تعمیرکار از فایل مبدأ موجود نیست و باید توسط مسئول نت تأیید شود.",
+      "relatedAssetIds": [],
+      "candidateAssetIds": []
+    },
+    {
+      "id": "b1-wo-1405-040",
+      "no": "WO-1405-040",
+      "title": "تعمیر پمپ ایزو انبار مواد",
+      "assetId": "b1-temp-iso-pump",
+      "type": "BD",
+      "sourceType": "EM",
+      "periodLabel": "۱۴۰۵/۰۵",
+      "month": "مرداد",
+      "assigneeId": "b1-tech-mohsen",
+      "assigneeProposed": true,
+      "status": "draft",
+      "confirmationStatus": "pending-confirmation",
+      "provisionalFields": [
+        "startTime",
+        "endTime",
+        "assigneeId"
+      ],
+      "notes": "اطلاعات ساعت و تعمیرکار از فایل مبدأ موجود نیست و باید توسط مسئول نت تأیید شود.",
+      "relatedAssetIds": [],
+      "candidateAssetIds": []
+    },
+    {
+      "id": "b1-wo-1405-041",
+      "no": "WO-1405-041",
+      "title": "تعمیر الکتروموتور انبار ایزو",
+      "assetId": "b1-temp-iso-motor",
+      "type": "BD",
+      "sourceType": "EM",
+      "periodLabel": "۱۴۰۵/۰۵",
+      "month": "مرداد",
+      "assigneeId": "b1-tech-ahmad",
+      "assigneeProposed": true,
+      "status": "draft",
+      "confirmationStatus": "pending-confirmation",
+      "provisionalFields": [
+        "startTime",
+        "endTime",
+        "assigneeId"
+      ],
+      "notes": "اطلاعات ساعت و تعمیرکار از فایل مبدأ موجود نیست و باید توسط مسئول نت تأیید شود.",
+      "relatedAssetIds": [],
+      "candidateAssetIds": []
+    },
+    {
+      "id": "b1-wo-1405-042",
+      "no": "WO-1405-042",
+      "title": "شارژ روغن دنده گیربکس پمپ‌های پولیول بلندینگ",
+      "assetId": "b1-temp-blend-pumps",
+      "type": "PM",
+      "sourceType": "PM",
+      "periodLabel": "۱۴۰۵/۰۵",
+      "month": "مرداد",
+      "assigneeId": "b1-tech-mahmoud",
+      "assigneeProposed": true,
+      "status": "draft",
+      "confirmationStatus": "pending-confirmation",
+      "provisionalFields": [
+        "startTime",
+        "endTime",
+        "assigneeId"
+      ],
+      "notes": "اطلاعات ساعت و تعمیرکار از فایل مبدأ موجود نیست و باید توسط مسئول نت تأیید شود.",
+      "relatedAssetIds": [],
+      "candidateAssetIds": []
+    },
+    {
+      "id": "b1-wo-1405-043",
+      "no": "WO-1405-043",
+      "title": "مرتب‌سازی سیم‌کشی دستگاه تزریق و کرشر",
+      "assetId": "b1-eq-p01",
+      "type": "PM",
+      "sourceType": "PM",
+      "periodLabel": "۱۴۰۵/۰۴",
+      "month": "تیر",
+      "assigneeId": "b1-tech-ahmad",
+      "assigneeProposed": true,
+      "status": "draft",
+      "confirmationStatus": "pending-confirmation",
+      "provisionalFields": [
+        "startTime",
+        "endTime",
+        "assigneeId"
+      ],
+      "notes": "اطلاعات ساعت و تعمیرکار از فایل مبدأ موجود نیست و باید توسط مسئول نت تأیید شود.",
+      "relatedAssetIds": [
+        "b1-eq-p02",
+        "b1-eq-p08-2"
+      ],
+      "candidateAssetIds": []
+    },
+    {
+      "id": "b1-wo-1405-044",
+      "no": "WO-1405-044",
+      "title": "تراز کردن کانوایر سمت پلاس",
+      "assetId": "b1-eq-p08-5",
+      "type": "PM",
+      "sourceType": "PM",
+      "periodLabel": "۱۴۰۵/۰۴",
+      "month": "تیر",
+      "assigneeId": "b1-tech-asghar",
+      "assigneeProposed": true,
+      "status": "draft",
+      "confirmationStatus": "pending-confirmation",
+      "provisionalFields": [
+        "startTime",
+        "endTime",
+        "assigneeId"
+      ],
+      "notes": "اطلاعات ساعت و تعمیرکار از فایل مبدأ موجود نیست و باید توسط مسئول نت تأیید شود.",
+      "relatedAssetIds": [],
+      "candidateAssetIds": []
+    },
+    {
+      "id": "b1-wo-1405-045",
+      "no": "WO-1405-045",
+      "title": "تعمیر پمپ پولیول میز دو",
+      "assetId": "b1-eq-p07",
+      "type": "BD",
+      "sourceType": "EM",
+      "periodLabel": "۱۴۰۵/۰۵",
+      "month": "مرداد",
+      "assigneeId": "b1-tech-mohsen",
+      "assigneeProposed": true,
+      "status": "draft",
+      "confirmationStatus": "pending-confirmation",
+      "provisionalFields": [
+        "startTime",
+        "endTime",
+        "assigneeId"
+      ],
+      "notes": "اطلاعات ساعت و تعمیرکار از فایل مبدأ موجود نیست و باید توسط مسئول نت تأیید شود.",
+      "relatedAssetIds": [],
+      "candidateAssetIds": []
+    },
+    {
+      "id": "b1-wo-1405-046",
+      "no": "WO-1405-046",
+      "title": "تعمیر پمپ رکسروس",
+      "assetId": null,
+      "type": "BD",
+      "sourceType": "EM",
+      "periodLabel": "۱۴۰۵/۰۶",
+      "month": "شهریور",
+      "assigneeId": "b1-tech-mohsen",
+      "assigneeProposed": true,
+      "status": "draft",
+      "confirmationStatus": "pending-confirmation",
+      "provisionalFields": [
+        "assetId"
+      ],
+      "notes": "اطلاعات ساعت و تعمیرکار از فایل مبدأ موجود نیست و باید توسط مسئول نت تأیید شود.",
+      "relatedAssetIds": [],
+      "candidateAssetIds": [
+        "b1-eq-p01",
+        "b1-eq-p02"
+      ]
+    },
+    {
+      "id": "b1-wo-1405-047",
+      "no": "WO-1405-047",
+      "title": "تعویض هد تزریق یک و ارسال جهت تعمیر",
+      "assetId": "b1-eq-p01",
+      "type": "BD",
+      "sourceType": "EM",
+      "periodLabel": "۱۴۰۵/۰۵",
+      "month": "مرداد",
+      "assigneeId": "b1-tech-ali",
+      "assigneeProposed": true,
+      "status": "draft",
+      "confirmationStatus": "pending-confirmation",
+      "provisionalFields": [
+        "startTime",
+        "endTime",
+        "assigneeId"
+      ],
+      "notes": "اطلاعات ساعت و تعمیرکار از فایل مبدأ موجود نیست و باید توسط مسئول نت تأیید شود.",
+      "relatedAssetIds": [],
+      "candidateAssetIds": []
+    },
+    {
+      "id": "b1-wo-1405-048",
+      "no": "WO-1405-048",
+      "title": "رفع نشتی آب چیلر دستگاه تزریق دو",
+      "assetId": "b1-eq-p02",
+      "type": "BD",
+      "sourceType": "EM",
+      "periodLabel": "۱۴۰۵/۰۵",
+      "month": "مرداد",
+      "assigneeId": "b1-tech-mahmoud",
+      "assigneeProposed": true,
+      "status": "draft",
+      "confirmationStatus": "pending-confirmation",
+      "provisionalFields": [
+        "startTime",
+        "endTime",
+        "assigneeId"
+      ],
+      "notes": "اطلاعات ساعت و تعمیرکار از فایل مبدأ موجود نیست و باید توسط مسئول نت تأیید شود.",
+      "relatedAssetIds": [
+        "b1-eq-pf11"
+      ],
+      "candidateAssetIds": []
+    }
+  ],
+  "dataQualityNotes": [
+    "تمام ساعت‌های شروع و پایان بخش ۱۴۰۵ نیازمند تأیید هستند.",
+    "تعمیرکارهای بخش ۱۴۰۵ پیشنهادی هستند.",
+    "WO-1405-046 در انتظار تعیین تجهیز دقیق است.",
+    "تجهیزات با کد TMP نیازمند کدگذاری رسمی هستند."
+  ],
+  "otherFactories": [
+    {
+      "id": "b2-site",
+      "code": "B2",
+      "name": "بسپار 2"
+    },
+    {
+      "id": "b3-site",
+      "code": "B3",
+      "name": "بسپار 3"
+    },
+    {
+      "id": "b4-site",
+      "code": "B4",
+      "name": "بسپار 4"
+    },
+    {
+      "id": "b5-site",
+      "code": "B5",
+      "name": "بسپار 5"
+    },
+    {
+      "id": "b6-site",
+      "code": "B6",
+      "name": "بسپار 6"
+    }
+  ],
+  "organization": {
+    "id": "bfg-company",
+    "code": "BFG",
+    "name": "شرکت بسپار فوم غرب",
+    "children": [
+      {
+        "id": "bfg-head-office",
+        "code": "BFG-HQ",
+        "name": "دفتر مرکزی"
+      },
+      {
+        "id": "bfg-factories",
+        "code": "BFG-PLANTS",
+        "name": "کارخانجات",
+        "factoryIds": [
+          "b1-site",
+          "b2-site",
+          "b3-site",
+          "b4-site",
+          "b5-site",
+          "b6-site"
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,7 @@
+# Dependencies are restored from package-lock.json
+node_modules/
+
+backups/
+
+.env.local
+*.log

@@ -1,4 +1,4 @@
-﻿const express = require('express');
+const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const { Pool } = require('pg');
@@ -8,6 +8,7 @@ const fs = require('fs');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
+const { createEquipmentRouter } = require('./server/equipment-routes');
 require('dotenv').config();
 
 const app = express();
@@ -151,6 +152,8 @@ app.put('/api/data/:collection/:id', authenticateToken, async (req, res) => {
     }
 });
 
+app.use('/api/equipment', createEquipmentRouter({ pool, io, authenticateToken }));
+
 app.delete('/api/data/:collection/:id', authenticateToken, async (req, res) => {
     const { collection, id } = req.params;
     
@@ -161,6 +164,11 @@ app.delete('/api/data/:collection/:id', authenticateToken, async (req, res) => {
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
+});
+
+// SPA fallback keeps bookmarkable Equipment Detail URLs refresh-safe.
+app.get('/equipment/:equipmentKey', (_req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 io.on('connection', (socket) => {

@@ -1,11 +1,17 @@
-﻿{
+{
   "name": "bfg-cmms-eam",
   "version": "4.0.0",
   "description": "BFG CMMS/EAM - Enterprise Multi-User System",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "seed:besepar1": "node scripts/seed-besepar1.js",
+    "clean:demo-equipment": "node scripts/clean-demo-equipment.js",
+    "reset:equipment-structure": "node scripts/reset-equipment-structure.js",
+    "backup:equipment": "node scripts/create-equipment-restore-point.js",
+    "migrate:equipment-v2": "node scripts/migrate-equipment-v2.js",
+    "test": "node --test test/*.test.js"
   },
   "engines": {
     "node": ">=18"
