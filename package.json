@@ -11,7 +11,20 @@
     "reset:equipment-structure": "node scripts/reset-equipment-structure.js",
     "backup:equipment": "node scripts/create-equipment-restore-point.js",
     "migrate:equipment-v2": "node scripts/migrate-equipment-v2.js",
-    "test": "node --test test/*.test.js"
+    "migrate": "node scripts/run-migrations.js",
+    "build:win": "electron-builder --win --x64",
+    "electron": "electron electron/main.js",
+    "electron:dev": "BFG_BACKEND=http://localhost:8080 electron electron/main.js",
+    "test": "node --test test/*.test.js",
+    "test:notifications": "node --test test/notifications.test.js",
+    "test:realtime": "node --test test/realtime.test.js"
+  },
+  "build": {
+    "appId": "com.bfg.cmms",
+    "productName": "BFG CMMS",
+    "files": ["server.js","server/**/*","public/**/*","package.json",".env"],
+    "win": { "target": "nsis", "icon": "public/logo.jpg" },
+    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true, "createDesktopShortcut": true }
   },
   "engines": {
     "node": ">=18"

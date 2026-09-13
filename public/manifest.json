@@ -1,0 +1,28 @@
+{
+  "name": "BFG CMMS/EAM — بسپار فوم غرب",
+  "short_name": "BFG CMMS",
+  "description": "سامانه جامع نگهداری و تعمیرات و دارایی‌های فیزیکی — BFG",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0B2239",
+  "theme_color": "#0E3A5D",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/logo.jpg",
+      "sizes": "192x192",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logo.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["business", "productivity"],
+  "lang": "fa",
+  "dir": "rtl",
+  "prefer_related_applications": false
+}

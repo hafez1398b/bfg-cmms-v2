@@ -398,8 +398,8 @@ html.dark .radio-card.sel{color:#6FB3F0}
   .topbar{padding:0 12px;gap:7px}
 }
 </style>
-<script src="/socket.io/socket.io.js">
-function setupSocket() {
+<script src="/socket.io/socket.io.js"></script>
+<script>/* replaced by BFG realtime-client */ function setupSocket() {
     socket = io();
     
     socket.on('data-changed', ({ collection, id, data }) => {
@@ -441,6 +441,11 @@ function setupSocket() {
     });
 }
 </script>
+
+<link rel="manifest" href="/manifest.json">
+<link rel="stylesheet" href="/css/bfg-v2.css?v=20260913.3">
+<link rel="stylesheet" href="/equipment-v2/equipment-v2.css?v=20260913.2">
+<meta name="theme-color" content="#0E3A5D">
 </head>
 <body>
 
@@ -17359,6 +17364,123 @@ runQA=function(){
 DB.audit.unshift({t:new Date().toISOString(),u:'سیستم',x:'v'+BFG_VERSION_40+': ماژول تقویم و مرخصی و مرکز برنامه‌ریزی تکمیل شد'});
 save();
 setTimeout(()=>{try{const t=runQA();console.log('BFG CMMS v'+BFG_VERSION_40+' — QA: '+t.filter(x=>x[1]).length+'/'+t.length+' passed');}catch(e){}},1900);
+</script>
+
+<!-- BFG Core Refactor — دستور اصلاح دوم -->
+<script src="/socket.io/socket.io.js"></script>
+<script src="/js/bfg/api-client.js?v=20260913.3"></script>
+<script src="/js/bfg/realtime-client.js?v=20260913.3"></script>
+<script src="/js/bfg/offline-queue.js?v=20260913.3"></script>
+<script src="/js/bfg/provenance.js?v=20260913.3"></script>
+<script src="/js/bfg/notification-center.js?v=20260913.3"></script>
+<script src="/js/bfg/wizard-engine.js?v=20260913.3"></script>
+<script src="/js/bfg/wizards.js?v=20260913.3"></script>
+<script src="/js/bfg/failure-module.js?v=20260913.3"></script>
+<script src="/js/bfg/health-module.js?v=20260913.3"></script>
+<script src="/js/bfg/ai-module.js?v=20260913.3"></script>
+<script>
+// SW registration + PWA install + menu augmentation
+if('serviceWorker' in navigator){ navigator.serviceWorker.register('/sw.js').then(()=>console.log('[PWA] SW registered')).catch(e=>console.warn('[PWA] SW fail',e)); }
+let deferredPrompt=null;
+window.addEventListener('beforeinstallprompt',e=>{ e.preventDefault(); deferredPrompt=e; showInstallBanner(); });
+function showInstallBanner(){
+  if(document.getElementById('pwaBanner')) return;
+  const b=document.createElement('div'); b.id='pwaBanner'; b.className='pwa-install';
+  b.innerHTML='<span>📲 نصب نسخه ویندوز / PWA</span><button class="btn btn-sm btn-primary" onclick="deferredPrompt.prompt()">نصب</button><button class="btn btn-sm btn-ghost" onclick="this.parentElement.remove()">×</button>';
+  document.body.appendChild(b);
+}
+// Enhance menu after load
+(function(){
+  const origBuild = window.buildMenu;
+  if(typeof origBuild==='function'){
+    window.buildMenu = function(){
+      origBuild();
+      // Inject Failures entry if missing
+      const menuEl=document.getElementById('sbMenu');
+      if(menuEl && !menuEl.innerHTML.includes('failures')){
+        // Will be added via MENU patch below
+      }
+    };
+  }
+})();
+// Patch MENU to include failures, health, AI suggestions
+(function(){
+  // Wait for MENU to be defined
+  const check=setInterval(()=>{
+    if(typeof MENU!=='undefined' && Array.isArray(MENU)){
+      clearInterval(check);
+      if(!MENU.find(m=>m.id==='failures')){
+        const idx=MENU.findIndex(m=>m.id==='ai');
+        MENU.splice(idx,0,{id:'failures',ic:'🚨',t:'خرابی‌ها & RCA'});
+        MENU.splice(idx+1,0,{id:'health',ic:'💚',t:'سلامت تجهیزات'});
+        if(typeof buildMenu==='function') buildMenu();
+        console.log('[BFG] menu augmented');
+      }
+      // Patch go to handle new pages
+      const origGo=window.go;
+      window.go=function(page){
+        if(page==='failures'){
+          CUR=page; buildMenu(); document.getElementById('sidebar')?.classList.remove('open');
+          const c=document.getElementById('content');
+          if(c){ c.innerHTML = window.BFG?.failures?.pgFailures ? window.BFG.failures.pgFailures() : '<div class="empty">ماژول خرابی در حال بارگذاری…</div>'; if(window.BFG?.failures?.refresh) setTimeout(()=>window.BFG.failures.refresh(),100); }
+          window.scrollTo(0,0); return;
+        }
+        if(page==='health'){
+          CUR=page; buildMenu(); document.getElementById('sidebar')?.classList.remove('open');
+          const c=document.getElementById('content');
+          if(c){
+            c.innerHTML = '<div class="page-head"><div><div class="crumb">خانه › سلامت</div><h2>سلامت تجهیزات — Health Score</h2></div><div class="head-actions"><button class="btn btn-ghost" onclick="go(\'tree\')">🌳 درخت تجهیزات</button></div></div><div id="healthList" class="grid g2"></div>';
+            // Load health list via API if available
+            if(window.BFG?.api?.health){
+              window.BFG.api.health.list({limit:20}).then(r=>{
+                const el=document.getElementById('healthList');
+                if(!el) return;
+                el.innerHTML = r.data.map(a=>{
+                  const sc=a.health_score;
+                  const col=sc>=80?'var(--green)':sc>=50?'var(--orange)':'var(--red)';
+                  const bg=sc>=80?'var(--green-bg)':sc>=50?'var(--orange-bg)':'var(--red-bg)';
+                  return '<div class="card" style="cursor:pointer" onclick="BFG.health.renderCard(\''+a.id+'\',\'healthDetail\');document.getElementById(\'healthDetail\').scrollIntoView({behavior:\'smooth\'})"><div style="display:flex;gap:10px;align-items:center"><div style="width:56px;height:56px;border-radius:50%;background:'+bg+';border:3px solid '+col+';display:flex;align-items:center;justify-content:center;font-weight:800;color:'+col+'">'+(sc!=null?sc:'—')+'</div><div><b>'+a.name+'</b><div class="muted">'+a.code+' • '+a.status+'</div></div></div></div>';
+                }).join('') + '<div id="healthDetail" class="card" style="margin-top:16px;min-height:120px"><div class="muted">یک تجهیز را انتخاب کنید تا جزئیات سلامت و پیشنهادات بهبود نمایش داده شود — یا در پرونده تجهیز دکمه سلامت را بزنید.</div></div>';
+              }).catch(e=>{ const el=document.getElementById('healthList'); if(el) el.innerHTML='<div class="muted">خطا در بارگذاری: '+e.message+' — حالت دمو</div>'; });
+            }
+          }
+          window.scrollTo(0,0); return;
+        }
+        return origGo(page);
+      };
+      // Patch login to store token and connect realtime
+      const origLogin=window.doLogin;
+      if(typeof origLogin==='function'){
+        window.doLogin = async function(){
+          const u=document.getElementById('loginUser').value.trim(), p=document.getElementById('loginPass').value;
+          // Try real API first
+          try{
+            const res= await fetch('/api/auth/login',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({username:u,password:p})});
+            if(res.ok){
+              const j=await res.json();
+              sessionStorage.setItem('bfg_token', j.token);
+              sessionStorage.setItem('bfg_me', j.user.id);
+              // Also keep ME for UI
+              ME=j.user; ME.role=j.user.role; ME.name=j.user.name; ME.unit=j.user.unit;
+              document.getElementById('loginPage').style.display='none'; document.getElementById('app').style.display='block';
+              document.getElementById('uName').textContent=ME.name; document.getElementById('uRole').textContent=ROLES[ME.role]||ME.role; document.getElementById('uAvatar').textContent=ME.name[0];
+              if(window.BFG?.realtime?.connect) window.BFG.realtime.connect();
+              if(window.BFG?.notifications?.fetchList) window.BFG.notifications.fetchList();
+              buildMenu(); go('dash'); return;
+            }
+          }catch(e){ console.warn('[auth] API login failed, fallback to local', e.message); }
+          return origLogin();
+        };
+      }
+      // Patch updateBadge to also use BFG notifications
+      const origUpdateBadge=window.updateBadge;
+      window.updateBadge=function(){
+        if(window.BFG?.notifications?.fetchList) window.BFG.notifications.fetchList();
+        if(typeof origUpdateBadge==='function') try{origUpdateBadge();}catch(_){}
+      };
+    }
+  }, 300);
+})();
 </script>
 <script src="/data/besepar1-data.js?v=20260913.2"></script>
 <script src="/data/equipment-demo-cleanup.js?v=20260913.2"></script>

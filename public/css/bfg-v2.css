@@ -1,0 +1,68 @@
+/* BFG v2 — Responsive / Cross-Platform + Wizard + Offline (Requirement #2,5,19) */
+:root{ --bp-mobile:760px; --bp-tablet:1100px; }
+
+/* Wizard already in index.html but ensure touch-friendly */
+.wiz-steps{ gap:6px; }
+.radio-cards{ grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); }
+@media(max-width:760px){
+  .radio-cards{ grid-template-columns:repeat(2,1fr); gap:8px; }
+  .radio-card{ padding:10px 8px; font-size:11.8px; }
+  .wiz-step{ font-size:10.5px; }
+  .wiz-step .wn{ width:26px; height:26px; font-size:11px; }
+  .m-foot{ flex-wrap:wrap; }
+  /* Forms step-by-step: single question per view on mobile */
+  .wizard-mobile .field{ margin-bottom:12px; }
+}
+
+/* Responsive tables — card fallback on mobile */
+@media(max-width:760px){
+  .tbl-wrap table{ min-width:0; }
+  .tbl-wrap thead{ display:none; }
+  .tbl-wrap tbody tr{ display:block; border:1px solid var(--border); border-radius:12px; margin-bottom:10px; background:var(--surface); box-shadow:var(--shadow-s); }
+  .tbl-wrap tbody td{ display:flex; justify-content:space-between; align-items:center; border-bottom:1px dashed var(--border); padding:9px 12px; }
+  .tbl-wrap tbody td::before{ content: attr(data-label); font-size:10.5px; color:var(--text-3); font-weight:700; margin-left:10px; }
+  .tbl-wrap tbody td:last-child{ border-bottom:none; }
+}
+
+/* Touch-friendly buttons */
+.btn, .radio-card, .checkline{ min-height:40px; }
+@media(pointer:coarse){
+  .btn{ padding:11px 18px; }
+  .tb-btn{ width:44px; height:44px; }
+}
+
+/* Offline badge */
+#offlineBadge{ animation: pulse 1.6s infinite; }
+
+/* Health score pulse */
+.health-critical{ animation: rec-pulse 1.2s infinite; }
+
+/* Provenance badges */
+.prov-verified{ background:var(--green-bg); color:var(--green); border:1px solid var(--green); }
+.prov-ai{ background:var(--purple-bg); color:var(--purple); border:1px solid var(--purple); }
+.prov-pending{ background:var(--orange-bg); color:var(--orange); }
+
+/* Data chain timeline */
+.chain-item{ display:flex; gap:10px; padding:10px 12px; border:1px solid var(--border); border-radius:10px; margin-bottom:8px; background:var(--surface); }
+.chain-item .arrow{ color:var(--accent); font-weight:800; }
+
+/* Print tweaks for wizard & health */
+@media print{
+  .wiz-steps, .m-foot .btn-ghost{ display:none!important; }
+}
+
+/* PWA install banner */
+.pwa-install{ position:fixed; bottom:18px; right:18px; z-index:70; background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:12px 16px; box-shadow:var(--shadow-lg); display:flex; gap:10px; align-items:center; }
+.pwa-install button{ white-space:nowrap; }
+
+/* Notification drawer enhancements */
+.notif-item.unread{ border-right:3px solid var(--accent); }
+
+/* Responsive root tweaks */
+@media(max-width:1100px){
+  .content{ padding:20px 18px 70px; }
+}
+@media(max-width:760px){
+  .content{ padding:14px 12px 84px; }
+  .card{ border-radius:12px; }
+}
