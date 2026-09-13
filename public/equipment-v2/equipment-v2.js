@@ -25,6 +25,14 @@
     options:{factories:[],categories:[]},routeBusy:false
   };
 
+  // The legacy shell declares MENU with `const`, so it is not available as window.MENU.
+  // Update only the existing Equipment entry to make this in-place upgrade visible.
+  try{
+    const equipmentMenu=typeof MENU!=='undefined'&&Array.isArray(MENU)?MENU.find(item=>item?.id==='tree'):null;
+    if(equipmentMenu)equipmentMenu.t='درخت و شناسنامه تجهیزات';
+    if(typeof ME!=='undefined'&&ME&&typeof buildMenu==='function')buildMenu();
+  }catch(error){console.warn('Equipment menu label was not updated',error);}
+
   const R=()=>EquipmentRepository.current();
   const canDo=operation=>typeof can!=='function'||can('tree',operation==='move'?'edit':operation);
   const escText=value=>typeof esc==='function'?esc(value):String(value??'').replace(/[&<>\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -56,7 +64,7 @@
 
   function sourceBadge(){const source=R().source;return`<span class="eqv2-source ${source==='postgresql'?'':'local'}">${source==='postgresql'?'PostgreSQL · Source of Truth':'حالت سازگاری محلی'}</span>`;}
   function shell(){
-    return`<div class="eqv2" id="eqv2Explorer"><div class="eqv2-head"><div class="eqv2-title"><small>دارایی‌ها › تجهیزات</small><h2>درخت تجهیزات و شناسنامه</h2></div>${sourceBadge()}<div class="eqv2-switch"><button class="${E.view==='tree'?'on':''}" onclick="eqv2View('tree')">🌳 درخت</button><button class="${E.view==='list'?'on':''}" onclick="eqv2View('list')">☷ لیست</button></div>${canDo('create')?'<button class="btn btn-sm btn-primary" onclick="eqv2Create()">＋ افزودن تجهیز</button>':''}</div>${toolbar()}<div class="eqv2-layout"><section class="eqv2-main"><div class="eqv2-loading">در حال دریافت ساختار تجهیزات…</div></section><aside class="eqv2-dossier" id="eqv2Summary">${empty('برای مشاهده خلاصه، یک تجهیز را انتخاب کنید. برای ورود به پرونده کامل دوبار کلیک کنید.')}</aside></div></div>`;
+    return`<div class="eqv2" id="eqv2Explorer"><div class="eqv2-head"><div class="eqv2-title"><small>دارایی‌ها › تجهیزات <span class="eqv2-version">Navigation 2.0</span></small><h2>درخت تجهیزات و شناسنامه</h2></div>${sourceBadge()}<div class="eqv2-switch"><button class="${E.view==='tree'?'on':''}" onclick="eqv2View('tree')">🌳 درخت</button><button class="${E.view==='list'?'on':''}" onclick="eqv2View('list')">☷ لیست</button></div>${canDo('create')?'<button class="btn btn-sm btn-primary" onclick="eqv2Create()">＋ افزودن تجهیز</button>':''}</div>${toolbar()}<div class="eqv2-layout"><section class="eqv2-main"><div class="eqv2-loading">در حال دریافت ساختار تجهیزات…</div></section><aside class="eqv2-dossier" id="eqv2Summary">${empty('برای مشاهده خلاصه، یک تجهیز را انتخاب کنید. برای ورود به پرونده کامل دوبار کلیک کنید.')}</aside></div></div>`;
   }
   function toolbar(){
     const factories=E.options.factories.map(x=>`<option value="${escText(x.id)}" ${E.factoryId===x.id?'selected':''}>${escText(x.name)}</option>`).join('');
