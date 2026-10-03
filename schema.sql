@@ -245,7 +245,8 @@ CREATE TABLE IF NOT EXISTS leaves(
   no TEXT,
   kind TEXT,
   type TEXT,
-  user TEXT REFERENCES users(id),
+  -- "user" is a reserved keyword in PostgreSQL and must stay quoted.
+  "user" TEXT REFERENCES users(id),
   from_at TIMESTAMPTZ,
   to_at TIMESTAMPTZ,
   date TIMESTAMPTZ,
