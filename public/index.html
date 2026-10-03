@@ -557,13 +557,13 @@ const ROLES={admin:'مدیر سیستم',mgr:'مدیر نت',planner:'برنام
 function seed(){
 return {
 users:[
- {id:'u1',u:'admin',p:'1234',name:'حافظ بایرامیان',role:'admin',unit:'مدیریت سیستم',phone:'09912214983',active:true},
- {id:'u2',u:'manager',p:'1234',name:'حسین کریمی',role:'mgr',unit:'نگهداری و تعمیرات',phone:'0918xxxxxxx',active:true},
- {id:'u3',u:'tech1',p:'1234',name:'علی رستمی',role:'tech',unit:'نت — مکانیک',spec:'مکانیک',phone:'0918xxxxxxx',active:true},
- {id:'u4',u:'tech2',p:'1234',name:'مهدی سلیمانی',role:'tech',unit:'نت — برق',spec:'برق',phone:'0918xxxxxxx',active:true},
- {id:'u5',u:'op1',p:'1234',name:'سعید احمدی',role:'op',unit:'تولید — خط ۱',phone:'0918xxxxxxx',active:true},
- {id:'u6',u:'store',p:'1234',name:'مجید نوری',role:'store',unit:'انبار فنی',phone:'0918xxxxxxx',active:true},
- {id:'u7',u:'hse',p:'1234',name:'فرهاد عزیزی',role:'hse',unit:'HSE',phone:'0918xxxxxxx',active:true},
+ {id:'u1',u:'admin',p:'',name:'حافظ بایرامیان',role:'admin',unit:'مدیریت سیستم',phone:'09912214983',active:true},
+ {id:'u2',u:'manager',p:'',name:'حسین کریمی',role:'mgr',unit:'نگهداری و تعمیرات',phone:'0918xxxxxxx',active:true},
+ {id:'u3',u:'tech1',p:'',name:'علی رستمی',role:'tech',unit:'نت — مکانیک',spec:'مکانیک',phone:'0918xxxxxxx',active:true},
+ {id:'u4',u:'tech2',p:'',name:'مهدی سلیمانی',role:'tech',unit:'نت — برق',spec:'برق',phone:'0918xxxxxxx',active:true},
+ {id:'u5',u:'op1',p:'',name:'سعید احمدی',role:'op',unit:'تولید — خط ۱',phone:'0918xxxxxxx',active:true},
+ {id:'u6',u:'store',p:'',name:'مجید نوری',role:'store',unit:'انبار فنی',phone:'0918xxxxxxx',active:true},
+ {id:'u7',u:'hse',p:'',name:'فرهاد عزیزی',role:'hse',unit:'HSE',phone:'0918xxxxxxx',active:true},
 ],
 assets:[
  {id:'a0',parent:null,code:'BFG',name:'سایت بسپار فوم غرب',type:'site',status:'active'},
@@ -5076,7 +5076,7 @@ STAFF.forEach((r,i)=>{
  if(DB.users.some(u=>u.name===name&&u.hr&&u.hr.pcode===pc))return;
  const isM=net.startsWith('M'),isPM=net.toLowerCase().includes('pm');
  DB.users.push({
-  id:'st'+i,u:'p'+net.toLowerCase().replace(/[^a-z0-9]/g,''),p:'1234',
+  id:'st'+i,u:'p'+net.toLowerCase().replace(/[^a-z0-9]/g,''),p:'',
   name,role:isPM||isM?'tech':'op',
   unit:isM?'نت — مکانیک':isPM?'نت — PM':'تولید',
   spec:isM?'مکانیک':isPM?'PM / نگهداری':'',

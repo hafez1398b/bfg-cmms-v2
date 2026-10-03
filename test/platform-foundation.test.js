@@ -65,7 +65,7 @@ test('server uses one authenticated realtime configuration instead of global con
 });
 
 test('canonical system administrator identity is consistent in local and PostgreSQL provisioning',()=>{
-  assert.match(read('public/index.html'),/u:'admin',p:'1234',name:'حافظ بایرامیان',role:'admin'/);
+  assert.match(read('public/index.html'),/u:'admin',p:'',name:'حافظ بایرامیان',role:'admin'/);
   assert.match(read('create-admin.js'),/حافظ بایرامیان/);
-  assert.doesNotMatch(read('create-admin.js'),/admin123/);
+  assert.match(read('create-admin.js'),/ADMIN_INITIAL_PASSWORD/);
 });

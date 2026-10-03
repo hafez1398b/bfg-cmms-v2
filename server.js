@@ -126,7 +126,10 @@ app.post('/api/data/:collection', authenticateToken, async (req, res) => {
                 [data.id, data.parent, data.code, data.name, data.type, data.cls, data.status, data.crit, data.maker, data.model, data.serial, data.year, data.install, data.power, data.hours || 0, JSON.stringify(data.history || [])]
             );
         } else if (collection === 'users') {
-            const password = data.p || '1234';
+            const password = data.p;
+            if (typeof password !== 'string' || password.length < 12) {
+                return res.status(400).json({ error: 'A password of at least 12 characters is required' });
+            }
             const pass_hash = bcrypt.hashSync(password, 10);
             await pool.query(
                 'INSERT INTO users (id, username, pass_hash, name, role, unit, phone, active, hr) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',

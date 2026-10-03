@@ -54,7 +54,7 @@
 
       const techByCanonical={};
       data.technicians.forEach(t=>{
-        const u=upsertBy(DB.users,'u',t.username,{id:t.id,u:t.username,p:'1234',name:t.name,role:t.role||'tech',unit:t.unit||'نگهداری و تعمیرات — بسپار ۱',spec:t.specialty,phone:t.phone||'',active:true,hr:{dataStatus:t.dataStatus||'imported',personnelCode:t.personnelCode||null,specialty:t.specialty,skillLevel:t.skillLevel||null,workDomain:t.workDomain||null}});
+        const u=upsertBy(DB.users,'u',t.username,{id:t.id,u:t.username,p:'',name:t.name,role:t.role||'tech',unit:t.unit||'نگهداری و تعمیرات — بسپار ۱',spec:t.specialty,phone:t.phone||'',active:true,hr:{dataStatus:t.dataStatus||'imported',personnelCode:t.personnelCode||null,specialty:t.specialty,skillLevel:t.skillLevel||null,workDomain:t.workDomain||null}});
         techByCanonical[t.id]=u.id;
       });
 
