@@ -53,11 +53,12 @@
     workOrders.forEach(w=>(w.parts||[]).forEach(part=>{const item=itemById(part.itemId||part.item_id);consumed.push({wo_id:w.id,wo_no:w.no,item_id:item?.id||part.itemId,item_code:item?.code||'',item_name:item?.name||'قطعه ثبت‌شده',qty:Number(part.qty)||0,unit:item?.unit||'',unit_price:item?.price??null,at:w.times?.end||w.createdAt||null});}));
     const costs=workOrders.map(w=>({wo_id:w.id,wo_no:w.no,at:w.times?.end||w.createdAt||null,amount:actualCost(w)})).filter(x=>x.amount!==null);
     const downtimes=completed.map(w=>({wo_id:w.id,wo_no:w.no,start:w.times?.start||null,end:w.times?.end||null,hours:actualDurationHours(w),reason:w.desc||w.descr||''})).filter(x=>x.hours!==null);
+    const computedHealth=window.BFGOperationalIntelligence?.equipmentHealth?.(a);
     return {
       id:a.id,parent:a.parent,code:a.code,name:a.name,type:a.type,cls:a.cls,status:a.status,crit:a.crit,
       maker:a.maker,model:a.model,serial:a.serial,year:a.year,install:a.install,power:a.power,hours:a.hours||0,
       is_active:active(a),sort_order:a.sortOrder||a.sort_order||0,row_version:a.rowVersion||a.row_version||1,
-      health_score:a.healthScore??a.health_score??null,category_id:a.categoryId||a.category_id||null,
+      health_score:a.healthScore??a.health_score??computedHealth?.score??null,health_status:computedHealth?.status||null,health_coverage:computedHealth?.coverage??null,category_id:a.categoryId||a.category_id||null,
       category_name:category?.name||a.cat||'—',factory_id:factory?.id||null,factory_name:factory?.name||'—',
       location_name:parent?.name||'—',parent_name:parent?.name||'—',last_run:lastDate||null,next_pm:next?.toISOString()||null,
       open_wo:workOrders.filter(w=>!['closed','cancel','done','completed'].includes(w.status)).length,
@@ -65,7 +66,7 @@
       child_count:DB.assets.filter(x=>x.parent===a.id&&active(x)).length,
       path:path.map(x=>({id:x.id,code:x.code,name:x.name,type:x.type,nodeKind:nodeKind(x)})),
       children:DB.assets.filter(x=>x.parent===a.id&&active(x)).map(x=>({id:x.id,parent:x.parent,code:x.code,name:x.name,type:x.type,status:x.status,crit:x.crit,nodeKind:nodeKind(x),child_count:DB.assets.filter(y=>y.parent===x.id&&active(y)).length})),
-      pm_plans:pms.map(p=>({id:p.id,title:p.title,interval_days:p.intervalDays||p.interval,last_run:p.lastRun||p.last,status:p.status||'active',checklist:p.checklist||[]})),
+      pm_plans:pms.map(p=>({id:p.id,code:p.ext?.code||p.sourceReference||'',title:p.title,interval_days:p.intervalDays||p.interval,last_run:p.lastRun||p.last,status:p.status||'active',checklist:p.checklist||[],owner_role:p.ext?.ownerRole||p.spec||'',consumable:p.ext?.consumable||null})),
       work_orders:workOrders.map(w=>({...w,descr:w.desc||w.descr,created_at:w.createdAt||w.created_at,duration_hours:actualDurationHours(w),actual_cost:actualCost(w)})),
       requests:requests.map(r=>({...r,descr:r.desc||r.descr,created_at:r.createdAt||r.created_at})),
       maintenance_history:completed.map(w=>({...w,descr:w.desc||w.descr,created_at:w.createdAt||w.created_at,duration_hours:actualDurationHours(w)})),
@@ -73,7 +74,7 @@
       consumed_parts:consumed,cost_entries:costs,downtimes,
       documents:(DB.docs||[]).filter(d=>d.assetId===a.id||d.asset_id===a.id),
       risks:a.risks||a.ext?.risks||[],rca:completed.map(w=>({wo_id:w.id,wo_no:w.no,at:w.times?.end||w.createdAt||null,root_cause:w.report?.rootCause||w.report?.rca||null,action:w.report?.correctiveAction||null})).filter(x=>x.root_cause),
-      movements:a.history||[],ext:{...(a.ext||{}),nodeKind:nodeKind(a)}
+      movements:a.history||[],ext:{...(a.ext||{}),nodeKind:nodeKind(a),operationalHealth:computedHealth||null}
     };
   }
 
@@ -118,7 +119,7 @@
     async create(data){const a={id:uid(),parent:data.parentId||null,code:data.code,name:data.name,type:['equipment','sub-equipment','subsystem','main-component','sub-component'].includes(data.nodeKind)?'eq':data.nodeKind==='factory'||data.nodeKind==='company'?'site':'unit',cls:data.cls||'',status:data.status||'active',crit:data.crit||'C',maker:data.maker||'',model:data.model||'',serial:data.serial||'',hours:Number(data.hours)||0,sortOrder:Number(data.sortOrder)||0,rowVersion:1,ext:{...(data.ext||{}),nodeKind:data.nodeKind}};if(DB.assets.some(x=>x.code===a.code&&active(x)))throw Object.assign(new Error('DUPLICATE_CODE'),{status:409});DB.assets.push(a);auditLocal('create',a,null);return{data:dto(a)};},
     async update(id,patch){const a=DB.assets.find(x=>x.id===id&&active(x));if(!a)throw Object.assign(new Error('NOT_FOUND'),{status:404});if(patch.rowVersion!==undefined&&Number(patch.rowVersion)!==Number(a.rowVersion||1))throw Object.assign(new Error('VERSION_CONFLICT'),{status:409});const before={...a},map={categoryId:'categoryId',sortOrder:'sortOrder',isActive:'isActive'};Object.entries(patch).forEach(([key,value])=>{if(key!=='rowVersion')a[map[key]||key]=value;});a.rowVersion=(a.rowVersion||1)+1;a.updatedAt=new Date().toISOString();auditLocal('edit',a,before);return{data:dto(a)};},
     async move(id,{parentId=null,sortOrder=0,rowVersion,reason=''}){const a=DB.assets.find(x=>x.id===id&&active(x));if(!a)throw Object.assign(new Error('NOT_FOUND'),{status:404});if(rowVersion!==undefined&&Number(rowVersion)!==Number(a.rowVersion||1))throw Object.assign(new Error('VERSION_CONFLICT'),{status:409});let p=parentId?DB.assets.find(x=>x.id===parentId&&active(x)):null,guard=0;while(p&&guard++<64){if(p.id===id)throw Object.assign(new Error('TREE_CYCLE'),{status:422});p=p.parent?DB.assets.find(x=>x.id===p.parent):null;}const before={...a};a.parent=parentId;a.sortOrder=Number(sortOrder)||0;a.rowVersion=(a.rowVersion||1)+1;a.history=a.history||[];a.history.push({t:new Date().toISOString(),x:`جابه‌جایی ساختاری توسط ${ME?.name||'-'} — ${reason}`});auditLocal('move',a,before);return{data:dto(a)};},
-    async remove(id,reason=''){const a=DB.assets.find(x=>x.id===id&&active(x));if(!a)throw Object.assign(new Error('NOT_FOUND'),{status:404});if(DB.assets.some(x=>x.parent===id&&active(x)))throw Object.assign(new Error('HAS_ACTIVE_CHILDREN'),{status:409});const before={...a};a.deleted=true;a.deletedAt=new Date().toISOString();a.deletedBy=ME?.id;a.deleteReason=reason;a.isActive=false;a.status='stopped';a.rowVersion=(a.rowVersion||1)+1;auditLocal('soft-delete',a,before);return{data:dto({...a,deleted:false,isActive:true}),historyPreserved:true};}
+    async remove(id,reason=''){const a=DB.assets.find(x=>x.id===id&&active(x));if(!a)throw Object.assign(new Error('NOT_FOUND'),{status:404});if(DB.assets.some(x=>x.parent===id&&active(x)))throw Object.assign(new Error('HAS_ACTIVE_CHILDREN'),{status:409});const before=JSON.parse(JSON.stringify(a));a.deleted=true;a.deletedAt=new Date().toISOString();a.deletedBy=ME?.id;a.deleteReason=reason;a.isActive=false;a.status='stopped';a.rowVersion=(a.rowVersion||1)+1;DB.trash=DB.trash||[];DB.trash.unshift({id:uid(),coll:'assets',recId:id,label:(a.code||'')+' — '+a.name,t:a.deletedAt,by:ME?.name||'-',byId:ME?.id,snap:before,reason,restored:false});auditLocal('soft-delete',a,before);return{data:dto({...a,deleted:false,isActive:true}),historyPreserved:true};}
   };
 
   const remote={

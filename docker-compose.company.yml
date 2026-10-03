@@ -1,0 +1,76 @@
+name: bfg-cmms
+
+services:
+  database:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-bfg_cmms}
+      POSTGRES_USER: ${POSTGRES_USER:-bfg_cmms}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - bfg_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bfg_cmms} -d ${POSTGRES_DB:-bfg_cmms}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [backend]
+    security_opt: [no-new-privileges:true]
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      database:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 8080
+      DATABASE_URL: postgresql://${POSTGRES_USER:-bfg_cmms}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB:-bfg_cmms}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required for initial provisioning}
+      ALLOW_LOCAL_COMPATIBILITY: "false"
+      APP_ORIGINS: ${APP_ORIGINS:-}
+      AUTO_SEED_BESPAR1: ${AUTO_SEED_BESPAR1:-true}
+      AI_TIMEOUT_MS: ${AI_TIMEOUT_MS:-45000}
+      LOCAL_AI_BASE_URL: ${LOCAL_AI_BASE_URL:-}
+      LOCAL_AI_MODEL: ${LOCAL_AI_MODEL:-}
+      LOCAL_AI_API_KEY: ${LOCAL_AI_API_KEY:-}
+      LOCAL_AI_VISION: ${LOCAL_AI_VISION:-false}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-chat}
+      DEEPSEEK_VISION: ${DEEPSEEK_VISION:-false}
+      GEMINI_BASE_URL: ${GEMINI_BASE_URL:-https://generativelanguage.googleapis.com/v1beta}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash}
+      GEMINI_SEARCH_ENABLED: ${GEMINI_SEARCH_ENABLED:-false}
+    ports:
+      - "${APP_BIND_IP:-0.0.0.0}:${APP_PORT:-8080}:8080"
+    volumes:
+      - bfg_app_backups:/app/backups
+    networks: [backend]
+    security_opt: [no-new-privileges:true]
+    init: true
+
+  local-ai:
+    image: ollama/ollama:latest
+    profiles: ["local-ai"]
+    restart: unless-stopped
+    volumes:
+      - bfg_ollama_data:/root/.ollama
+    networks: [backend]
+    security_opt: [no-new-privileges:true]
+
+networks:
+  backend:
+    driver: bridge
+
+volumes:
+  bfg_postgres_data:
+  bfg_app_backups:
+  bfg_ollama_data:

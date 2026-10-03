@@ -25,19 +25,19 @@ function harness(){
   return{context,content,listeners,source};
 }
 
-test('existing pgTree is upgraded without creating a duplicate menu module',()=>{
+test('existing Equipment entry becomes one list-only registry without a duplicate module',()=>{
   const {context,source}=harness();
   assert.equal(context.MENU.filter(item=>item.id==='tree').length,1);
   assert.equal(context.MENU.some(item=>item.id==='equipmentV2'||item.id==='floormap'),false);
   const html=context.pgTree();
-  assert.match(html,/درخت تجهیزات و شناسنامه/);
-  assert.match(html,/🌳 درخت/);
-  assert.match(html,/☷ لیست/);
+  assert.match(html,/فهرست جامع تجهیزات/);
+  assert.doesNotMatch(html,/🌳 درخت/);
+  assert.match(html,/تمام تجهیزات ثبت‌شده در یک فهرست واحد/);
   assert.match(source,/data-equipment-detail/);
-  assert.match(source,/addEventListener\('dblclick'/);
+  assert.match(source,/onclick=\"eqv2OpenDetail/);
 });
 
-test('Tree/List detail navigation keeps the selected equipment and creates a bookmark route',async()=>{
+test('List selection opens the selected equipment and creates a bookmark route',async()=>{
   const {context,content}=harness();
   context.EQV2.view='tree';
   await context.eqv2OpenDetail('eq-1');
@@ -74,19 +74,15 @@ test('Back restores the originating List context instead of resetting it',async(
   assert.match(content.innerHTML,/فهرست|درخت تجهیزات/);
 });
 
-test('Back also preserves Tree expansion, selection, filters and scroll position',async()=>{
+test('Back always restores the comprehensive list while preserving filters and selection',async()=>{
   const {context}=harness();
-  Object.assign(context.EQV2,{view:'tree',factoryId:'factory-1',categoryId:'cat-1',selected:'eq-1',treeScroll:246,windowScroll:91});
-  context.EQV2.open.add('factory-1');context.EQV2.open.add('area-1');
+  Object.assign(context.EQV2,{view:'tree',factoryId:'factory-1',categoryId:'cat-1',selected:'eq-1'});
   await context.eqv2OpenDetail('eq-1');
   await context.eqv2BackToEquipment();
-  assert.equal(context.EQV2.view,'tree');
+  assert.equal(context.EQV2.view,'list');
   assert.equal(context.EQV2.selected,'eq-1');
   assert.equal(context.EQV2.factoryId,'factory-1');
   assert.equal(context.EQV2.categoryId,'cat-1');
-  assert.equal(context.EQV2.treeScroll,246);
-  assert.equal(context.EQV2.open.has('factory-1'),true);
-  assert.equal(context.EQV2.open.has('area-1'),true);
 });
 
 test('detail page preserves all previous tabs and requested maintenance layers',async()=>{
@@ -97,12 +93,11 @@ test('detail page preserves all previous tabs and requested maintenance layers',
   assert.match(content.innerHTML,/eqv2-breadcrumb/);
 });
 
-test('capture-phase delegated double click opens draggable Tree nodes reliably',async()=>{
-  const {context,content,listeners}=harness();
-  let prevented=false,stopped=false;
-  listeners.dblclick({target:{closest:()=>({dataset:{equipmentDetail:'eq-1'}})},preventDefault(){prevented=true;},stopPropagation(){stopped=true;}});
-  await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(prevented,true);assert.equal(stopped,true);
+test('single list selection opens the digital dossier',async()=>{
+  const {context,content,source}=harness();
+  assert.match(source,/onclick=\"eqv2OpenDetail/);
+  assert.doesNotMatch(source,/addEventListener\('dblclick'/);
+  await context.eqv2OpenDetail('eq-1');
   assert.match(content.innerHTML,/پمپ تست/);
   assert.equal(context.location.pathname,'/equipment/EQ-1');
 });

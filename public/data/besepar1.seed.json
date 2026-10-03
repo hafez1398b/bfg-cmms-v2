@@ -1,5 +1,5 @@
 {
-  "version": "1405.1",
+  "version": "1405.2",
   "factory": {
     "id": "b1-site",
     "code": "B1",
@@ -72,37 +72,131 @@
       "id": "b1-tech-mahmoud",
       "username": "mahmoud.m",
       "name": "محمود محمودآبادی",
-      "specialty": "تأسیسات و مکانیک"
+      "specialty": "تأسیسات",
+      "personnelCode": "P-002",
+      "skillLevel": "ارشد",
+      "workDomain": "تأسیسات، پک هیدرولیک، چیلر و دیگ",
+      "phone": "۰۹۱۰۶۱۸۰۲۱۴",
+      "role": "tech",
+      "unit": "نگهداری و تعمیرات — بسپار ۱",
+      "dataStatus": "verified-user-1405.2"
     },
     {
       "id": "b1-tech-ahmad",
       "username": "ahmad.k",
       "name": "احمد کاووسی",
-      "specialty": "برق صنعتی"
+      "specialty": "برق صنعتی",
+      "personnelCode": "P-001",
+      "skillLevel": "ارشد",
+      "workDomain": "برق و کنترل تمام تجهیزات",
+      "phone": "۰۹۳۹۵۵۵۱۰۰۳",
+      "role": "tech",
+      "unit": "نگهداری و تعمیرات — بسپار ۱",
+      "dataStatus": "verified-user-1405.2"
     },
     {
       "id": "b1-tech-mohsen",
       "username": "mohsen.p",
       "name": "محسن پیرایش",
-      "specialty": "مکانیک"
+      "specialty": "مکانیک خودرو و صنعتی",
+      "personnelCode": "P-005",
+      "skillLevel": "حرفه‌ای",
+      "workDomain": "ترابری، لیفتراک و خودرو",
+      "phone": null,
+      "role": "tech",
+      "unit": "نگهداری و تعمیرات — بسپار ۱",
+      "dataStatus": "verified-user-1405.2"
     },
     {
       "id": "b1-tech-nejat",
       "username": "nejat.b",
       "name": "نجات بابایی",
-      "specialty": "مکانیک صنعتی"
+      "specialty": "مکانیک صنعتی",
+      "personnelCode": "P-004",
+      "skillLevel": "حرفه‌ای",
+      "workDomain": "تعمیرات مکانیکی و سرویس PM",
+      "phone": "۰۹۱۲۰۳۹۶۱۵۰",
+      "role": "tech",
+      "unit": "نگهداری و تعمیرات — بسپار ۱",
+      "dataStatus": "verified-user-1405.2"
     },
     {
       "id": "b1-tech-asghar",
       "username": "asghar.r",
       "name": "اصغر رضایی",
-      "specialty": "جوشکاری و تأسیسات"
+      "specialty": "جوشکاری/تأسیسات",
+      "personnelCode": "P-003",
+      "skillLevel": "حرفه‌ای",
+      "workDomain": "جوشکاری، لوله‌کشی و تأسیسات",
+      "phone": "۰۹۳۶۴۱۰۵۸۵۴",
+      "role": "tech",
+      "unit": "نگهداری و تعمیرات — بسپار ۱",
+      "dataStatus": "verified-user-1405.2"
     },
     {
       "id": "b1-tech-ali",
       "username": "ali.m",
       "name": "علی محمدی",
-      "specialty": "دستگاه‌های تزریق"
+      "specialty": "دستگاه‌های تزریق",
+      "personnelCode": "P-010",
+      "skillLevel": "حرفه‌ای",
+      "workDomain": "دستگاه تزریق ۱ و ۲",
+      "phone": "۰۹۰۱۲۱۲۴۵۰۳",
+      "role": "tech",
+      "unit": "نگهداری و تعمیرات — بسپار ۱",
+      "dataStatus": "verified-user-1405.2"
+    },
+    {
+      "id": "b1-person-yahyah",
+      "name": "یحیی جهانمرادی",
+      "username": "yahyah.j",
+      "personnelCode": "P-006",
+      "specialty": "مکانیک / لیفتراک",
+      "skillLevel": "حرفه‌ای",
+      "workDomain": "لیفتراک‌ها و ترابری",
+      "phone": "۰۹۱۸۷۲۶۶۹۳۱",
+      "role": "tech",
+      "unit": "نگهداری و تعمیرات — بسپار ۱",
+      "dataStatus": "verified-user-1405.2"
+    },
+    {
+      "id": "b1-person-hafez",
+      "name": "حافظ بایرامیان",
+      "username": "admin",
+      "personnelCode": "P-007",
+      "specialty": "مدیریت فنی / PM",
+      "skillLevel": "مدیریت",
+      "workDomain": "مدیریت نگهداری و تعمیرات",
+      "phone": "۰۹۹۱۲۲۱۴۹۸۳",
+      "role": "admin",
+      "unit": "مدیریت سیستم",
+      "dataStatus": "verified-user-1405.2"
+    },
+    {
+      "id": "b1-person-reza",
+      "name": "رضا نوری",
+      "username": "reza.n",
+      "personnelCode": "P-008",
+      "specialty": "لیفتراک",
+      "skillLevel": "متوسط",
+      "workDomain": "لیفتراک کوماتسو ۳ تن",
+      "phone": "۰۹۰۵۲۰۵۱۹۶۵",
+      "role": "tech",
+      "unit": "نگهداری و تعمیرات — بسپار ۱",
+      "dataStatus": "verified-user-1405.2"
+    },
+    {
+      "id": "b1-person-rouhollah",
+      "name": "روح‌الله پیری",
+      "username": "rouhollah.p",
+      "personnelCode": "P-009",
+      "specialty": "لیفتراک",
+      "skillLevel": "متوسط",
+      "workDomain": "لیفتراک تویوتا ۲.۵ تن",
+      "phone": "۰۹۱۹۱۲۸۸۲۰۶",
+      "role": "tech",
+      "unit": "نگهداری و تعمیرات — بسپار ۱",
+      "dataStatus": "verified-user-1405.2"
     }
   ],
   "equipment": [
@@ -691,80 +785,6 @@
       ]
     },
     {
-      "id": "b1-eq-p08",
-      "code": "B1P08",
-      "name": "کانوایرها (۵ دستگاه)",
-      "category": "ماشین‌آلات تولید",
-      "type": "eq",
-      "status": "active",
-      "criticality": "B",
-      "maker": "ایران",
-      "location": "سالن تولید فوم - خطوط انتقال",
-      "year": "۱۳۹۶",
-      "capacity": "۵ دور/دقیقه",
-      "criticalityScore": 60,
-      "pm": {
-        "daily": [
-          "بازدید نوار نقاله"
-        ],
-        "weekly": [
-          "کنترل تسمه‌ها و تابلو برق"
-        ],
-        "monthly": [
-          "گریس‌کاری یاتاقان",
-          "روغن رولیک",
-          "آچارکشی و ریگلاژ"
-        ],
-        "quarterly": [
-          "کنترل روغن گیربکس"
-        ]
-      },
-      "history": [
-        {
-          "date": "۱۴۰۲/۱۲/۲۵",
-          "type": "EM",
-          "title": "خرابی الکتروموتور",
-          "technician": "احمد کاووسی",
-          "durationHours": 4.0
-        },
-        {
-          "date": "۱۴۰۲/۱۲/۲۵",
-          "type": "EM",
-          "title": "خرابی پولی درایو",
-          "technician": "محسن پیرایش",
-          "durationHours": 2.0
-        },
-        {
-          "date": "۱۴۰۲/۱۲/۲۵",
-          "type": "EM",
-          "title": "تعویض تسمه",
-          "technician": "محمود محمودآبادی",
-          "durationHours": 1.5
-        },
-        {
-          "date": "۱۴۰۲/۱۲/۲۵",
-          "type": "PM",
-          "title": "نظافت دستگاه",
-          "technician": "نجات بابایی",
-          "durationHours": 1.0
-        },
-        {
-          "date": "۱۴۰۳/۰۵/۰۲",
-          "type": "PM",
-          "title": "جوشکاری کراشر",
-          "technician": "اصغر رضایی",
-          "durationHours": 2.0
-        },
-        {
-          "date": "۱۴۰۴/۰۸/۱۰",
-          "type": "EM",
-          "title": "تعمیر کاسه نمد گیربکس",
-          "technician": "محسن پیرایش",
-          "durationHours": 3.0
-        }
-      ]
-    },
-    {
       "id": "b1-eq-pf09",
       "code": "B1PF09",
       "name": "کمپرسور هوا ۱۰۰۰L",
@@ -1000,19 +1020,6 @@
       "history": []
     },
     {
-      "id": "b1-temp-water-admin",
-      "code": "TMP-B1-ADM-WP",
-      "name": "پمپ آب ساختمان اداری",
-      "category": "اداری",
-      "type": "eq",
-      "status": "active",
-      "criticality": "B",
-      "requiresCoding": true,
-      "location": "ساختمان اداری",
-      "criticalityScore": 0,
-      "dataStatus": "needs-coding"
-    },
-    {
       "id": "b1-temp-polyol-pipe",
       "code": "TMP-B1-POL-PIPE",
       "name": "خط لوله پولیول - انبار مواد",
@@ -1072,9 +1079,30 @@
       "type": "eq",
       "status": "active",
       "criticality": "B",
-      "parentEquipment": "b1-eq-p08",
-      "spec": "موتور ۳kW/1430rpm، ۱۲ رولیک، ۱ درام درایو، ۴ یاتاقان",
-      "criticalityScore": 60
+      "spec": "الکتروموتور ۳ کیلووات/۱۴۳۰ دور، ۱۲ رولیک، ۱ درام درایو، ۴ یاتاقان",
+      "criticalityScore": 60,
+      "maker": "ایران",
+      "location": "سالن تولید فوم - خطوط انتقال",
+      "pm": {
+        "daily": [
+          "کنترل نوار نقاله از نظر ترک و شکاف"
+        ],
+        "weekly": [
+          "کنترل تسمه‌ها",
+          "کنترل تابلو برق‌ها"
+        ],
+        "monthly": [
+          "بازدید و گریس‌کاری یاتاقان‌ها",
+          "بازدید و روغن‌کاری رولیک‌ها",
+          "آچارکشی نقاط متحرک",
+          "ریگلاژ نوار نقاله"
+        ],
+        "quarterly": [
+          "تعویض روغن گیربکس با روغن دنده 85W90"
+        ]
+      },
+      "dataStatus": "verified-user-1405.2",
+      "history": []
     },
     {
       "id": "b1-eq-p08-2",
@@ -1084,9 +1112,38 @@
       "type": "eq",
       "status": "active",
       "criticality": "B",
-      "parentEquipment": "b1-eq-p08",
-      "spec": "۲ موتور ۲.۲kW/1400rpm، زنجیر و دنده",
-      "criticalityScore": 60
+      "spec": "۲ الکتروموتور ۲.۲ کیلووات/۱۴۰۰ دور، سیستم انتقال نیرو زنجیر/دنده",
+      "criticalityScore": 60,
+      "maker": "ایران",
+      "location": "سالن تولید فوم - خطوط انتقال",
+      "pm": {
+        "daily": [
+          "کنترل نوار نقاله از نظر ترک و شکاف"
+        ],
+        "weekly": [
+          "کنترل تسمه‌ها",
+          "کنترل تابلو برق‌ها"
+        ],
+        "monthly": [
+          "بازدید و گریس‌کاری یاتاقان‌ها",
+          "بازدید و روغن‌کاری رولیک‌ها",
+          "آچارکشی نقاط متحرک",
+          "ریگلاژ نوار نقاله"
+        ],
+        "quarterly": [
+          "تعویض روغن گیربکس با روغن دنده 85W90"
+        ]
+      },
+      "dataStatus": "verified-user-1405.2",
+      "history": [
+        {
+          "date": "۱۴۰۳/۰۵/۰۲",
+          "type": "PM",
+          "title": "جوشکاری کراشر",
+          "technician": "اصغر رضایی",
+          "durationHours": 2.0
+        }
+      ]
     },
     {
       "id": "b1-eq-p08-3",
@@ -1096,9 +1153,38 @@
       "type": "eq",
       "status": "active",
       "criticality": "B",
-      "parentEquipment": "b1-eq-p08",
-      "spec": "موتور ۰.۵kW/1300rpm، گیربکس ایتالیا، نوار ۴.۵×۰.۶m",
-      "criticalityScore": 60
+      "spec": "الکتروموتور ۰.۵ کیلووات/۱۳۰۰ دور، گیربکس ایتالیا، نوار نقاله ۴.۵×۰.۶ متر",
+      "criticalityScore": 60,
+      "maker": "ایران",
+      "location": "سالن تولید فوم - خطوط انتقال",
+      "pm": {
+        "daily": [
+          "کنترل نوار نقاله از نظر ترک و شکاف"
+        ],
+        "weekly": [
+          "کنترل تسمه‌ها",
+          "کنترل تابلو برق‌ها"
+        ],
+        "monthly": [
+          "بازدید و گریس‌کاری یاتاقان‌ها",
+          "بازدید و روغن‌کاری رولیک‌ها",
+          "آچارکشی نقاط متحرک",
+          "ریگلاژ نوار نقاله"
+        ],
+        "quarterly": [
+          "تعویض روغن گیربکس با روغن دنده 85W90"
+        ]
+      },
+      "dataStatus": "verified-user-1405.2",
+      "history": [
+        {
+          "date": "۱۴۰۴/۰۸/۱۰",
+          "type": "EM",
+          "title": "تعمیر کاسه نمد گیربکس",
+          "technician": "محسن پیرایش",
+          "durationHours": 3.0
+        }
+      ]
     },
     {
       "id": "b1-eq-p08-4",
@@ -1108,9 +1194,30 @@
       "type": "eq",
       "status": "active",
       "criticality": "B",
-      "parentEquipment": "b1-eq-p08",
-      "spec": "موتور ۲.۲kW/1400rpm، ۲ درام درایو، نقاله ۱۰×۱m",
-      "criticalityScore": 60
+      "spec": "الکتروموتور ۲.۲ کیلووات/۱۴۰۰ دور، ۲ درام درایو، نقاله ۱۰×۱ متر",
+      "criticalityScore": 60,
+      "maker": "ایران",
+      "location": "سالن تولید فوم - خطوط انتقال",
+      "pm": {
+        "daily": [
+          "کنترل نوار نقاله از نظر ترک و شکاف"
+        ],
+        "weekly": [
+          "کنترل تسمه‌ها",
+          "کنترل تابلو برق‌ها"
+        ],
+        "monthly": [
+          "بازدید و گریس‌کاری یاتاقان‌ها",
+          "بازدید و روغن‌کاری رولیک‌ها",
+          "آچارکشی نقاط متحرک",
+          "ریگلاژ نوار نقاله"
+        ],
+        "quarterly": [
+          "تعویض روغن گیربکس با روغن دنده 85W90"
+        ]
+      },
+      "dataStatus": "verified-user-1405.2",
+      "history": []
     },
     {
       "id": "b1-eq-p08-5",
@@ -1120,9 +1227,83 @@
       "type": "eq",
       "status": "active",
       "criticality": "B",
-      "parentEquipment": "b1-eq-p08",
-      "spec": "۳ موتور ۳kW/1430rpm، ۳ درام درایو، نقاله ۳۰×۱.۲۳m",
-      "criticalityScore": 60
+      "spec": "۳ موتور ۳ کیلووات/۱۴۳۰ دور، ۳ درام درایو، نقاله ۳۰×۱.۲۳ متر",
+      "criticalityScore": 60,
+      "maker": "ایران",
+      "location": "سالن تولید فوم - خطوط انتقال",
+      "pm": {
+        "daily": [
+          "کنترل نوار نقاله از نظر ترک و شکاف"
+        ],
+        "weekly": [
+          "کنترل تسمه‌ها",
+          "کنترل تابلو برق‌ها"
+        ],
+        "monthly": [
+          "بازدید و گریس‌کاری یاتاقان‌ها",
+          "بازدید و روغن‌کاری رولیک‌ها",
+          "آچارکشی نقاط متحرک",
+          "ریگلاژ نوار نقاله"
+        ],
+        "quarterly": [
+          "تعویض روغن گیربکس با روغن دنده 85W90"
+        ]
+      },
+      "dataStatus": "verified-user-1405.2",
+      "history": []
+    },
+    {
+      "id": "b1-eq-cool01",
+      "code": "B1Cool01",
+      "name": "کولر آبی آبسال ۱۳۰۰۰",
+      "category": "اداری",
+      "type": "eq",
+      "status": "active",
+      "criticality": null,
+      "maker": "آبسال",
+      "model": "۱۳۰۰۰",
+      "location": "ساختمان اداری",
+      "keyParts": [
+        "پمپ آب کولر"
+      ],
+      "dataStatus": "verified-user-1405.2",
+      "history": []
+    },
+    {
+      "id": "b1-eq-bt",
+      "code": "B1BT",
+      "name": "دستگاه بلندینگ (تولید پولیول)",
+      "category": "ماشین‌آلات تولید",
+      "type": "eq",
+      "status": "active",
+      "criticality": null,
+      "location": "انبار مواد",
+      "dataStatus": "partial-user-verified",
+      "history": []
+    },
+    {
+      "id": "b1-eq-bt9955",
+      "code": "B1BT9955",
+      "name": "مخازن پولیول بلندینگ",
+      "category": "ماشین‌آلات تولید",
+      "type": "eq",
+      "status": "active",
+      "criticality": null,
+      "parentEquipment": "b1-eq-bt",
+      "dataStatus": "partial-user-verified",
+      "history": []
+    },
+    {
+      "id": "b1-eq-bt-catali",
+      "code": "B1BT catali",
+      "name": "مخازن استیل ۲۰۰ لیتری کاتالیست",
+      "category": "ماشین‌آلات تولید",
+      "type": "eq",
+      "status": "active",
+      "criticality": null,
+      "parentEquipment": "b1-eq-bt",
+      "dataStatus": "partial-user-verified",
+      "history": []
     }
   ],
   "spareParts": [
@@ -1703,52 +1884,6 @@
       "status": "active"
     },
     {
-      "id": "b1-pm-b1p08-daily",
-      "assetId": "b1-eq-p08",
-      "title": "PM روزانه — کانوایرها (۵ دستگاه)",
-      "frequency": "daily",
-      "intervalDays": 1,
-      "checklist": [
-        "بازدید نوار نقاله"
-      ],
-      "status": "active"
-    },
-    {
-      "id": "b1-pm-b1p08-weekly",
-      "assetId": "b1-eq-p08",
-      "title": "PM هفتگی — کانوایرها (۵ دستگاه)",
-      "frequency": "weekly",
-      "intervalDays": 7,
-      "checklist": [
-        "کنترل تسمه‌ها و تابلو برق"
-      ],
-      "status": "active"
-    },
-    {
-      "id": "b1-pm-b1p08-monthly",
-      "assetId": "b1-eq-p08",
-      "title": "PM ماهانه — کانوایرها (۵ دستگاه)",
-      "frequency": "monthly",
-      "intervalDays": 30,
-      "checklist": [
-        "گریس‌کاری یاتاقان",
-        "روغن رولیک",
-        "آچارکشی و ریگلاژ"
-      ],
-      "status": "active"
-    },
-    {
-      "id": "b1-pm-b1p08-quarterly",
-      "assetId": "b1-eq-p08",
-      "title": "PM فصلی — کانوایرها (۵ دستگاه)",
-      "frequency": "quarterly",
-      "intervalDays": 90,
-      "checklist": [
-        "کنترل روغن گیربکس"
-      ],
-      "status": "active"
-    },
-    {
       "id": "b1-pm-b1pf09-daily",
       "assetId": "b1-eq-pf09",
       "title": "PM روزانه — کمپرسور هوا ۱۰۰۰L",
@@ -1912,6 +2047,646 @@
       "sourceReference": "PM-M-005",
       "recurring": true,
       "confirmationStatus": "confirmed"
+    },
+    {
+      "id": "b1-eq-p08-1-pm-cnv-001",
+      "assetId": "b1-eq-p08-1",
+      "code": "PM-CNV-001",
+      "sourceReference": "PM-CNV-001",
+      "title": "کنترل نوار نقاله (ترک و شکاف)",
+      "frequency": "daily",
+      "intervalDays": 1,
+      "ownerRole": "اپراتور",
+      "consumable": null,
+      "checklist": [
+        "کنترل نوار نقاله (ترک و شکاف)"
+      ],
+      "status": "active",
+      "confirmationStatus": "confirmed"
+    },
+    {
+      "id": "b1-eq-p08-1-pm-cnv-002",
+      "assetId": "b1-eq-p08-1",
+      "code": "PM-CNV-002",
+      "sourceReference": "PM-CNV-002",
+      "title": "کنترل تسمه‌ها",
+      "frequency": "weekly",
+      "intervalDays": 7,
+      "ownerRole": "اپراتور",
+      "consumable": null,
+      "checklist": [
+        "کنترل تسمه‌ها"
+      ],
+      "status": "active",
+      "confirmationStatus": "confirmed"
+    },
+    {
+      "id": "b1-eq-p08-1-pm-cnv-003",
+      "assetId": "b1-eq-p08-1",
+      "code": "PM-CNV-003",
+      "sourceReference": "PM-CNV-003",
+      "title": "کنترل تابلو برق‌ها",
+      "frequency": "weekly",
+      "intervalDays": 7,
+      "ownerRole": "برقکار",
+      "consumable": null,
+      "checklist": [
+        "کنترل تابلو برق‌ها"
+      ],
+      "status": "active",
+      "confirmationStatus": "confirmed"
+    },
+    {
+      "id": "b1-eq-p08-1-pm-cnv-004",
+      "assetId": "b1-eq-p08-1",
+      "code": "PM-CNV-004",
+      "sourceReference": "PM-CNV-004",
+      "title": "بازدید و گریس کاری یاتاقان‌ها",
+      "frequency": "monthly",
+      "intervalDays": 30,
+      "ownerRole": "مکانیک",
+      "consumable": "گریس نسوز",
+      "checklist": [
+        "بازدید و گریس کاری یاتاقان‌ها"
+      ],
+      "status": "active",
+      "confirmationStatus": "confirmed"
+    },
+    {
+      "id": "b1-eq-p08-1-pm-cnv-005",
+      "assetId": "b1-eq-p08-1",
+      "code": "PM-CNV-005",
+      "sourceReference": "PM-CNV-005",
+      "title": "بازدید و روغن کاری رولیک‌ها",
+      "frequency": "monthly",
+      "intervalDays": 30,
+      "ownerRole": "مکانیک",
+      "consumable": "روغن صنعتی",
+      "checklist": [
+        "بازدید و روغن کاری رولیک‌ها"
+      ],
+      "status": "active",
+      "confirmationStatus": "confirmed"
+    },
+    {
+      "id": "b1-eq-p08-1-pm-cnv-006",
+      "assetId": "b1-eq-p08-1",
+      "code": "PM-CNV-006",
+      "sourceReference": "PM-CNV-006",
+      "title": "آچارکشی نقاط متحرک",
+      "frequency": "monthly",
+      "intervalDays": 30,
+      "ownerRole": "مکانیک",
+      "consumable": null,
+      "checklist": [
+        "آچارکشی نقاط متحرک"
+      ],
+      "status": "active",
+      "confirmationStatus": "confirmed"
+    },
+    {
+      "id": "b1-eq-p08-1-pm-cnv-007",
+      "assetId": "b1-eq-p08-1",
+      "code": "PM-CNV-007",
+      "sourceReference": "PM-CNV-007",
+      "title": "ریگلاژ نوار نقاله",
+      "frequency": "monthly",
+      "intervalDays": 30,
+      "ownerRole": "مکانیک",
+      "consumable": null,
+      "checklist": [
+        "ریگلاژ نوار نقاله"
+      ],
+      "status": "active",
+      "confirmationStatus": "confirmed"
+    },
+    {
+      "id": "b1-eq-p08-1-pm-cnv-008",
+      "assetId": "b1-eq-p08-1",
+      "code": "PM-CNV-008",
+      "sourceReference": "PM-CNV-008",
+      "title": "تعویض روغن گیربکس",
+      "frequency": "quarterly",
+      "intervalDays": 90,
+      "ownerRole": "مکانیک",
+      "consumable": "روغن دنده 85W90",
+      "checklist": [
+        "تعویض روغن گیربکس"
+      ],
+      "status": "active",
+      "confirmationStatus": "confirmed"
+    },
+    {
+      "id": "b1-eq-p08-2-pm-cnv-001",
+      "assetId": "b1-eq-p08-2",
+      "code": "PM-CNV-001",
+      "sourceReference": "PM-CNV-001",
+      "title": "کنترل نوار نقاله (ترک و شکاف)",
+      "frequency": "daily",
+      "intervalDays": 1,
+      "ownerRole": "اپراتور",
+      "consumable": null,
+      "checklist": [
+        "کنترل نوار نقاله (ترک و شکاف)"
+      ],
+      "status": "active",
+      "confirmationStatus": "confirmed"
+    },
+    {
+      "id": "b1-eq-p08-2-pm-cnv-002",
+      "assetId": "b1-eq-p08-2",
+      "code": "PM-CNV-002",
+      "sourceReference": "PM-CNV-002",
+      "title": "کنترل تسمه‌ها",
+      "frequency": "weekly",
+      "intervalDays": 7,
+      "ownerRole": "اپراتور",
+      "consumable": null,
+      "checklist": [
+        "کنترل تسمه‌ها"
+      ],
+      "status": "active",
+      "confirmationStatus": "confirmed"
+    },
+    {
+      "id": "b1-eq-p08-2-pm-cnv-003",
+      "assetId": "b1-eq-p08-2",
+      "code": "PM-CNV-003",
+      "sourceReference": "PM-CNV-003",
+      "title": "کنترل تابلو برق‌ها",
+      "frequency": "weekly",
+      "intervalDays": 7,
+      "ownerRole": "برقکار",
+      "consumable": null,
+      "checklist": [
+        "کنترل تابلو برق‌ها"
+      ],
+      "status": "active",
+      "confirmationStatus": "confirmed"
+    },
+    {
+      "id": "b1-eq-p08-2-pm-cnv-004",
+      "assetId": "b1-eq-p08-2",
+      "code": "PM-CNV-004",
+      "sourceReference": "PM-CNV-004",
+      "title": "بازدید و گریس کاری یاتاقان‌ها",
+      "frequency": "monthly",
+      "intervalDays": 30,
+      "ownerRole": "مکانیک",
+      "consumable": "گریس نسوز",
+      "checklist": [
+        "بازدید و گریس کاری یاتاقان‌ها"
+      ],
+      "status": "active",
+      "confirmationStatus": "confirmed"
+    },
+    {
+      "id": "b1-eq-p08-2-pm-cnv-005",
+      "assetId": "b1-eq-p08-2",
+      "code": "PM-CNV-005",
+      "sourceReference": "PM-CNV-005",
+      "title": "بازدید و روغن کاری رولیک‌ها",
+      "frequency": "monthly",
+      "intervalDays": 30,
+      "ownerRole": "مکانیک",
+      "consumable": "روغن صنعتی",
+      "checklist": [
+        "بازدید و روغن کاری رولیک‌ها"
+      ],
+      "status": "active",
+      "confirmationStatus": "confirmed"
+    },
+    {
+      "id": "b1-eq-p08-2-pm-cnv-006",
+      "assetId": "b1-eq-p08-2",
+      "code": "PM-CNV-006",
+      "sourceReference": "PM-CNV-006",
+      "title": "آچارکشی نقاط متحرک",
+      "frequency": "monthly",
+      "intervalDays": 30,
+      "ownerRole": "مکانیک",
+      "consumable": null,
+      "checklist": [
+        "آچارکشی نقاط متحرک"
+      ],
+      "status": "active",
+      "confirmationStatus": "confirmed"
+    },
+    {
+      "id": "b1-eq-p08-2-pm-cnv-007",
+      "assetId": "b1-eq-p08-2",
+      "code": "PM-CNV-007",
+      "sourceReference": "PM-CNV-007",
+      "title": "ریگلاژ نوار نقاله",
+      "frequency": "monthly",
+      "intervalDays": 30,
+      "ownerRole": "مکانیک",
+      "consumable": null,
+      "checklist": [
+        "ریگلاژ نوار نقاله"
+      ],
+      "status": "active",
+      "confirmationStatus": "confirmed"
+    },
+    {
+      "id": "b1-eq-p08-2-pm-cnv-008",
+      "assetId": "b1-eq-p08-2",
+      "code": "PM-CNV-008",
+      "sourceReference": "PM-CNV-008",
+      "title": "تعویض روغن گیربکس",
+      "frequency": "quarterly",
+      "intervalDays": 90,
+      "ownerRole": "مکانیک",
+      "consumable": "روغن دنده 85W90",
+      "checklist": [
+        "تعویض روغن گیربکس"
+      ],
+      "status": "active",
+      "confirmationStatus": "confirmed"
+    },
+    {
+      "id": "b1-eq-p08-3-pm-cnv-001",
+      "assetId": "b1-eq-p08-3",
+      "code": "PM-CNV-001",
+      "sourceReference": "PM-CNV-001",
+      "title": "کنترل نوار نقاله (ترک و شکاف)",
+      "frequency": "daily",
+      "intervalDays": 1,
+      "ownerRole": "اپراتور",
+      "consumable": null,
+      "checklist": [
+        "کنترل نوار نقاله (ترک و شکاف)"
+      ],
+      "status": "active",
+      "confirmationStatus": "confirmed"
+    },
+    {
+      "id": "b1-eq-p08-3-pm-cnv-002",
+      "assetId": "b1-eq-p08-3",
+      "code": "PM-CNV-002",
+      "sourceReference": "PM-CNV-002",
+      "title": "کنترل تسمه‌ها",
+      "frequency": "weekly",
+      "intervalDays": 7,
+      "ownerRole": "اپراتور",
+      "consumable": null,
+      "checklist": [
+        "کنترل تسمه‌ها"
+      ],
+      "status": "active",
+      "confirmationStatus": "confirmed"
+    },
+    {
+      "id": "b1-eq-p08-3-pm-cnv-003",
+      "assetId": "b1-eq-p08-3",
+      "code": "PM-CNV-003",
+      "sourceReference": "PM-CNV-003",
+      "title": "کنترل تابلو برق‌ها",
+      "frequency": "weekly",
+      "intervalDays": 7,
+      "ownerRole": "برقکار",
+      "consumable": null,
+      "checklist": [
+        "کنترل تابلو برق‌ها"
+      ],
+      "status": "active",
+      "confirmationStatus": "confirmed"
+    },
+    {
+      "id": "b1-eq-p08-3-pm-cnv-004",
+      "assetId": "b1-eq-p08-3",
+      "code": "PM-CNV-004",
+      "sourceReference": "PM-CNV-004",
+      "title": "بازدید و گریس کاری یاتاقان‌ها",
+      "frequency": "monthly",
+      "intervalDays": 30,
+      "ownerRole": "مکانیک",
+      "consumable": "گریس نسوز",
+      "checklist": [
+        "بازدید و گریس کاری یاتاقان‌ها"
+      ],
+      "status": "active",
+      "confirmationStatus": "confirmed"
+    },
+    {
+      "id": "b1-eq-p08-3-pm-cnv-005",
+      "assetId": "b1-eq-p08-3",
+      "code": "PM-CNV-005",
+      "sourceReference": "PM-CNV-005",
+      "title": "بازدید و روغن کاری رولیک‌ها",
+      "frequency": "monthly",
+      "intervalDays": 30,
+      "ownerRole": "مکانیک",
+      "consumable": "روغن صنعتی",
+      "checklist": [
+        "بازدید و روغن کاری رولیک‌ها"
+      ],
+      "status": "active",
+      "confirmationStatus": "confirmed"
+    },
+    {
+      "id": "b1-eq-p08-3-pm-cnv-006",
+      "assetId": "b1-eq-p08-3",
+      "code": "PM-CNV-006",
+      "sourceReference": "PM-CNV-006",
+      "title": "آچارکشی نقاط متحرک",
+      "frequency": "monthly",
+      "intervalDays": 30,
+      "ownerRole": "مکانیک",
+      "consumable": null,
+      "checklist": [
+        "آچارکشی نقاط متحرک"
+      ],
+      "status": "active",
+      "confirmationStatus": "confirmed"
+    },
+    {
+      "id": "b1-eq-p08-3-pm-cnv-007",
+      "assetId": "b1-eq-p08-3",
+      "code": "PM-CNV-007",
+      "sourceReference": "PM-CNV-007",
+      "title": "ریگلاژ نوار نقاله",
+      "frequency": "monthly",
+      "intervalDays": 30,
+      "ownerRole": "مکانیک",
+      "consumable": null,
+      "checklist": [
+        "ریگلاژ نوار نقاله"
+      ],
+      "status": "active",
+      "confirmationStatus": "confirmed"
+    },
+    {
+      "id": "b1-eq-p08-3-pm-cnv-008",
+      "assetId": "b1-eq-p08-3",
+      "code": "PM-CNV-008",
+      "sourceReference": "PM-CNV-008",
+      "title": "تعویض روغن گیربکس",
+      "frequency": "quarterly",
+      "intervalDays": 90,
+      "ownerRole": "مکانیک",
+      "consumable": "روغن دنده 85W90",
+      "checklist": [
+        "تعویض روغن گیربکس"
+      ],
+      "status": "active",
+      "confirmationStatus": "confirmed"
+    },
+    {
+      "id": "b1-eq-p08-4-pm-cnv-001",
+      "assetId": "b1-eq-p08-4",
+      "code": "PM-CNV-001",
+      "sourceReference": "PM-CNV-001",
+      "title": "کنترل نوار نقاله (ترک و شکاف)",
+      "frequency": "daily",
+      "intervalDays": 1,
+      "ownerRole": "اپراتور",
+      "consumable": null,
+      "checklist": [
+        "کنترل نوار نقاله (ترک و شکاف)"
+      ],
+      "status": "active",
+      "confirmationStatus": "confirmed"
+    },
+    {
+      "id": "b1-eq-p08-4-pm-cnv-002",
+      "assetId": "b1-eq-p08-4",
+      "code": "PM-CNV-002",
+      "sourceReference": "PM-CNV-002",
+      "title": "کنترل تسمه‌ها",
+      "frequency": "weekly",
+      "intervalDays": 7,
+      "ownerRole": "اپراتور",
+      "consumable": null,
+      "checklist": [
+        "کنترل تسمه‌ها"
+      ],
+      "status": "active",
+      "confirmationStatus": "confirmed"
+    },
+    {
+      "id": "b1-eq-p08-4-pm-cnv-003",
+      "assetId": "b1-eq-p08-4",
+      "code": "PM-CNV-003",
+      "sourceReference": "PM-CNV-003",
+      "title": "کنترل تابلو برق‌ها",
+      "frequency": "weekly",
+      "intervalDays": 7,
+      "ownerRole": "برقکار",
+      "consumable": null,
+      "checklist": [
+        "کنترل تابلو برق‌ها"
+      ],
+      "status": "active",
+      "confirmationStatus": "confirmed"
+    },
+    {
+      "id": "b1-eq-p08-4-pm-cnv-004",
+      "assetId": "b1-eq-p08-4",
+      "code": "PM-CNV-004",
+      "sourceReference": "PM-CNV-004",
+      "title": "بازدید و گریس کاری یاتاقان‌ها",
+      "frequency": "monthly",
+      "intervalDays": 30,
+      "ownerRole": "مکانیک",
+      "consumable": "گریس نسوز",
+      "checklist": [
+        "بازدید و گریس کاری یاتاقان‌ها"
+      ],
+      "status": "active",
+      "confirmationStatus": "confirmed"
+    },
+    {
+      "id": "b1-eq-p08-4-pm-cnv-005",
+      "assetId": "b1-eq-p08-4",
+      "code": "PM-CNV-005",
+      "sourceReference": "PM-CNV-005",
+      "title": "بازدید و روغن کاری رولیک‌ها",
+      "frequency": "monthly",
+      "intervalDays": 30,
+      "ownerRole": "مکانیک",
+      "consumable": "روغن صنعتی",
+      "checklist": [
+        "بازدید و روغن کاری رولیک‌ها"
+      ],
+      "status": "active",
+      "confirmationStatus": "confirmed"
+    },
+    {
+      "id": "b1-eq-p08-4-pm-cnv-006",
+      "assetId": "b1-eq-p08-4",
+      "code": "PM-CNV-006",
+      "sourceReference": "PM-CNV-006",
+      "title": "آچارکشی نقاط متحرک",
+      "frequency": "monthly",
+      "intervalDays": 30,
+      "ownerRole": "مکانیک",
+      "consumable": null,
+      "checklist": [
+        "آچارکشی نقاط متحرک"
+      ],
+      "status": "active",
+      "confirmationStatus": "confirmed"
+    },
+    {
+      "id": "b1-eq-p08-4-pm-cnv-007",
+      "assetId": "b1-eq-p08-4",
+      "code": "PM-CNV-007",
+      "sourceReference": "PM-CNV-007",
+      "title": "ریگلاژ نوار نقاله",
+      "frequency": "monthly",
+      "intervalDays": 30,
+      "ownerRole": "مکانیک",
+      "consumable": null,
+      "checklist": [
+        "ریگلاژ نوار نقاله"
+      ],
+      "status": "active",
+      "confirmationStatus": "confirmed"
+    },
+    {
+      "id": "b1-eq-p08-4-pm-cnv-008",
+      "assetId": "b1-eq-p08-4",
+      "code": "PM-CNV-008",
+      "sourceReference": "PM-CNV-008",
+      "title": "تعویض روغن گیربکس",
+      "frequency": "quarterly",
+      "intervalDays": 90,
+      "ownerRole": "مکانیک",
+      "consumable": "روغن دنده 85W90",
+      "checklist": [
+        "تعویض روغن گیربکس"
+      ],
+      "status": "active",
+      "confirmationStatus": "confirmed"
+    },
+    {
+      "id": "b1-eq-p08-5-pm-cnv-001",
+      "assetId": "b1-eq-p08-5",
+      "code": "PM-CNV-001",
+      "sourceReference": "PM-CNV-001",
+      "title": "کنترل نوار نقاله (ترک و شکاف)",
+      "frequency": "daily",
+      "intervalDays": 1,
+      "ownerRole": "اپراتور",
+      "consumable": null,
+      "checklist": [
+        "کنترل نوار نقاله (ترک و شکاف)"
+      ],
+      "status": "active",
+      "confirmationStatus": "confirmed"
+    },
+    {
+      "id": "b1-eq-p08-5-pm-cnv-002",
+      "assetId": "b1-eq-p08-5",
+      "code": "PM-CNV-002",
+      "sourceReference": "PM-CNV-002",
+      "title": "کنترل تسمه‌ها",
+      "frequency": "weekly",
+      "intervalDays": 7,
+      "ownerRole": "اپراتور",
+      "consumable": null,
+      "checklist": [
+        "کنترل تسمه‌ها"
+      ],
+      "status": "active",
+      "confirmationStatus": "confirmed"
+    },
+    {
+      "id": "b1-eq-p08-5-pm-cnv-003",
+      "assetId": "b1-eq-p08-5",
+      "code": "PM-CNV-003",
+      "sourceReference": "PM-CNV-003",
+      "title": "کنترل تابلو برق‌ها",
+      "frequency": "weekly",
+      "intervalDays": 7,
+      "ownerRole": "برقکار",
+      "consumable": null,
+      "checklist": [
+        "کنترل تابلو برق‌ها"
+      ],
+      "status": "active",
+      "confirmationStatus": "confirmed"
+    },
+    {
+      "id": "b1-eq-p08-5-pm-cnv-004",
+      "assetId": "b1-eq-p08-5",
+      "code": "PM-CNV-004",
+      "sourceReference": "PM-CNV-004",
+      "title": "بازدید و گریس کاری یاتاقان‌ها",
+      "frequency": "monthly",
+      "intervalDays": 30,
+      "ownerRole": "مکانیک",
+      "consumable": "گریس نسوز",
+      "checklist": [
+        "بازدید و گریس کاری یاتاقان‌ها"
+      ],
+      "status": "active",
+      "confirmationStatus": "confirmed"
+    },
+    {
+      "id": "b1-eq-p08-5-pm-cnv-005",
+      "assetId": "b1-eq-p08-5",
+      "code": "PM-CNV-005",
+      "sourceReference": "PM-CNV-005",
+      "title": "بازدید و روغن کاری رولیک‌ها",
+      "frequency": "monthly",
+      "intervalDays": 30,
+      "ownerRole": "مکانیک",
+      "consumable": "روغن صنعتی",
+      "checklist": [
+        "بازدید و روغن کاری رولیک‌ها"
+      ],
+      "status": "active",
+      "confirmationStatus": "confirmed"
+    },
+    {
+      "id": "b1-eq-p08-5-pm-cnv-006",
+      "assetId": "b1-eq-p08-5",
+      "code": "PM-CNV-006",
+      "sourceReference": "PM-CNV-006",
+      "title": "آچارکشی نقاط متحرک",
+      "frequency": "monthly",
+      "intervalDays": 30,
+      "ownerRole": "مکانیک",
+      "consumable": null,
+      "checklist": [
+        "آچارکشی نقاط متحرک"
+      ],
+      "status": "active",
+      "confirmationStatus": "confirmed"
+    },
+    {
+      "id": "b1-eq-p08-5-pm-cnv-007",
+      "assetId": "b1-eq-p08-5",
+      "code": "PM-CNV-007",
+      "sourceReference": "PM-CNV-007",
+      "title": "ریگلاژ نوار نقاله",
+      "frequency": "monthly",
+      "intervalDays": 30,
+      "ownerRole": "مکانیک",
+      "consumable": null,
+      "checklist": [
+        "ریگلاژ نوار نقاله"
+      ],
+      "status": "active",
+      "confirmationStatus": "confirmed"
+    },
+    {
+      "id": "b1-eq-p08-5-pm-cnv-008",
+      "assetId": "b1-eq-p08-5",
+      "code": "PM-CNV-008",
+      "sourceReference": "PM-CNV-008",
+      "title": "تعویض روغن گیربکس",
+      "frequency": "quarterly",
+      "intervalDays": 90,
+      "ownerRole": "مکانیک",
+      "consumable": "روغن دنده 85W90",
+      "checklist": [
+        "تعویض روغن گیربکس"
+      ],
+      "status": "active",
+      "confirmationStatus": "confirmed"
     }
   ],
   "provisionalWorkOrders1405": [
@@ -1935,25 +2710,26 @@
     },
     {
       "id": "b1-wo-1405-034",
-      "no": "WO-1405-034",
-      "title": "تعمیرات پمپ آب اداری",
-      "assetId": "b1-temp-water-admin",
+      "no": "WO-1405-001",
+      "title": "تعویض پمپ آب کولر آبی آبسال ۱۳۰۰۰",
+      "assetId": "b1-eq-cool01",
       "type": "BD",
       "sourceType": "EM",
-      "periodLabel": "۱۴۰۵/۰۵",
+      "periodLabel": "۱۴۰۵/۰۵/۱۲",
       "month": "مرداد",
-      "assigneeId": "b1-tech-mahmoud",
-      "assigneeProposed": true,
-      "status": "draft",
-      "confirmationStatus": "pending-confirmation",
+      "assigneeId": "b1-tech-ahmad",
+      "assigneeProposed": false,
+      "status": "closed",
+      "confirmationStatus": "confirmed",
       "provisionalFields": [
         "startTime",
-        "endTime",
-        "assigneeId"
+        "endTime"
       ],
-      "notes": "اطلاعات ساعت و تعمیرکار از فایل مبدأ موجود نیست و باید توسط مسئول نت تأیید شود.",
+      "notes": "تعویض پمپ آب کولر آبی آبسال ۱۳۰۰۰ توسط احمد کاووسی؛ تاریخ، تجهیز، تکنسین و مدت توقف توسط کاربر تأیید شد. ساعت شروع/پایان ثبت نشده است.",
       "relatedAssetIds": [],
-      "candidateAssetIds": []
+      "candidateAssetIds": [],
+      "durationHours": 2.5,
+      "priority": "normal"
     },
     {
       "id": "b1-wo-1405-035",
@@ -2254,7 +3030,42 @@
     "تمام ساعت‌های شروع و پایان بخش ۱۴۰۵ نیازمند تأیید هستند.",
     "تعمیرکارهای بخش ۱۴۰۵ پیشنهادی هستند.",
     "WO-1405-046 در انتظار تعیین تجهیز دقیق است.",
-    "تجهیزات با کد TMP نیازمند کدگذاری رسمی هستند."
+    "تجهیزات با کد TMP نیازمند کدگذاری رسمی هستند.",
+    {
+      "scope": "B1P08 legacy history split",
+      "status": "pending-verification",
+      "note": "چهار سابقه تجمیعی خرابی الکتروموتور، پولی درایو، تسمه و نظافت دستگاه فاقد کد کانوایر هستند و بدون تأیید به تجهیز مشخص منتسب نشدند.",
+      "records": [
+        {
+          "date": "۱۴۰۲/۱۲/۲۵",
+          "type": "EM",
+          "title": "خرابی الکتروموتور",
+          "technician": "احمد کاووسی",
+          "durationHours": 4.0
+        },
+        {
+          "date": "۱۴۰۲/۱۲/۲۵",
+          "type": "EM",
+          "title": "خرابی پولی درایو",
+          "technician": "محسن پیرایش",
+          "durationHours": 2.0
+        },
+        {
+          "date": "۱۴۰۲/۱۲/۲۵",
+          "type": "EM",
+          "title": "تعویض تسمه",
+          "technician": "محمود محمودآبادی",
+          "durationHours": 1.5
+        },
+        {
+          "date": "۱۴۰۲/۱۲/۲۵",
+          "type": "PM",
+          "title": "نظافت دستگاه",
+          "technician": "نجات بابایی",
+          "durationHours": 1.0
+        }
+      ]
+    }
   ],
   "otherFactories": [
     {
@@ -2307,5 +3118,19 @@
         ]
       }
     ]
-  }
+  },
+  "externalTechnicians": [
+    {
+      "name": "حسن نظری",
+      "specialty": "تعمیرات لیفتراک",
+      "workDomain": "پیمانکار خارجی سازمان",
+      "dataStatus": "verified-user-1405.2"
+    },
+    {
+      "name": "سارو",
+      "specialty": "تعمیرکار لیفتراک",
+      "workDomain": "پیمانکار لیفتراک‌ها",
+      "dataStatus": "verified-user-1405.2"
+    }
+  ]
 }
