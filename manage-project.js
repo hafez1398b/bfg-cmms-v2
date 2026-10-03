@@ -43,7 +43,7 @@ function showStatus() {
     
     // بررسی دیتابیس
     console.log('\n🗄️ دیتابیس:');
-    console.log('   اتصال: ' + (process.env.DATABASE_URL || 'postgres://postgres:123@localhost:5432/bfg_cmms'));
+    console.log('   اتصال از DATABASE_URL تنظیم‌شده در محیط انجام می‌شود.');
 }
 
 // ================= بررسی و اصلاح index.html =================
@@ -196,7 +196,7 @@ function main() {
     console.log('');
     console.log('🔑 ورود به سامانه:');
     console.log('   Username: admin');
-    console.log('   Password: admin123');
+    console.log('   رمز مدیر از ADMIN_INITIAL_PASSWORD خوانده می‌شود و چاپ نمی‌شود.');
     console.log('   http://localhost:8080');
 }
 

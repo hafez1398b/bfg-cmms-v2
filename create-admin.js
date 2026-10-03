@@ -8,8 +8,8 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 async function createAdmin() {
     if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required');
     const username = process.env.ADMIN_USERNAME || 'admin';
-    const rawPassword = process.env.ADMIN_PASSWORD;
-    if (!rawPassword || rawPassword.length < 10) throw new Error('ADMIN_PASSWORD with at least 10 characters is required');
+    const rawPassword = process.env.ADMIN_INITIAL_PASSWORD;
+    if (!rawPassword || rawPassword.length < 12) throw new Error('ADMIN_INITIAL_PASSWORD with at least 12 characters is required');
     const passwordHash = await bcrypt.hash(rawPassword, 12);
     const result = await pool.query(
         `INSERT INTO users (id, username, pass_hash, name, role, unit, active)

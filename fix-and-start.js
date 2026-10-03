@@ -7,13 +7,11 @@ const bcrypt = require('bcryptjs');
 const projectDir = __dirname;
 const publicDir = path.join(projectDir, 'public');
 const indexPath = path.join(publicDir, 'index.html');
-const envPath = path.join(projectDir, '.env');
 const serverPath = path.join(projectDir, 'server.js');
 
 // تنظیمات
-const dbConfig = {
-    connectionString: process.env.DATABASE_URL || 'postgres://postgres:123@localhost:5432/bfg_cmms'
-};
+if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required');
+const dbConfig = { connectionString: process.env.DATABASE_URL };
 
 const pool = new Pool(dbConfig);
 
@@ -136,6 +134,9 @@ async function checkDatabase() {
     console.log('🔍 بررسی دیتابیس...');
     
     try {
+        if (!process.env.ADMIN_INITIAL_PASSWORD || process.env.ADMIN_INITIAL_PASSWORD.length < 12) {
+            throw new Error('ADMIN_INITIAL_PASSWORD with at least 12 characters is required');
+        }
         // بررسی اتصال
         const result = await pool.query('SELECT 1');
         console.log('✅ اتصال به دیتابیس برقرار است');
@@ -145,7 +146,7 @@ async function checkDatabase() {
         
         if (adminResult.rows.length === 0) {
             console.log('⚠️ کاربر admin وجود ندارد. ایجاد میکنم...');
-            const password = bcrypt.hashSync('admin123', 10);
+            const password = bcrypt.hashSync(process.env.ADMIN_INITIAL_PASSWORD, 12);
             await pool.query(
                 `INSERT INTO users (id, username, pass_hash, name, role, unit, active) 
                  VALUES ($1, $2, $3, $4, $5, $6, $7)`,
@@ -194,7 +195,7 @@ async function main() {
     
     if (!dbOk) {
         console.log('❌ دیتابیس متصل نیست. بررسی کنید:');
-        console.log('   - رمز عبور در .env صحیح است؟');
+        console.log('   - DATABASE_URL و ADMIN_INITIAL_PASSWORD را در محیط تنظیم کنید.');
         console.log('   - PostgreSQL در حال اجرا است؟');
         console.log('   - دیتابیس bfg_cmms وجود دارد؟');
         process.exit(1);
@@ -209,7 +210,7 @@ async function main() {
     console.log('');
     console.log('🔑 ورود به سامانه:');
     console.log('   Username: admin');
-    console.log('   Password: admin123');
+    console.log('   Password: از ADMIN_INITIAL_PASSWORD استفاده شد؛ مقدار آن چاپ نمی‌شود.');
     console.log('   http://localhost:8080');
     
     process.exit(0);

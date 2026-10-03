@@ -19,6 +19,6 @@ test('production seed does not create shared default-password accounts',()=>{
   const seed=read('scripts/seed-besepar1.js'),bootstrap=read('scripts/company-bootstrap.js');
   assert.doesNotMatch(seed,/hashSync\('1234'/);
   assert.match(seed,/activation-required/);
-  assert.match(bootstrap,/ADMIN_PASSWORD must contain at least 12 characters/);
+  assert.match(bootstrap,/ADMIN_INITIAL_PASSWORD must contain at least 12 characters/);
   assert.match(bootstrap,/startup will not reset its password/);
 });

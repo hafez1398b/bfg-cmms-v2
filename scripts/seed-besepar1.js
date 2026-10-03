@@ -37,7 +37,7 @@ function dateFromJalali(value) {
 async function upsertUser(client, t) {
   if(t.role==='admin'){
     const existing=await client.query('SELECT id FROM users WHERE username=$1',[t.username]);
-    if(!existing.rows[0])throw new Error('ADMIN_PROVISION_REQUIRED: run npm run provision:admin with a strong ADMIN_PASSWORD first');
+    if(!existing.rows[0])throw new Error('ADMIN_PROVISION_REQUIRED: run npm run provision:admin with a strong ADMIN_INITIAL_PASSWORD first');
     await client.query(`UPDATE users SET name=$2,role='admin',unit=$3,phone=$4,active=true,hr=COALESCE(hr,'{}'::jsonb)||$5::jsonb WHERE id=$1`,[existing.rows[0].id,t.name,t.unit||'مدیریت سیستم',t.phone||null,JSON.stringify({personnelCode:t.personnelCode,specialty:t.specialty,skillLevel:t.skillLevel,workDomain:t.workDomain,dataStatus:t.dataStatus})]);
     return existing.rows[0].id;
   }

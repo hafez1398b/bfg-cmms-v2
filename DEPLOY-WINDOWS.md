@@ -22,7 +22,8 @@
 
 ### 4. تنظیم .env
 - فایل .env را ویرایش کنید:
-  DATABASE_URL=postgres://postgres:your_password@localhost:5432/bfg_cmms
+  DATABASE_URL=postgresql://user:example-only@localhost:5432/bfg_cmms
+  ADMIN_INITIAL_PASSWORD=یک-رمز-تصادفی-حداقل-۱۲-کاراکتری-تنظیم-کنید
 
 ### 5. نصب وابستگیها
 - cd C:\bfg-cmms
@@ -53,7 +54,7 @@
 
 ## تست نهایی
 - مرورگر را باز کنید: http://server-ip
-- ورود با: admin / admin123
+- ورود با نام کاربری admin و رمز تعیین‌شده در ADMIN_INITIAL_PASSWORD
 
 ## پشتیبانگیری
 - روزانه از دیتابیس پشتیبان بگیرید:

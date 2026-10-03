@@ -18,8 +18,8 @@ async function connectWithRetry(pool){
 }
 
 async function ensureAdmin(client){
-  const username=process.env.ADMIN_USERNAME||'admin',password=process.env.ADMIN_PASSWORD;
-  if(!password||password.length<12)throw new Error('ADMIN_PASSWORD must contain at least 12 characters');
+  const username=process.env.ADMIN_USERNAME||'admin',password=process.env.ADMIN_INITIAL_PASSWORD;
+  if(!password||password.length<12)throw new Error('ADMIN_INITIAL_PASSWORD must contain at least 12 characters');
   const existing=await client.query("SELECT id FROM users WHERE role='admin' ORDER BY created_at LIMIT 1");
   if(existing.rows[0]){console.log('Administrator already exists; startup will not reset its password.');return;}
   const hash=await bcrypt.hash(password,12);
