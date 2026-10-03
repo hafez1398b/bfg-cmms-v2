@@ -26,6 +26,7 @@
     try{
       const data=await fetch(DATA_URL,{cache:'no-store'}).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json();});
       DB.bespar1Data=DB.bespar1Data||{};
+      if(DB.bespar1Data.version===data.version)return true;
       // Canonical enterprise hierarchy: Company → Head Office / Factories → B1…B6.
       const company=upsertBy(DB.assets,'code','BFG',{
         id:'bfg-company',parent:null,code:'BFG',name:'شرکت بسپار فوم غرب',type:'site',status:'active',cls:'شرکت',nodeKind:'company',ext:{datasetVersion:data.version,hierarchyVersion:'1.0'}
@@ -53,7 +54,7 @@
 
       const techByCanonical={};
       data.technicians.forEach(t=>{
-        const u=upsertBy(DB.users,'u',t.username,{id:t.id,u:t.username,p:'1234',name:t.name,role:'tech',unit:'نگهداری و تعمیرات — بسپار ۱',spec:t.specialty,active:true,hr:{dataStatus:'imported',specialty:t.specialty}});
+        const u=upsertBy(DB.users,'u',t.username,{id:t.id,u:t.username,p:'1234',name:t.name,role:t.role||'tech',unit:t.unit||'نگهداری و تعمیرات — بسپار ۱',spec:t.specialty,phone:t.phone||'',active:true,hr:{dataStatus:t.dataStatus||'imported',personnelCode:t.personnelCode||null,specialty:t.specialty,skillLevel:t.skillLevel||null,workDomain:t.workDomain||null}});
         techByCanonical[t.id]=u.id;
       });
 
@@ -62,12 +63,16 @@
         const parent=e.parentEquipment ? (assetIdMap[e.parentEquipment]||e.parentEquipment) : catByName[e.category].id;
         const rec={
           id:e.id,parent,code:e.code,name:e.name,type:'eq',cls:e.parentEquipment?'زیرتجهیز':(categoryClass[e.category]||e.category),cat:e.category,
-          status:e.status||'active',crit:e.criticality||'C',maker:e.maker||'',model:e.model||'',year:e.year||'',install:e.install||'',
+          status:e.status||'active',crit:e.criticality??null,maker:e.maker||'',model:e.model||'',year:e.year||'',install:e.install||'',
           power:e.capacity||'',hours:0,nodeKind:e.parentEquipment?'sub':'main',history:(e.history||[]).map(h=>({t:isoDate(h.date),x:`${h.type} — ${h.title} — ${h.technician} — ${h.durationHours||'—'} ساعت`,source:'import-verified'})),
           ext:{factory:'بسپار ۱',locationDescription:e.location||'',capacity:e.capacity||'',dailyOperatingHours:e.dailyHours??null,criticalityScore:e.criticalityScore??null,keyParts:e.keyParts||[],preventiveMaintenance:e.pm||{},pmReference:e.pmRef||null,pmNote:e.pmNote||'',dailyInspection:e.dailyInspection||[],panelCode:e.panel||'',refrigerant:e.refrigerant||'',technicalSpecification:e.spec||'',requiresCoding:!!e.requiresCoding,dataStatus:e.dataStatus||'registered',datasetVersion:data.version}
         };
         const a=upsertBy(DB.assets,'code',e.code,rec);assetIdMap[e.id]=a.id;
       });
+
+      // Correction 1405.2: B1P08 is not an equipment; five conveyors are independent assets.
+      const legacyConveyorGroup=DB.assets.find(a=>a.code==='B1P08');
+      if(legacyConveyorGroup){legacyConveyorGroup.deleted=true;legacyConveyorGroup.isActive=false;legacyConveyorGroup.status='inactive';legacyConveyorGroup.deletedAt=new Date().toISOString();legacyConveyorGroup.deleteReason='اصلاح ساختار ۱۴۰۵.۲ — کانوایرها تجهیزات مستقل هستند';}
 
       data.spareParts.forEach(i=>{
         const linked=i.keyFor.map(id=>assetIdMap[id]||id);
@@ -76,7 +81,7 @@
 
       data.pmPlans.forEach(p=>{
         const aid=assetIdMap[p.assetId]||p.assetId;
-        const rec={id:p.id,assetId:aid,title:p.title,interval:p.intervalDays,last:isoDate('۱۴۰۵/۰۱/۰۱'),spec:'مکانیک',checklist:p.checklist||[],kind:p.frequency,status:p.status||'active',recurring:p.recurring!==false,ext:{sourceReference:p.sourceReference||'',confirmationStatus:p.confirmationStatus||'confirmed',factory:'بسپار ۱'}};
+        const rec={id:p.id,assetId:aid,title:p.title,interval:p.intervalDays,last:isoDate('۱۴۰۵/۰۱/۰۱'),spec:p.ownerRole||'مکانیک',checklist:p.checklist||[],kind:p.frequency,status:p.status||'active',recurring:p.recurring!==false,ext:{code:p.code||p.sourceReference||'',sourceReference:p.sourceReference||'',confirmationStatus:p.confirmationStatus||'confirmed',ownerRole:p.ownerRole||null,consumable:p.consumable||null,factory:'بسپار ۱'}};
         upsertBy(DB.pms,'id',p.id,rec);
       });
 
@@ -88,12 +93,14 @@
         upsertBy(DB.wos,'no',no,rec);
       }));
 
+      const correctedCoolerWo=(DB.wos||[]).find(w=>w.no==='WO-1405-034'&&/پمپ آب|کولر/.test(w.desc||''));
+      if(correctedCoolerWo&&!DB.wos.some(w=>w.no==='WO-1405-001'))correctedCoolerWo.no='WO-1405-001';
       data.provisionalWorkOrders1405.forEach(w=>{
         const assignee=techByCanonical[w.assigneeId]||w.assigneeId;
         const assetId=w.assetId?(assetIdMap[w.assetId]||w.assetId):null;
         const date=w.periodLabel.length===10?w.periodLabel:w.periodLabel+'/۰۱';
         const rec={id:w.id,no:w.no,type:w.type,assetId,desc:w.title,priority:w.priority||'normal',assignee,status:w.status,parts:[],createdAt:isoDate(date),est:null,
-          times:{periodLabel:w.periodLabel,periodOnly:w.periodLabel.length<10,start:null,end:null,requiresConfirmation:w.confirmationStatus==='pending-confirmation'},
+          times:{periodLabel:w.periodLabel,periodOnly:w.periodLabel.length<10,start:null,end:null,durationHours:w.durationHours??null,requiresConfirmation:w.confirmationStatus==='pending-confirmation'},
           report:{source:'repairs-1405-source-file',sourceType:w.sourceType,confirmationStatus:w.confirmationStatus,provisionalFields:w.provisionalFields||[],assigneeProposed:!!w.assigneeProposed,notes:w.notes||'',relatedAssetIds:(w.relatedAssetIds||[]).map(id=>assetIdMap[id]||id),candidateAssetIds:(w.candidateAssetIds||[]).map(id=>assetIdMap[id]||id),additionalAssigneeIds:(w.additionalAssigneeIds||[]).map(id=>techByCanonical[id]||id),dataQualityLabel:w.confirmationStatus==='pending-confirmation'?'نیاز به تأیید نهایی':'تأییدشده'}};
         upsertBy(DB.wos,'no',w.no,rec);
       });
@@ -101,9 +108,9 @@
       // Put registered Bespar 1 equipment on the floor-plan demo with normalized coordinates.
       if(DB.floorPlan&&DB.floorPlan.positions){
         const list=DB.floorPlan.positions['map-b1-foam']||(DB.floorPlan.positions['map-b1-foam']=[]);
-        const codes=['B1P01','B1P02','B1P06','B1P07','B1P08','B1PF09','B1PF10','B1PF11','B1AF1','B1AD6'];
-        const coords=[[.22,.28],[.36,.28],[.50,.28],[.64,.28],[.42,.48],[.75,.64],[.84,.64],[.66,.64],[.93,.64],[.93,.42]];
-        codes.forEach((code,i)=>{const a=DB.assets.find(x=>x.code===code);if(a&&!list.some(p=>p.assetId===a.id))list.push({id:'pos-'+a.id,assetId:a.id,x:coords[i][0],y:coords[i][1],rotation:0,scale:1,layer:code==='B1AF1'?'electrical':code==='B1AD6'?'building':'production',symbol:code.includes('PF09')?'compressor':code.includes('PF11')?'chiller':code.includes('AF')?'generator':code.includes('AD')?'industrial-door':code.includes('P06')||code.includes('P07')?'turntable':code==='B1P08'?'conveyor':'injection'});});
+        const codes=['B1P01','B1P02','B1P06','B1P07','B1P08-1','B1P08-2','B1P08-3','B1P08-4','B1P08-5','B1PF09','B1PF10','B1PF11','B1AF1','B1AD6'];
+        const coords=[[.18,.28],[.30,.28],[.42,.28],[.54,.28],[.18,.48],[.32,.48],[.46,.48],[.60,.48],[.74,.48],[.72,.66],[.82,.66],[.62,.66],[.92,.66],[.92,.42]];
+        codes.forEach((code,i)=>{const a=DB.assets.find(x=>x.code===code);if(a&&!list.some(p=>p.assetId===a.id))list.push({id:'pos-'+a.id,assetId:a.id,x:coords[i][0],y:coords[i][1],rotation:0,scale:1,layer:code==='B1AF1'?'electrical':code==='B1AD6'?'building':'production',symbol:code.includes('PF09')?'compressor':code.includes('PF11')?'chiller':code.includes('AF')?'generator':code.includes('AD')?'industrial-door':code.includes('P06')||code.includes('P07')?'turntable':code.startsWith('B1P08-')?'conveyor':'injection'});});
       }
 
       DB.seq=DB.seq||{};DB.seq.wo=Math.max(Number(DB.seq.wo)||0,49);
@@ -112,6 +119,8 @@
       save();
       console.info('Bespar 1 dataset imported',DB.bespar1Data);
       if(typeof updateBadge==='function')updateBadge();
+      if(typeof CUR!=='undefined'&&CUR==='tree'&&typeof go==='function')go('tree');
+      if(typeof toast==='function')toast(`داده‌های قطعی بسپار ۱ نسخه ${data.version} همگام شد ✅`);
       return true;
     }catch(error){console.error('Bespar 1 dataset import failed:',error);if(typeof toast==='function')toast('ورود داده‌های بسپار ۱ ناموفق بود',1);return false;}
   }
@@ -156,4 +165,6 @@
 
   // Deliberately manual: real master data must never be recreated automatically after a cleanup.
   window.importBespar1=importBespar1;
+  // Apply a newer canonical dataset once without resetting user-entered records.
+  if(typeof DB!=='undefined'&&DB?.equipmentStructureReset?.version==='2.0'&&!DB.equipmentStructureReset.awaitingCanonicalStructure)setTimeout(importBespar1,0);
 })();

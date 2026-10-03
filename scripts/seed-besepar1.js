@@ -35,13 +35,21 @@ function dateFromJalali(value) {
 }
 
 async function upsertUser(client, t) {
-  const hash=bcrypt.hashSync('1234',10);
+  if(t.role==='admin'){
+    const existing=await client.query('SELECT id FROM users WHERE username=$1',[t.username]);
+    if(!existing.rows[0])throw new Error('ADMIN_PROVISION_REQUIRED: run npm run provision:admin with a strong ADMIN_PASSWORD first');
+    await client.query(`UPDATE users SET name=$2,role='admin',unit=$3,phone=$4,active=true,hr=COALESCE(hr,'{}'::jsonb)||$5::jsonb WHERE id=$1`,[existing.rows[0].id,t.name,t.unit||'مدیریت سیستم',t.phone||null,JSON.stringify({personnelCode:t.personnelCode,specialty:t.specialty,skillLevel:t.skillLevel,workDomain:t.workDomain,dataStatus:t.dataStatus})]);
+    return existing.rows[0].id;
+  }
+  // Imported personnel are not login accounts until an administrator securely activates them.
+  // A random non-recoverable bootstrap secret prevents shared/default production passwords.
+  const hash=bcrypt.hashSync(require('node:crypto').randomBytes(32).toString('hex'),12);
   const {rows}=await client.query(
-    `INSERT INTO users(id,username,pass_hash,name,role,unit,active,hr)
-     VALUES($1,$2,$3,$4,'tech','نگهداری و تعمیرات — بسپار ۱',true,$5)
-     ON CONFLICT(username) DO UPDATE SET name=EXCLUDED.name,unit=EXCLUDED.unit,active=true,
+    `INSERT INTO users(id,username,pass_hash,name,role,unit,phone,active,hr)
+     VALUES($1,$2,$3,$4,$5,$6,$7,false,$8)
+     ON CONFLICT(username) DO UPDATE SET name=EXCLUDED.name,role=EXCLUDED.role,unit=EXCLUDED.unit,phone=EXCLUDED.phone,
        hr=COALESCE(users.hr,'{}'::jsonb)||EXCLUDED.hr RETURNING id`,
-    [t.id,t.username,hash,t.name,JSON.stringify({specialty:t.specialty,dataStatus:'imported'})]
+    [t.id,t.username,hash,t.name,t.role||'tech',t.unit||'نگهداری و تعمیرات — بسپار ۱',t.phone||null,JSON.stringify({personnelCode:t.personnelCode||null,specialty:t.specialty,skillLevel:t.skillLevel||null,workDomain:t.workDomain||null,dataStatus:t.dataStatus||'imported',accountStatus:'activation-required'})]
   ); return rows[0].id;
 }
 
@@ -58,7 +66,7 @@ async function upsertAsset(client, e, parentId, categoryId) {
        crit=EXCLUDED.crit,maker=EXCLUDED.maker,model=EXCLUDED.model,year=EXCLUDED.year,install=EXCLUDED.install,
        power=EXCLUDED.power,history=EXCLUDED.history,ext=COALESCE(assets.ext,'{}'::jsonb)||EXCLUDED.ext,
        category_id=EXCLUDED.category_id,requires_coding=EXCLUDED.requires_coding RETURNING id`,
-    [e.id,parentId,e.code,e.name,e.parentEquipment?'زیرتجهیز':e.category,e.criticality||'C',e.maker||null,e.model||null,e.year||null,e.install||null,e.capacity||null,JSON.stringify(history),JSON.stringify(ext),categoryId,!!e.requiresCoding]
+    [e.id,parentId,e.code,e.name,e.parentEquipment?'زیرتجهیز':e.category,e.criticality??null,e.maker||null,e.model||null,e.year||null,e.install||null,e.capacity||null,JSON.stringify(history),JSON.stringify(ext),categoryId,!!e.requiresCoding]
   ); return rows[0].id;
 }
 
@@ -132,12 +140,26 @@ async function run() {
 
     const techIds={};
     for(const t of data.technicians){techIds[t.id]=await upsertUser(client,t);stats.technicians++;}
+    for(let index=0;index<(data.externalTechnicians||[]).length;index++){
+      const contractor=data.externalTechnicians[index];
+      await client.query(`INSERT INTO contractors(id,name,field,score,people) VALUES($1,$2,$3,NULL,1)
+        ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,field=EXCLUDED.field`,[`b1-external-tech-${index+1}`,contractor.name,`${contractor.specialty} — ${contractor.workDomain}`]);
+    }
 
     const assetIds={};
     for(const e of data.equipment){
       const parentId=e.parentEquipment?(assetIds[e.parentEquipment]||e.parentEquipment):categories[e.category].nodeId;
       assetIds[e.id]=await upsertAsset(client,e,parentId,categories[e.category].categoryId);stats.equipment++;
     }
+    // B1P08 was an aggregate placeholder. Preserve its history but remove it from the active registry.
+    await client.query(`DO $$ BEGIN
+      IF EXISTS(SELECT 1 FROM information_schema.columns WHERE table_name='assets' AND column_name='deleted_at') THEN
+        UPDATE assets SET is_active=false,status='inactive',deleted_at=COALESCE(deleted_at,now()),delete_reason='اصلاح ساختار ۱۴۰۵.۲ — پنج کانوایر مستقل'
+        WHERE code='B1P08' AND deleted_at IS NULL;
+      ELSE
+        UPDATE assets SET status='inactive',type='retired-group',ext=COALESCE(ext,'{}'::jsonb)||'{"dataStatus":"superseded-by-independent-conveyors"}'::jsonb WHERE code='B1P08';
+      END IF;
+    END $$`);
 
     for(const item of data.spareParts){
       const {rows}=await client.query(
@@ -154,11 +176,11 @@ async function run() {
 
     for(const p of data.pmPlans){await client.query(
       `INSERT INTO pm_plans(id,asset_id,title,interval_days,last_run,spec,kind,checklist,status,recurring,source_ref,ext)
-       VALUES($1,$2,$3,$4,$5,'مکانیک',$6,$7,$8,$9,$10,$11)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
        ON CONFLICT(id) DO UPDATE SET asset_id=EXCLUDED.asset_id,title=EXCLUDED.title,interval_days=EXCLUDED.interval_days,
        kind=EXCLUDED.kind,checklist=EXCLUDED.checklist,status=EXCLUDED.status,recurring=EXCLUDED.recurring,
        source_ref=EXCLUDED.source_ref,ext=EXCLUDED.ext`,
-      [p.id,assetIds[p.assetId]||p.assetId,p.title,p.intervalDays,dateFromJalali('۱۴۰۵/۰۱/۰۱'),p.frequency,JSON.stringify(p.checklist||[]),p.status||'active',p.recurring!==false,p.sourceReference||null,JSON.stringify({confirmationStatus:p.confirmationStatus||'confirmed',factory:'بسپار ۱'})]
+      [p.id,assetIds[p.assetId]||p.assetId,p.title,p.intervalDays,dateFromJalali('۱۴۰۵/۰۱/۰۱'),p.ownerRole||'مکانیک',p.frequency,JSON.stringify(p.checklist||[]),p.status||'active',p.recurring!==false,p.sourceReference||p.code||null,JSON.stringify({code:p.code||p.sourceReference||null,confirmationStatus:p.confirmationStatus||'confirmed',ownerRole:p.ownerRole||null,consumable:p.consumable||null,factory:'بسپار ۱'})]
     );stats.pms++;}
 
     // Closed work orders for verified records through 1404.
@@ -175,6 +197,8 @@ async function run() {
       );stats.historicalWos++;
     }}
 
+    await client.query(`UPDATE work_orders SET no='WO-1405-001'
+      WHERE no='WO-1405-034' AND NOT EXISTS(SELECT 1 FROM work_orders WHERE no='WO-1405-001')`);
     for(const w of data.provisionalWorkOrders1405){
       const primaryAsset=w.assetId?(assetIds[w.assetId]||w.assetId):null;
       const provisional=w.confirmationStatus==='pending-confirmation';
@@ -187,7 +211,7 @@ async function run() {
          confirmation_status=EXCLUDED.confirmation_status,provisional_fields=EXCLUDED.provisional_fields,
          period_label=EXCLUDED.period_label,source_metadata=EXCLUDED.source_metadata`,
         [w.id,w.no,w.type,primaryAsset,w.title,w.priority||'normal',techIds[w.assigneeId]||w.assigneeId,w.status,
-         JSON.stringify({periodLabel:w.periodLabel,periodOnly:w.periodLabel.length<10,start:null,end:null,requiresConfirmation:provisional}),
+         JSON.stringify({periodLabel:w.periodLabel,periodOnly:w.periodLabel.length<10,start:null,end:null,durationHours:w.durationHours??null,requiresConfirmation:provisional}),
          JSON.stringify({confirmationStatus:w.confirmationStatus,assigneeProposed:!!w.assigneeProposed,notes:w.notes||'',dataQualityLabel:provisional?'نیاز به تأیید نهایی':'تأییدشده'}),dateFromJalali(dateLabel),w.confirmationStatus,JSON.stringify(w.provisionalFields||[]),w.periodLabel,
          JSON.stringify({source:'repairs-1405-source-file',sourceType:w.sourceType,additionalAssigneeIds:(w.additionalAssigneeIds||[]).map(id=>techIds[id]||id)})]
       );

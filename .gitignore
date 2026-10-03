@@ -3,5 +3,9 @@ node_modules/
 
 backups/
 
+.env
+.env.*
+!.env.example
 .env.local
 *.log
+*.tar.gz

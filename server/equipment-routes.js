@@ -68,7 +68,7 @@ function createEquipmentRouter({pool,io,authenticateToken}){
   const {rows}=await pool.query(`SELECT a.*,c.name category_name,f.name factory_name,p.name parent_name,
    (SELECT count(*)::int FROM work_orders w WHERE w.asset_id=a.id) wo_count,
    (SELECT count(*)::int FROM work_orders w WHERE w.asset_id=a.id AND w.status NOT IN('closed','cancel','done','completed')) open_wo,
-   COALESCE((SELECT jsonb_agg(jsonb_build_object('id',pm.id,'title',pm.title,'interval_days',pm.interval_days,'last_run',pm.last_run,'status',pm.status,'checklist',pm.checklist) ORDER BY pm.title) FROM pm_plans pm WHERE pm.asset_id=a.id),'[]'::jsonb) pm_plans,
+   COALESCE((SELECT jsonb_agg(jsonb_build_object('id',pm.id,'title',pm.title,'interval_days',pm.interval_days,'last_run',pm.last_run,'status',pm.status,'checklist',pm.checklist,'code',COALESCE(pm.ext->>'code',pm.source_ref),'owner_role',COALESCE(pm.ext->>'ownerRole',pm.spec),'consumable',pm.ext->>'consumable') ORDER BY pm.title) FROM pm_plans pm WHERE pm.asset_id=a.id),'[]'::jsonb) pm_plans,
    COALESCE((SELECT jsonb_agg(to_jsonb(w) ORDER BY w.created_at DESC) FROM work_orders w WHERE w.asset_id=a.id),'[]'::jsonb) work_orders,
    COALESCE((SELECT jsonb_agg(to_jsonb(w) ORDER BY w.created_at DESC) FROM work_orders w WHERE w.asset_id=a.id AND w.status IN('closed','done','completed')),'[]'::jsonb) maintenance_history,
    COALESCE((SELECT jsonb_agg(to_jsonb(r) ORDER BY r.created_at DESC) FROM requests r WHERE r.asset_id=a.id),'[]'::jsonb) requests,

@@ -24,6 +24,9 @@
   // Never reset repeatedly: records entered after the canonical load must be preserved.
   if(DB.equipmentStructureReset?.version==='2.0'){
     if(DB.equipmentStructureReset.awaitingCanonicalStructure)setTimeout(loadCanonicalStructure,0);
+    const admin=(DB.users||[]).find(user=>user.u==='admin'||user.username==='admin'||user.id==='u1');
+    if(admin){admin.name='حافظ بایرامیان';admin.unit='مدیریت سیستم';admin.phone='09912214983';save();}
+    if(typeof ME!=='undefined'&&ME&&admin&&ME.id===admin.id){ME=admin;document.getElementById('uName').textContent=admin.name;document.getElementById('uAvatar').textContent='ح';}
     return;
   }
 
@@ -77,4 +80,18 @@
   console.info('Asset/equipment structure reset completed',DB.equipmentStructureReset);
   if(typeof toast==='function')setTimeout(()=>toast('ساختار قبلی صفر شد؛ در حال چیدمان ساختار واقعی…'),200);
   setTimeout(loadCanonicalStructure,0);
+  // Canonical system-owner identity migration; applies once to persisted browser data too.
+  const systemAdmin=(DB.users||[]).find(user=>user.u==='admin'||user.username==='admin'||user.id==='u1');
+  if(systemAdmin&&(systemAdmin.name!=='حافظ بایرامیان'||systemAdmin.unit!=='مدیریت سیستم')){
+    systemAdmin.name='حافظ بایرامیان';
+    systemAdmin.unit='مدیریت سیستم';
+    systemAdmin.phone='09912214983';
+    save();
+  }
+  if(typeof ME!=='undefined'&&ME&&systemAdmin&&ME.id===systemAdmin.id){
+    ME=systemAdmin;
+    const nameNode=document.getElementById('uName'),avatarNode=document.getElementById('uAvatar');
+    if(nameNode)nameNode.textContent=systemAdmin.name;
+    if(avatarNode)avatarNode.textContent='ح';
+  }
 })();
