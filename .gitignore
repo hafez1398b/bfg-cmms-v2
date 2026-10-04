@@ -9,3 +9,4 @@ backups/
 .env.local
 *.log
 *.tar.gz
+storage/

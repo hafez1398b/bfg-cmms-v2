@@ -39,7 +39,12 @@ function createAIRouter({pool,authenticateToken,authorize,registry}){
       await client.query('COMMIT');res.json({data:updated.rows[0]});
     }catch(error){await client.query('ROLLBACK').catch(()=>{});next(error);}finally{client.release();}
   });
-  router.use((error,_req,res,_next)=>{console.error('AI API:',error.code||error.message);res.status(error.status||500).json({error:error.code||error.message||'AI_API_ERROR',message:error.message,fields:error.fields});});
+  router.use((error,_req,res,_next)=>{
+    const status=Number(error.status)||500;
+    console.error('AI API:', error.code || 'request_failed');
+    if(status>=500) return res.status(500).json({error:error.code||'AI_API_ERROR'});
+    res.status(status).json({error:error.code||error.message||'AI_API_ERROR',fields:error.fields});
+  });
   return router;
 }
 module.exports={createAIRouter};

@@ -1,6 +1,10 @@
 /* Canonical Bespar 1 dataset importer — idempotent, non-destructive local/demo adapter. */
 (function () {
   'use strict';
+  if (window.BFGRuntime && !window.BFGRuntime.allowsSampleData()) {
+    window.importBespar1 = async function () { return false; };
+    return;
+  }
   const DATA_URL='/data/besepar1.seed.json';
   const digitMap={'۰':'0','۱':'1','۲':'2','۳':'3','۴':'4','۵':'5','۶':'6','۷':'7','۸':'8','۹':'9'};
   const latin=s=>String(s||'').replace(/[۰-۹]/g,x=>digitMap[x]);
@@ -22,6 +26,7 @@
   function roleLabel(spec){return spec.includes('برق')?'برق':spec.includes('تأسیسات')?'تأسیسات':spec.includes('جوش')?'جوشکاری':'مکانیک';}
 
   async function importBespar1(){
+    if(window.BFGRuntime && !window.BFGRuntime.allowsSampleData())return false;
     if(typeof DB==='undefined'||!DB)return;
     try{
       const data=await fetch(DATA_URL,{cache:'no-store'}).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json();});
@@ -119,7 +124,7 @@
       save();
       console.info('Bespar 1 dataset imported',DB.bespar1Data);
       if(typeof updateBadge==='function')updateBadge();
-      if(typeof CUR!=='undefined'&&CUR==='tree'&&typeof go==='function')go('tree');
+      if(typeof CUR!=='undefined'&&CUR==='equipment'&&typeof go==='function')go('equipment');
       if(typeof toast==='function')toast(`داده‌های قطعی بسپار ۱ نسخه ${data.version} همگام شد ✅`);
       return true;
     }catch(error){console.error('Bespar 1 dataset import failed:',error);if(typeof toast==='function')toast('ورود داده‌های بسپار ۱ ناموفق بود',1);return false;}

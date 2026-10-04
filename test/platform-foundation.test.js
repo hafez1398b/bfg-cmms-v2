@@ -5,6 +5,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const jwt=require('jsonwebtoken');
 const {createSecurity}=require('../server/security');
+const {createSessionService}=require('../server/session');
 const {createNotification,validate}=require('../server/notification-service');
 const root=path.join(__dirname,'..');
 const read=file=>fs.readFileSync(path.join(root,file),'utf8');
@@ -38,15 +39,18 @@ test('notification creation persists recipients and transactional outbox envelop
   assert.deepEqual(JSON.parse(outbox.values[4]).sort(),['u1','u2']);
 });
 
-test('backend security revalidates active JWT user and enforces database permission',async()=>{
+test('backend security revalidates active session user and enforces database permission',async()=>{
   const secret='test-secret-at-least-32-characters';
+  const token=jwt.sign({sub:'u1',sid:'s1',typ:'access'},secret,{algorithm:'HS256',expiresIn:'15m'});
   const pool={query:async(sql,values)=>{
+    if(/auth_sessions/.test(sql))return{rows:[{id:'s1',user_id:'u1',absolute_expires_at:new Date(Date.now()+3600000).toISOString(),revoked_at:null}]};
     if(/FROM users/.test(sql))return{rows:[{id:values[0],username:'admin',name:'حافظ بایرامیان',role:'admin',unit:'مدیریت سیستم',active:true}]};
     if(/role_permissions/.test(sql))return{rows:values[1]==='notification.view'?[{ok:1}]:[]};
     return{rows:[]};
   }};
-  const security=createSecurity({pool,jwtSecret:secret});
-  const req={headers:{authorization:'Bearer '+jwt.sign({id:'u1'},secret,{algorithm:'HS256'})}};
+  const sessions=createSessionService({pool,jwtSecret:secret,env:{NODE_ENV:'test'}});
+  const security=createSecurity({pool,jwtSecret:secret,sessions});
+  const req={headers:{cookie:'bfg_access='+token},get(){return '';}};
   let nextCalled=false;
   await security.authenticateToken(req,{status(){throw new Error('unexpected rejection');}},()=>{nextCalled=true;});
   assert.equal(nextCalled,true);assert.equal(req.user.name,'حافظ بایرامیان');

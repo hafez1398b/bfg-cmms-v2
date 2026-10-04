@@ -2,16 +2,20 @@
 (function(){
   'use strict';
 
-  const token=()=>sessionStorage.getItem('bfg_token')||sessionStorage.getItem('token');
-  const apiAvailable=()=>Boolean(token());
+  const hasSession=()=>Boolean(window.BFGBackend&&window.BFGBackend.user);
+  const apiAvailable=()=>hasSession();
   const active=a=>a&&!a.deleted&&a.isActive!==false&&a.is_active!==false;
   const nodeKind=a=>a?.ext?.nodeKind||a?.nodeKind||(a?.type==='eq'?'equipment':a?.type==='site'?'factory':'location');
 
   async function api(path,options={}){
-    const response=await fetch('/api/equipment'+path,{
-      ...options,
-      headers:{'Content-Type':'application/json',Authorization:'Bearer '+token(),...(options.headers||{})}
-    });
+    if(typeof window.bfgApi==='function')return window.bfgApi('/api/equipment'+path,options);
+    const headers={'Content-Type':'application/json',...(options.headers||{})};
+    const method=String(options.method||'GET').toUpperCase();
+    if(!['GET','HEAD','OPTIONS'].includes(method)){
+      const csrf=String(document.cookie||'').split(';').map(part=>part.trim()).find(part=>part.startsWith('bfg_csrf='));
+      if(csrf)headers['x-csrf-token']=decodeURIComponent(csrf.slice('bfg_csrf='.length));
+    }
+    const response=await fetch('/api/equipment'+path,{...options,headers,credentials:'same-origin'});
     if(!response.ok){
       const payload=await response.json().catch(()=>({}));
       throw Object.assign(new Error(payload.error||`HTTP ${response.status}`),{status:response.status,payload});
@@ -132,5 +136,22 @@
     remove:(id,reason)=>api('/'+encodeURIComponent(id),{method:'DELETE',body:JSON.stringify({reason})})
   };
 
-  window.EquipmentRepository={mode:apiAvailable()?'postgresql':'local-compatibility',current(){return apiAvailable()?remote:local;},remote,local};
+  function localAllowed(){return !!(window.BFGRuntime&&window.BFGRuntime.allowsSampleData&&window.BFGRuntime.allowsSampleData());}
+  const unavailable={
+    source:'server-required',
+    async feature(){throw Object.assign(new Error('SERVER_REQUIRED'),{status:503});},
+    async filters(){throw Object.assign(new Error('SERVER_REQUIRED'),{status:503});},
+    async list(){throw Object.assign(new Error('SERVER_REQUIRED'),{status:503});},
+    async tree(){throw Object.assign(new Error('SERVER_REQUIRED'),{status:503});},
+    async get(){throw Object.assign(new Error('SERVER_REQUIRED'),{status:503});},
+    async create(){throw Object.assign(new Error('SERVER_REQUIRED'),{status:503});},
+    async update(){throw Object.assign(new Error('SERVER_REQUIRED'),{status:503});},
+    async move(){throw Object.assign(new Error('SERVER_REQUIRED'),{status:503});},
+    async remove(){throw Object.assign(new Error('SERVER_REQUIRED'),{status:503});}
+  };
+  window.EquipmentRepository={
+    mode:apiAvailable()?'postgresql':(localAllowed()?'local-compatibility':'server-required'),
+    current(){return apiAvailable()?remote:(localAllowed()?local:unavailable);},
+    remote,local
+  };
 })();

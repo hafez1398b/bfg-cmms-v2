@@ -1,6 +1,7 @@
 /* One-time complete reset of the Asset/Equipment domain before real structure import. */
 (function(){
   'use strict';
+  if(window.BFGRuntime && !window.BFGRuntime.allowsSampleData())return;
   if(typeof DB==='undefined'||!DB)return;
 
   // Prevent every legacy enhancement layer from recreating sample structures.
@@ -17,7 +18,7 @@
     DB.equipmentStructureReset.canonicalLoadedAt=new Date().toISOString();
     DB.canonicalAssetHierarchy={version:'1.0',root:'شرکت بسپار فوم غرب',loadedAt:DB.equipmentStructureReset.canonicalLoadedAt};
     save();
-    if(typeof ME!=='undefined'&&ME&&typeof go==='function')go('tree');
+    if(typeof ME!=='undefined'&&ME&&typeof go==='function')go('equipment');
     if(typeof toast==='function')toast('ساختار واقعی شرکت، کارخانجات و بسپار ۱ بارگذاری شد ✅');
   }
 

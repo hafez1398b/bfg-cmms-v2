@@ -27,7 +27,8 @@ function harness(){
 
 test('existing Equipment entry becomes one list-only registry without a duplicate module',()=>{
   const {context,source}=harness();
-  assert.equal(context.MENU.filter(item=>item.id==='tree').length,1);
+  assert.equal(context.MENU.filter(item=>item.id==='equipment').length,1);
+  assert.equal(context.MENU.filter(item=>item.id==='tree').length,0);
   assert.equal(context.MENU.some(item=>item.id==='equipmentV2'||item.id==='floormap'),false);
   const html=context.pgTree();
   assert.match(html,/فهرست جامع تجهیزات/);
