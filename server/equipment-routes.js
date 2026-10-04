@@ -4,6 +4,7 @@ const express=require('express');
 const {v4:uuid}=require('uuid');
 const {requireEquipment,listParams,cleanPatch,cleanExt,validateCreate}=require('./equipment-service');
 const {createEquipmentIntakeRouter}=require('./equipment-intake-routes');
+const {createSeleneActionRouter}=require('./selene-action-routes');
 
 function createEquipmentRouter({pool,io,authenticateToken,aiRegistry}){
  const router=express.Router();router.use(authenticateToken);
@@ -66,6 +67,7 @@ function createEquipmentRouter({pool,io,authenticateToken,aiRegistry}){
  }catch(e){next(e);}});
 
  router.use('/import', createEquipmentIntakeRouter({ pool, registry: aiRegistry || { providers: {}, candidates() { return []; } } }));
+ router.use('/actions', createSeleneActionRouter({ pool }));
 
  router.get('/:id',requireEquipment('view'),async(req,res,next)=>{try{
   const {rows}=await pool.query(`SELECT a.*,c.name category_name,f.name factory_name,p.name parent_name,
