@@ -33,6 +33,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD:?ADMIN_INITIAL_PASSWORD is required for initial provisioning}
+      EXECUTION_MODE: server-only
       ALLOW_LOCAL_COMPATIBILITY: "false"
       APP_ORIGINS: ${APP_ORIGINS:-}
       AUTO_SEED_BESPAR1: ${AUTO_SEED_BESPAR1:-true}

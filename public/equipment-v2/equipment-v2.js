@@ -7,7 +7,7 @@
   const DEFAULT_COLUMNS=['code','name','factory','location','category','model','maker','status','crit','health','lastPm','nextPm','openWo','cost'];
   const COLUMNS={code:'کد تجهیز',name:'نام تجهیز',factory:'کارخانه',location:'محل',category:'دسته',model:'مدل',maker:'سازنده',status:'وضعیت',crit:'بحرانیت',health:'سلامت',lastPm:'آخرین PM',nextPm:'PM بعدی',openWo:'WO باز',cost:'هزینه نت'};
   const DETAIL_TABS=[
-    ['profile','شناسنامه تجهیز'],['structure','ساختار / Components'],['maintenance','برنامه نگهداری و تعمیرات'],
+    ['profile','شناسنامه تجهیز'],['usage','کاربری'],['structure','ساختار / Components'],['maintenance','برنامه نگهداری و تعمیرات'],
     ['checklists','چک‌لیست‌ها و بازرسی‌ها'],['requests','درخواست‌های تعمیر'],['workorders','Work Orders'],
     ['maintenanceHistory','سوابق تعمیرات'],['failures','سوابق خرابی'],['pmHistory','PM History'],
     ['consumedParts','قطعات یدکی مصرف‌شده'],['costs','هزینه‌های تعمیرات'],['downtime','توقفات تجهیز'],
@@ -28,13 +28,13 @@
   // The legacy shell declares MENU with `const`, so it is not available as window.MENU.
   // Update only the existing Equipment entry to make this in-place upgrade visible.
   try{
-    const equipmentMenu=typeof MENU!=='undefined'&&Array.isArray(MENU)?MENU.find(item=>item?.id==='tree'):null;
-    if(equipmentMenu){equipmentMenu.t='فهرست جامع تجهیزات';equipmentMenu.ic='⚙️';}
+    const equipmentMenu=typeof MENU!=='undefined'&&Array.isArray(MENU)?MENU.find(item=>item?.id==='equipment'||item?.id==='tree'):null;
+    if(equipmentMenu){equipmentMenu.id='equipment';equipmentMenu.t='فهرست جامع تجهیزات';equipmentMenu.ic='⚙️';}
     if(typeof ME!=='undefined'&&ME&&typeof buildMenu==='function')buildMenu();
   }catch(error){console.warn('Equipment menu label was not updated',error);}
 
   const R=()=>EquipmentRepository.current();
-  const canDo=operation=>typeof can!=='function'||can('tree',operation==='move'?'edit':operation);
+  const canDo=operation=>typeof can!=='function'||can('equipment',operation==='move'?'edit':operation);
   const escText=value=>typeof esc==='function'?esc(value):String(value??'').replace(/[&<>\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const faText=value=>typeof fa==='function'?fa(value):String(value??'');
   const formatDate=value=>value&&typeof jDate==='function'?jDate(value):(value||'—');
@@ -62,9 +62,9 @@
     });
   }
 
-  function sourceBadge(){const source=R().source;return`<span class="eqv2-source ${source==='postgresql'?'':'local'}">${source==='postgresql'?'PostgreSQL · Source of Truth':'حالت سازگاری محلی'}</span>`;}
+  function sourceBadge(){const source=R().source;const label=source==='postgresql'?'PostgreSQL · Source of Truth':source==='server-required'?'سرور مرکزی · بدون پایگاه محلی':'حالت سازگاری محلی';return`<span class="eqv2-source ${source==='postgresql'?'':'local'}">${label}</span>`;}
   function shell(){
-    return`<div class="eqv2" id="eqv2Explorer"><div class="eqv2-head"><div class="eqv2-title"><small>دارایی‌ها › تجهیزات <span class="eqv2-version">Registry 3.0</span></small><h2>فهرست جامع تجهیزات</h2><p class="eqv2-subtitle">تمام تجهیزات ثبت‌شده در یک فهرست واحد؛ برای مشاهده پرونده دیجیتال، تجهیز را انتخاب کنید.</p></div>${sourceBadge()}${canDo('create')?'<button class="btn btn-sm btn-primary" onclick="eqv2Create()">＋ افزودن تجهیز</button>':''}</div>${toolbar()}<div class="eqv2-layout eqv2-list-only"><section class="eqv2-main"><div class="eqv2-loading">در حال دریافت فهرست تجهیزات…</div></section></div></div>`;
+    return`<div class="eqv2" id="eqv2Explorer"><div class="eqv2-head"><div class="eqv2-title"><small>دارایی‌ها › تجهیزات <span class="eqv2-version">Registry 3.0</span></small><h2>فهرست جامع تجهیزات</h2><p class="eqv2-subtitle">تمام تجهیزات ثبت‌شده در یک فهرست واحد؛ برای مشاهده پرونده دیجیتال، تجهیز را انتخاب کنید.</p></div>${sourceBadge()}${canDo('view')?'<button class="btn btn-sm btn-ghost" onclick="eqv2OpenIntake()">ورود هوشمند</button>':''}${canDo('create')?'<button class="btn btn-sm btn-primary" onclick="eqv2Create()">＋ افزودن تجهیز</button>':''}</div>${toolbar()}<div class="eqv2-layout eqv2-list-only"><section class="eqv2-main"><div class="eqv2-loading">در حال دریافت فهرست تجهیزات…</div></section></div></div>`;
   }
   function toolbar(){
     const factories=E.options.factories.map(x=>`<option value="${escText(x.id)}" ${E.factoryId===x.id?'selected':''}>${escText(x.name)}</option>`).join('');
@@ -72,10 +72,12 @@
     return`<div class="eqv2-toolbar"><div class="eqv2-search"><span>⌕</span><input value="${escText(E.q)}" placeholder="کد، نام، سریال، مدل یا سازنده…" oninput="eqv2Search(this.value)"></div><select aria-label="کارخانه" onchange="eqv2Filter('factoryId',this.value)"><option value="">همه کارخانه‌ها</option>${factories}</select><select aria-label="دسته" onchange="eqv2Filter('categoryId',this.value)"><option value="">همه دسته‌ها</option>${categories}</select><select aria-label="وضعیت" onchange="eqv2Filter('status',this.value)"><option value="">همه وضعیت‌ها</option>${Object.entries(typeof AS_ST==='undefined'?{}:AS_ST).map(([key,value])=>`<option value="${key}" ${E.status===key?'selected':''}>${value[0]}</option>`).join('')}</select><select aria-label="بحرانیت" onchange="eqv2Filter('criticality',this.value)"><option value="">همه بحرانیت‌ها</option>${['A','B','C'].map(x=>`<option ${E.criticality===x?'selected':''}>${x}</option>`).join('')}</select><button class="btn btn-sm btn-ghost" onclick="eqv2Columns()">ستون‌ها</button><button class="btn btn-sm btn-ghost" onclick="eqv2Export()">↓ Excel</button><button class="btn btn-sm btn-ghost" onclick="window.print()">🖨 چاپ</button></div>`;
   }
 
+  function equipmentModuleAllowed(){return !window.BFGModules||typeof window.BFGModules.allows!=='function'||window.BFGModules.allows('equipment');}
   function page(){
     E.detail=false;E.detailKey=null;
+    if(!equipmentModuleAllowed())return head('فهرست تجهیزات','ماژول غیرفعال')+'<div class="card empty">ماژول تجهیزات غیرفعال است.</div>';
     if(location.pathname.startsWith('/equipment/'))history.replaceState({equipmentExplorer:true},'','/');
-    if(typeof can==='function'&&!can('tree','view'))return head('فهرست تجهیزات','دسترسی محدود')+'<div class="card empty">اجازه مشاهده تجهیزات را ندارید.</div>';
+    if(typeof can==='function'&&!can('equipment','view'))return head('فهرست تجهیزات','دسترسی محدود')+'<div class="card empty">اجازه مشاهده تجهیزات را ندارید.</div>';
     setTimeout(()=>initExplorer(true),0);return shell();
   }
   async function initExplorer(restore=false){
@@ -96,27 +98,8 @@
     document.querySelector('.eqv2-main').innerHTML=`<div class="eqv2-card-head"><b>فهرست جامع تجهیزات</b><span class="muted">${faText(result.pagination.total)} تجهیز · انتخاب هر ردیف = پرونده دیجیتال</span></div><div class="eqv2-table-wrap"><table><thead><tr>${E.columns.map(key=>`<th onclick="eqv2Sort('${key}')">${COLUMNS[key]} ${sortKey(key)===E.sort?(E.direction==='asc'?'↑':'↓'):''}</th>`).join('')}<th class="eqv2-open-col">پرونده</th></tr></thead><tbody>${result.data.map(a=>`<tr data-equipment-detail="${escText(a.id)}" class="${E.selected===a.id?'sel':''}" tabindex="0" onclick="eqv2OpenDetail('${escText(a.id)}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();eqv2OpenDetail('${escText(a.id)}')}" title="بازکردن پرونده دیجیتال تجهیز">${E.columns.map(key=>`<td>${cell(a,key)}</td>`).join('')}<td class="eqv2-open-col"><button type="button" class="eqv2-open-dossier" aria-label="بازکردن پرونده ${escText(a.name)}">پرونده دیجیتال ←</button></td></tr>`).join('')||`<tr><td colspan="${E.columns.length+1}" class="empty">تجهیزی یافت نشد</td></tr>`}</tbody></table></div>${pager(result.pagination)}`;
   }
   function pager(p){return`<div class="eqv2-pager"><button class="btn btn-sm btn-ghost" ${p.page<=1?'disabled':''} onclick="eqv2Page(${p.page-1})">قبلی</button><span>صفحه ${faText(p.page)} از ${faText(p.pages)} · ${faText(p.total)} رکورد</span><button class="btn btn-sm btn-ghost" ${p.page>=p.pages?'disabled':''} onclick="eqv2Page(${p.page+1})">بعدی</button></div>`;}
+  function icon(a){const kind=a?.ext?.nodeKind||a?.nodeKind||a?.type;return kind==='factory'||kind==='site'?'🏭':kind==='location'||kind==='unit'?'📍':'⚙️';}
 
-  function icon(a){const kind=nodeKind(a);return kind==='company'?'🏢':kind==='head-office'?'🏛️':kind==='factories'||kind==='factory'?'🏭':kind==='category'?'▦':kind==='subsystem'?'⬡':kind==='main-component'||kind==='sub-component'?'🔩':a.type==='eq'?'⚙️':'📍';}
-  const treeQuery=parentId=>({parentId,q:parentId?null:E.q,factoryId:E.factoryId,categoryId:E.categoryId,status:E.status,criticality:E.criticality});
-  async function loadTree(){
-    const result=await R().tree(treeQuery(null));
-    document.querySelector('.eqv2-main').innerHTML=`<div class="eqv2-card-head"><b>ساختار سلسله‌مراتبی</b><span class="muted">Lazy Load · دوبار کلیک روی تجهیز = پرونده کامل</span></div><div class="eqv2-tree" id="eqv2Tree"></div>`;
-    renderNodes(document.getElementById('eqv2Tree'),result.data);
-    await restoreExpandedNodes();
-  }
-  function renderNodes(container,nodes){
-    if(!container)return;
-    container.innerHTML=nodes.map(a=>{const open=E.open.has(a.id),identity=hasIdentity(a);return`<div class="eqv2-node" data-node="${escText(a.id)}"><div class="eqv2-node-row ${E.selected===a.id?'sel':''}" ${identity?`data-equipment-detail="${escText(a.id)}"`:''} draggable="${canDo('edit')&&identity}" ondragstart="E.dragId='${escText(a.id)}'" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')" ondrop="eqv2Drop(event,'${escText(a.id)}')" onclick="eqv2Select('${escText(a.id)}')" title="${identity?'برای بازکردن پرونده کامل دوبار کلیک کنید':'گره ساختاری'}"><button class="eqv2-toggle" onclick="event.stopPropagation();eqv2Toggle('${escText(a.id)}')">${a.child_count?(open?'▼':'◀'):'•'}</button><span>${icon(a)}</span><span class="eqv2-node-name"><b>${escText(a.name)}</b><small>${escText(a.code||'')}</small></span><span class="eqv2-node-actions">${canDo('create')?`<button title="افزودن فرزند" onclick="event.stopPropagation();eqv2Create('${escText(a.id)}')">＋</button>`:''}${canDo('edit')?`<button title="ویرایش" onclick="event.stopPropagation();eqv2Edit('${escText(a.id)}')">✎</button>`:''}</span></div><div class="eqv2-children" id="eqv2Child_${escText(a.id)}"></div></div>`;}).join('');
-  }
-  async function toggle(id){
-    const box=document.getElementById('eqv2Child_'+id),node=document.querySelector(`[data-node="${CSS.escape(id)}"]`);if(!box)return;
-    if(E.open.has(id)){E.open.delete(id);box.innerHTML='';const button=node?.querySelector('.eqv2-toggle');if(button)button.textContent='◀';saveState();return;}
-    E.open.add(id);box.innerHTML='<div class="eqv2-loading" style="padding:8px">…</div>';const result=await R().tree(treeQuery(id));renderNodes(box,result.data);const button=node?.querySelector('.eqv2-toggle');if(button)button.textContent='▼';saveState();
-  }
-  async function restoreExpandedNodes(){
-    for(const id of [...E.open]){const box=document.getElementById('eqv2Child_'+id);if(!box)continue;const result=await R().tree(treeQuery(id));renderNodes(box,result.data);const button=document.querySelector(`[data-node="${CSS.escape(id)}"] .eqv2-toggle`);if(button)button.textContent='▼';}
-  }
 
   async function select(id,resetTab=true){
     if(E.selected!==id&&resetTab)E.tab='profile';E.selected=id;saveState();
@@ -136,6 +119,7 @@
   function healthExplanation(a){const health=a.ext?.operationalHealth;if(!health)return'';if(health.score==null)return`<section class="eqv2-health-evidence"><div><b>شاخص سلامت تجهیز</b><span class="badge b-gray">N/A — داده ناکافی</span></div><p>${escText(health.reason||'داده کافی برای محاسبه وجود ندارد.')}</p></section>`;const badge=health.score>=80?'b-green':health.score>=60?'b-blue':health.score>=40?'b-orange':'b-red';return`<section class="eqv2-health-evidence"><div><b>شاخص سلامت قطعی</b><span class="badge ${badge}">${faText(health.score)} از ۱۰۰ · ${faText(health.coverage)} عامل معتبر</span></div><div class="eqv2-health-factors">${(health.evidence||[]).map(factor=>`<article><span>${escText(factor.label)}</span><b>${faText(Math.round(factor.value))}٪</b><small>${escText(factor.evidence)}</small></article>`).join('')}</div><p>این امتیاز توسط موتور قواعد از داده‌های ثبت‌شده محاسبه شده است؛ تشخیص AI مولد محسوب نمی‌شود.</p></section>`;}
   function detailBody(a){
     const workOrders=a.work_orders||[],completed=a.maintenance_history||[],failures=completed.filter(w=>['BD','CM','EM'].includes(w.type)),pmHistory=completed.filter(w=>w.type==='PM');
+    if(E.tab==='usage')return `<div id="seleneMount" class="selene-mount"></div>`;
     if(E.tab==='profile'){
       const ext=a.ext||{},parts=ext.keyParts||[];
       return`<div class="eqv2-profile-hero"><div class="eqv2-asset-icon">${icon(a)}</div><div><h2>${escText(a.code)} — ${escText(a.name)}</h2><p>${escText(ext.description||'شناسنامه از رجیستری واحد تجهیزات، PM و سوابق واقعی خوانده می‌شود.')}</p></div></div>${cards([['کد تجهیز',escText(a.code)],['نام تجهیز',escText(a.name)],['کارخانه',escText(a.factory_name)],['دسته',escText(a.category_name)],['محل استقرار',escText(ext.locationDescription||a.location_name)],['کلاس',escText(a.cls)],['سازنده',escText(a.maker)],['مدل',escText(a.model)],['سریال',escText(a.serial)],['سال ساخت',escText(a.year)],['تاریخ نصب',escText(a.install)],['توان / ظرفیت',escText(ext.capacity||a.power)],['کارکرد روزانه',ext.dailyOperatingHours==null?'—':faText(ext.dailyOperatingHours)+' ساعت'],['امتیاز بحرانی',ext.criticalityScore==null?'<span class="eqv2-na">ثبت نشده</span>':faText(ext.criticalityScore)+' از ۱۰۰'],['تابلو برق',escText(ext.panelCode)],['نوع مبرد',escText(ext.refrigerant)],['مشخصات فنی',escText(ext.technicalSpecification)],['Health Score',a.health_score==null?'<span class="eqv2-na">N/A — داده کافی نیست</span>':faText(a.health_score)],['هزینه ثبت‌شده',a.maintenance_cost==null?'<span class="eqv2-na">N/A — داده کافی نیست</span>':money(a.maintenance_cost)]])}${healthExplanation(a)}${parts.length?`<h3 style="margin:18px 0 9px">قطعات و مشخصات ثبت‌شده</h3><div class="eqv2-parts-chips">${parts.map(part=>`<span>${escText(part)}</span>`).join('')}</div>`:''}`;
@@ -171,6 +155,7 @@
 
   function routeKey(){const match=location.pathname.match(/^\/equipment\/([^/]+)\/?$/);return match?decodeURIComponent(match[1]):null;}
   async function openDetail(idOrCode,{push=true,fromRoute=false}={}){
+    if(!equipmentModuleAllowed())return;
     if(E.routeBusy)return;E.routeBusy=true;
     try{
       if(!E.detail)captureExplorerState();
@@ -180,10 +165,12 @@
       const target='/equipment/'+encodeURIComponent(E.detailKey);
       if(push&&location.pathname!==target)history.pushState({equipment:true,key:E.detailKey},'',target);
       else if(fromRoute&&location.pathname!==target)history.replaceState({equipment:true,key:E.detailKey},'',target);
-      if(content)content.innerHTML=detailPage(a);window.scrollTo(0,0);
+      if(content)content.innerHTML=detailPage(a);mountUsage(a);window.scrollTo(0,0);
     }catch(error){E.detail=false;showError(error);}finally{E.routeBusy=false;}
   }
-  async function renderCurrentDetail(){if(!E.detailKey)return;const {data:a}=await R().get(E.detailKey),body=document.getElementById('eqv2DetailBody');if(body)body.innerHTML=detailBody(a);document.querySelectorAll('.eqv2-detail-tabs button').forEach((button,index)=>{const on=DETAIL_TABS[index]?.[0]===E.tab;button.classList.toggle('on',on);button.setAttribute('aria-selected',String(on));});}
+  function mountUsage(a){if(E.tab!=='usage')return;const root=document.getElementById('seleneMount');if(root&&window.BFGSelene)window.BFGSelene.mount(root,{equipmentId:a&&a.id,equipmentName:a&&a.name,equipmentCode:a&&a.code});}
+  function openIntake(){if(!equipmentModuleAllowed())return;const main=document.querySelector('.eqv2-main')||document.getElementById('content');if(!main)return;main.innerHTML='<div id="seleneMount" class="selene-mount"></div>';if(window.BFGSelene)window.BFGSelene.mount(document.getElementById('seleneMount'),{equipmentId:E.selected||null});}
+  async function renderCurrentDetail(){if(!E.detailKey)return;const {data:a}=await R().get(E.detailKey),body=document.getElementById('eqv2DetailBody');if(body)body.innerHTML=detailBody(a);document.querySelectorAll('.eqv2-detail-tabs button').forEach((button,index)=>{const on=DETAIL_TABS[index]?.[0]===E.tab;button.classList.toggle('on',on);button.setAttribute('aria-selected',String(on));});mountUsage(a);}
   async function backToEquipment({historyMode='push'}={}){
     E.detail=false;E.detailKey=null;E.view='list';if(historyMode==='push')history.pushState({equipmentExplorer:true},'','/');
     const content=document.getElementById('content');if(!content)return;content.innerHTML=shell();await initExplorer(true);restoreExplorerScroll();
@@ -194,7 +181,7 @@
     const category=E.options.categories.find(x=>x.id===id);if(category){E.factoryId=category.factory_id||E.factoryId;E.categoryId=id;}
     E.view='list';await backToEquipment();
   }
-  async function restoreRoute(){const key=routeKey();if(!key||!ME)return false;CUR='tree';buildMenu();document.getElementById('sidebar')?.classList.remove('open');await openDetail(key,{push:false,fromRoute:true});return true;}
+  async function restoreRoute(){if(!equipmentModuleAllowed())return false;const key=routeKey();if(!key||!ME)return false;CUR='equipment';buildMenu();document.getElementById('sidebar')?.classList.remove('open');await openDetail(key,{push:false,fromRoute:true});return true;}
 
   function filter(key,value){E[key]=value;if(key==='factoryId')E.categoryId='';E.page=1;saveState();const toolbarNode=document.querySelector('.eqv2-toolbar');if(toolbarNode)toolbarNode.outerHTML=toolbar();load().then(restoreExplorerScroll).catch(showError);}
   function view(){captureExplorerState();E.view='list';E.page=1;saveState();document.getElementById('content').innerHTML=shell();initExplorer(true);}
@@ -207,7 +194,6 @@
   async function saveCreate(){const data={nodeKind:$('#eqNodeKind').value,code:$('#eqCode').value.trim(),name:$('#eqName').value.trim(),parentId:$('#eqParent').value||null,ext:{description:$('#eqDesc').value}};if(!data.code||!data.name){toast('کد و نام الزامی است',1);return;}try{await R().create(data);closeModal();toast('گره جدید ثبت شد ✅');await load();}catch(error){showError(error);}}
   async function edit(id){try{const {data:a}=await R().get(id);modal(mhead('ویرایش — '+escText(a.name))+`<div class="m-body"><div class="frow"><div class="field"><label>کد</label><input id="eqEditCode" value="${escText(a.code)}"></div><div class="field"><label>نام</label><input id="eqEditName" value="${escText(a.name)}"></div></div><div class="frow"><div class="field"><label>وضعیت</label><select id="eqEditStatus">${Object.entries(AS_ST).map(([key,value])=>`<option value="${key}" ${a.status===key?'selected':''}>${value[0]}</option>`).join('')}</select></div><div class="field"><label>بحرانیت</label><select id="eqEditCrit">${['A','B','C'].map(x=>`<option ${a.crit===x?'selected':''}>${x}</option>`).join('')}</select></div></div></div><div class="m-foot"><button class="btn btn-primary" onclick="eqv2SaveEdit('${escText(id)}',${a.row_version||1})">ذخیره</button><button class="btn btn-ghost" onclick="closeModal()">انصراف</button></div>`);}catch(error){showError(error);}}
   async function saveEdit(id,version){try{await R().update(id,{code:$('#eqEditCode').value.trim(),name:$('#eqEditName').value.trim(),status:$('#eqEditStatus').value,crit:$('#eqEditCrit').value,rowVersion:version});closeModal();toast('تغییرات ذخیره شد ✅');if(E.detail){E.detailKey=id;await openDetail(id,{push:false});}else{await load();await select(id);}}catch(error){if(error.status===409)toast('این رکورد توسط کاربر دیگری تغییر کرده است؛ صفحه را تازه کنید',1);else showError(error);}}
-  async function drop(event,parentId){event.preventDefault();event.currentTarget.classList.remove('drag');if(!E.dragId||E.dragId===parentId)return;const id=E.dragId;E.dragId=null;try{const {data:a}=await R().get(id);await R().move(id,{parentId,sortOrder:0,rowVersion:a.row_version,reason:'جابه‌جایی با Drag & Drop در درخت تجهیزات'});toast('ساختار جابه‌جا شد ✅');await loadTree();}catch(error){toast(error.message==='TREE_CYCLE'?'جابه‌جایی باعث حلقه در ساختار می‌شود':'جابه‌جایی انجام نشد: '+error.message,1);}}
   async function remove(id){const reason=prompt('دلیل بایگانی تجهیز را وارد کنید:');if(reason===null||!reason.trim()){if(reason!==null)toast('ثبت دلیل بایگانی الزامی است',1);return;}if(!confirm('تجهیز بایگانی شود؟ تمام روابط و سوابق آن حفظ خواهد شد.'))return;try{await R().remove(id,reason.trim());toast('تجهیز بایگانی شد؛ سوابق و روابط حفظ شده‌اند ✅');E.selected=null;if(E.detail)await backToEquipment();else await load();}catch(error){toast(error.message==='HAS_ACTIVE_CHILDREN'?'ابتدا فرزندان فعال را منتقل کنید':'بایگانی انجام نشد: '+error.message,1);}}
   function columns(){modal(mhead('انتخاب ستون‌های لیست')+`<div class="m-body"><div class="eqv2-check-cols">${Object.entries(COLUMNS).map(([key,label])=>`<label class="eqv2-col-opt"><input type="checkbox" value="${key}" ${E.columns.includes(key)?'checked':''}>${label}</label>`).join('')}</div></div><div class="m-foot"><button class="btn btn-primary" onclick="eqv2SaveColumns()">اعمال</button><button class="btn btn-ghost" onclick="closeModal()">انصراف</button></div>`);}
   function saveColumns(){const selected=[...document.querySelectorAll('.eqv2-col-opt input:checked')].map(x=>x.value);if(!selected.length){toast('حداقل یک ستون انتخاب کنید',1);return;}E.columns=selected;saveState();closeModal();load();}
@@ -219,8 +205,8 @@
   }
   function showError(error){console.error(error);const main=document.querySelector('.eqv2-main')||document.getElementById('content');if(main)main.innerHTML=`<div class="eqv2-empty"><div><i>⚠️</i><b>خطا در دریافت اطلاعات تجهیزات</b><div>${escText(error.payload?.error||error.message)}</div></div></div>`;if(typeof toast==='function')toast('خطا در بخش تجهیزات: '+(error.payload?.error||error.message),1);}
 
-  window.eqv2Search=search;window.eqv2Filter=filter;window.eqv2View=view;window.eqv2Page=pageTo;window.eqv2Load=load;
-  window.eqv2Select=select;window.eqv2Toggle=toggle;window.eqv2Drop=drop;window.eqv2Create=create;window.eqv2SaveCreate=saveCreate;
+  window.eqv2Search=search;window.eqv2Filter=filter;window.eqv2View=view;window.eqv2Page=pageTo;window.eqv2Load=load;window.eqv2OpenIntake=openIntake;
+  window.eqv2Select=select;window.eqv2Create=create;window.eqv2SaveCreate=saveCreate;
   window.eqv2Edit=edit;window.eqv2SaveEdit=saveEdit;window.eqv2Delete=remove;window.eqv2Columns=columns;window.eqv2SaveColumns=saveColumns;
   window.eqv2Export=exportCsv;window.eqv2Sort=sortBy;window.eqv2OpenDetail=id=>openDetail(id);window.eqv2BackToEquipment=()=>backToEquipment();
   window.eqv2CloseSummary=closeSummary;window.eqv2DetailTab=async tab=>{E.tab=tab;await renderCurrentDetail();};window.eqv2Breadcrumb=breadcrumbNavigate;window.eqv2Related=createRelated;

@@ -424,7 +424,7 @@ function setupSocket() {
                 DB.assets = DB.assets.filter(a => a.id !== id);
             }
             buildMenu();
-            if (CUR === 'tree') go('tree');
+            if (CUR === 'equipment') go('equipment');
         }
         
         if (collection === 'requests' && DB.requests) {
@@ -461,7 +461,7 @@ function setupSocket() {
         <div class="lh-stat"><b>۲۴/۷</b><span>پایش لحظه‌ای</span></div>
       </div>
     </div>
-    <div class="lh-foot">نسخه ۲.۰ سازمانی — استقرار درون‌سازمانی 2.179.95.13:8075 — کلیه حقوق محفوظ است © ۱۴۰۴</div>
+    <div class="lh-foot">نسخه ۲.۰ سازمانی — اتصال به سرور مرکزی — کلیه حقوق محفوظ است © ۱۴۰۴</div>
     <svg class="lh-gear" viewBox="0 0 100 100" fill="none"><path d="M50 30a20 20 0 100 40 20 20 0 000-40zm0-30l6 12 13-4 2 14 14 2-4 13 12 6-12 6 4 13-14 2-2 14-13-4-6 12-6-12-13 4-2-14-14-2 4-13-12-6 12-6-4-13 14-2 2-14 13 4z" fill="#fff"/></svg>
   </div>
   <div class="login-side">
@@ -476,8 +476,8 @@ function setupSocket() {
           <button type="button" class="pass-eye" onclick="const p=document.getElementById('loginPass');p.type=p.type==='password'?'text':'password';this.textContent=p.type==='password'?'👁️':'🙈'" title="نمایش/مخفی رمز">👁️</button>
         </div>
       </div>
-      <button class="btn btn-primary btn-block" style="padding:12px" onclick="doLogin()">ورود به سامانه ←</button>
-      <div class="demo-users">
+      <button class="btn btn-primary btn-block" id="loginSubmit" style="padding:12px" onclick="doLogin()">ورود به سامانه ←</button>
+      <div class="demo-users" id="demoUsers" hidden>
         کاربران نمونه (رمز همه: <b>1234</b>)<br>
         <b>admin</b> مدیر سیستم · <b>manager</b> مدیر نت · <b>tech1</b> تکنسین · <b>op1</b> اپراتور · <b>store</b> انباردار · <b>hse</b> کارشناس HSE
       </div>
@@ -516,6 +516,7 @@ function setupSocket() {
           <div><div class="un" id="uName">—</div><div class="ur" id="uRole">—</div></div>
           <div class="avatar" id="uAvatar">A</div>
         </div>
+        <button class="tb-btn" title="خروج از همه دستگاه‌ها" onclick="logoutAllDevices()">⛔</button>
         <button class="tb-btn" title="خروج" onclick="logout()">🚪</button>
       </header>
       <main class="content" id="content"></main>
@@ -526,6 +527,7 @@ function setupSocket() {
 <div id="toasts"></div>
 <div id="modalRoot"></div>
 <div id="drawerRoot"></div>
+<script src="/platform-v2/runtime-policy.js?v=20261004.1"></script>
 <script>
 /* ================= Utilities ================= */
 const LOGO='data:image/jpeg;base64,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';
@@ -546,7 +548,7 @@ function toast(msg,err){const t=document.createElement('div');t.className='toast
 
 /* ================= Status dictionaries ================= */
 const WO_ST={draft:['پیش‌نویس','b-gray'],open:['در انتظار تخصیص','b-blue'],assigned:['تخصیص‌یافته','b-blue'],seen:['مشاهده‌شده','b-purple'],doing:['در حال انجام','b-orange'],hold:['معلق','b-purple'],done:['در انتظار تأیید','b-orange'],closed:['بسته‌شده','b-green'],cancel:['لغوشده','b-gray']};
-const RQ_ST={new:['ثبت‌شده','b-blue'],review:['در حال بررسی','b-orange'],approved:['تأییدشده','b-purple'],wo:['تبدیل به دستورکار','b-orange'],closed:['بسته‌شده','b-green'],rejected:['ردشده','b-red']};
+const RQ_ST={new:['ثبت‌شده','b-blue'],review:['در حال بررسی','b-orange'],approved:['تأییدشده','b-purple'],wo:['تبدیل به دستورکار','b-orange'],closed:['بسته‌شده','b-green'],rejected:['ردشده','b-red'],cancelled:['لغوشده','b-gray']};
 const PR={critical:['اضطراری','b-red'],high:['فوری','b-orange'],normal:['عادی','b-blue']};
 const WO_TYPE={PM:'پیشگیرانه (PM)',CM:'اصلاحی (CM)',BD:'اضطراری (Breakdown)',PdM:'پیش‌بینانه (PdM)',FAB:'ساخت',SRV:'خدمات'};
 const AS_ST={active:['فعال','b-green'],repair:['در تعمیر','b-orange'],stopped:['متوقف','b-red'],standby:['آماده‌به‌کار','b-blue'],scrap:['اسقاط','b-gray']};
@@ -692,10 +694,29 @@ seq:{wo:235,wr:115,ptw:46,doc:133},
 
 /* ================= Store ================= */
 let DB=null,ME=null;
-async function load(){try{DB=JSON.parse(localStorage.getItem('bfg_cmms_v1'))}catch(e){}
+function bfgUseServerStore(){return !window.BFGRuntime||!window.BFGRuntime.shouldPersistOperationalData();}
+async function load(){
+ if(bfgUseServerStore()){
+  DB=window.BFGRuntime?window.BFGRuntime.emptyOperationalStore():{users:[],assets:[],requests:[],wos:[],pms:[],items:[],notifs:[],audit:[],settings:{ai:{key:''}},__mfSeed:1,__fleetSeed:1,__structSeed:1,__toolSeed39:1,__hrSeed40:1,__demoSeed:1};
+  try{localStorage.removeItem('bfg_cmms_v1');}catch(e){}
+  return;
+ }
+ try{DB=JSON.parse(localStorage.getItem('bfg_cmms_v1'))}catch(e){}
  if(!DB){DB=seed();save();}
- else{const s=seed();let changed=false;Object.keys(s).forEach(k=>{if(DB[k]===undefined){DB[k]=s[k];changed=true;}});if(changed)save();}}
-async function save(collection, data){localStorage.setItem('bfg_cmms_v1',JSON.stringify(DB));}
+ else{const s=seed();let changed=false;Object.keys(s).forEach(k=>{if(DB[k]===undefined){DB[k]=s[k];changed=true;}});if(changed)save();}
+ if(window.BFGRuntime)window.BFGRuntime.scrubSecrets(DB);
+}
+async function save(collection, data){
+ if(window.BFGRuntime)window.BFGRuntime.scrubSecrets(DB);
+ if(bfgUseServerStore()){try{localStorage.removeItem('bfg_cmms_v1');}catch(e){}return;}
+ localStorage.setItem('bfg_cmms_v1',JSON.stringify(DB));
+}
+window.bfgResetOperationalStore=function(){
+ if(!DB)DB=window.BFGRuntime?window.BFGRuntime.emptyOperationalStore():{users:[],assets:[]};
+ if(window.BFGRuntime){window.BFGRuntime.resetStore(DB);window.BFGRuntime.scrubSecrets(DB);window.BFGRuntime.purgeOperationalStorage();}
+ else{try{localStorage.removeItem('bfg_cmms_v1');}catch(e){}}
+};
+window.bfgLoadOperationalStore=load;
 function audit(x){DB.audit.unshift({t:new Date().toISOString(),u:ME?ME.name:'-',x});save();}
 function notify(text){DB.notifs.unshift({id:uid(),t:new Date().toISOString(),text,read:false});save();updateBadge();}
 const asset=id=>DB.assets.find(a=>a.id===id);
@@ -705,6 +726,7 @@ const item=id=>DB.items.find(i=>i.id===id);
 <script>
 /* ================= Auth & shell ================= */
 async function doLogin(){
+ if(!window.BFGRuntime||!window.BFGRuntime.allowsSampleData()){if(typeof toast==='function')toast('ورود محلی غیرفعال است. اتصال به سرور مرکزی لازم است.',1);return;}
  const u=$('#loginUser').value.trim(),p=$('#loginPass').value;
  const found=DB.users.find(x=>x.u===u&&x.p===p&&x.active);
  if(!found){toast('نام کاربری یا رمز عبور نادرست است',1);return;}
@@ -717,6 +739,7 @@ async function doLogin(){
 function logout(){audit('خروج از سامانه');sessionStorage.removeItem('bfg_me');location.reload();}
 function toggleTheme(){document.documentElement.classList.toggle('dark');localStorage.setItem('bfg_theme',document.documentElement.classList.contains('dark')?'dark':'light');}
 
+/* ثبت و فیلتر ماژول‌ها در platform-v2/module-registry.js است تا این فهرست به‌تدریج به همان ثبت منتقل شود. */
 const MENU=[
  {g:'عملیات'},
  {id:'dash',ic:'📊',t:'داشبورد مدیریتی'},
@@ -724,7 +747,8 @@ const MENU=[
  {id:'wos',ic:'🛠️',t:'دستورکارها'},
  {id:'pm',ic:'🔁',t:'نگهداری پیشگیرانه (PM)'},
  {g:'دارایی‌ها'},
- {id:'tree',ic:'⚙️',t:'فهرست جامع تجهیزات'},
+ {id:'equipment',ic:'⚙️',t:'فهرست جامع تجهیزات'},
+ {id:'users',ic:'👥',t:'کاربران و نقش‌ها'},
  {id:'inv',ic:'📦',t:'انبار قطعات یدکی'},
  {id:'tools',ic:'🧰',t:'ابزار امانی'},
  {id:'cal',ic:'🎯',t:'کالیبراسیون'},
@@ -743,12 +767,13 @@ const MENU=[
  {g:'ارتباطات'},
  {id:'chat',ic:'💬',t:'پیام‌رسان داخلی'},
  {g:'سیستم'},
- {id:'users',ic:'👥',t:'کاربران و نقش‌ها'},
  {id:'profile',ic:'⚙️',t:'پروفایل و تنظیمات'},
 ];
 let CUR='dash';
+function bfgMenuItems(){return window.BFGModules&&typeof window.BFGModules.visibleMenu==='function'?window.BFGModules.visibleMenu(MENU):MENU;}
 function buildMenu(){
- $('#sbMenu').innerHTML=MENU.map(m=>{
+ const items=bfgMenuItems();
+ $('#sbMenu').innerHTML=items.map(m=>{
   if(m.g)return `<div class="sb-group">${m.g}</div>`;
   let cnt='';
   if(m.id==='requests'){const c=DB.requests.filter(r=>['new','review'].includes(r.status)).length;if(c)cnt=`<span class="cnt">${fa(c)}</span>`;}
@@ -756,8 +781,11 @@ function buildMenu(){
   return `<div class="sb-item ${CUR===m.id?'active':''}" onclick="go('${m.id}')"><span class="ic">${m.ic}</span>${m.t}${cnt}</div>`;
  }).join('');
 }
-function go(page){CUR=page;buildMenu();document.getElementById('sidebar').classList.remove('open');
- const P={dash:pgDash,requests:pgRequests,wos:pgWOs,pm:pgPM,tree:pgTree,inv:pgInv,cal:pgCal,ptw:pgPTW,audit:pgAudit,users:pgUsers,profile:pgProfile,
+function go(page){
+ if(page==='modules'&&window.BFGModules&&typeof window.BFGModules.openAdmin==='function')return window.BFGModules.openAdmin();
+ if(window.BFGModules&&typeof window.BFGModules.allows==='function'&&!window.BFGModules.allows(page)){if(typeof toast==='function')toast('این ماژول غیرفعال است',1);page='dash';}
+ CUR=page;buildMenu();document.getElementById('sidebar').classList.remove('open');
+ const P={dash:pgDash,requests:pgRequests,wos:pgWOs,pm:pgPM,equipment:pgTree,inv:pgInv,cal:pgCal,ptw:pgPTW,audit:pgAudit,users:pgUsers,profile:pgProfile,
   tools:pgTools,projects:pgProjects,contracts:pgContracts,costs:pgCosts,docs:pgDocs,hr:pgHR,ai:pgAI,reports:pgReports,chat:pgChat};
  $('#content').innerHTML=(P[page]||pgDash)();
  window.scrollTo(0,0);
@@ -1155,39 +1183,11 @@ function printWO(id){
 /* ================= Asset tree & dossier ================= */
 let selAsset='a5',treeOpen={a0:true,a1:true,a2:true,a3:true,a4:true},dossierTab='base';
 function pgTree(){
- return head('درخت تجهیزات و شناسنامه','تجهیزات',
- `<button class="btn btn-ghost" onclick="exportCSV('assets')">⬇️ خروجی Excel</button><button class="btn btn-primary" onclick="openAssetForm()">＋ تجهیز جدید</button>`)+`
- <div class="tree-layout">
-  <div class="card"><h3><span class="ic">🌳</span>ساختار سلسله‌مراتبی</h3>
-   <input placeholder="جستجو در درخت…" oninput="treeSearch(this.value)" style="margin-bottom:10px">
-   <div class="muted" style="margin-bottom:8px">💡 برای مهاجرت تجهیز، گره را بکشید و روی والد جدید رها کنید — یا از دکمه «🔀 مهاجرت» استفاده کنید.</div>
-   <div class="tree" id="treeBox">${renderTree(null)}</div></div>
-  <div class="card" id="dossier">${renderDossier()}</div>
- </div>`;
+ return head('فهرست جامع تجهیزات','تجهیزات',
+ `<button class="btn btn-ghost" onclick="exportCSV('assets')">⬇️ خروجی Excel</button>`)+`
+ <div class="card"><div class="empty">فهرست جامع تجهیزات از رجیستری واحد بارگذاری می‌شود. انتخاب هر تجهیز پرونده دیجیتال آن را باز می‌کند.</div></div>`;
 }
-function renderTree(parent,filter){
- const kids=DB.assets.filter(a=>a.parent===parent&&(!filter||a.name.includes(filter)||a.code.includes(filter)));
- if(!kids.length)return '';
- return kids.map(a=>{
-  const hasKids=DB.assets.some(x=>x.parent===a.id);
-  const open=treeOpen[a.id];
-  const icon=a.type==='site'?'🏢':a.type==='unit'?'🏭':a.type==='line'?'🔗':'⚙️';
-  const st=AS_ST[a.status];
-  return `<div>
-   <div class="tnode ${selAsset===a.id?'sel':''}"
-     draggable="${a.type==='eq'}"
-     ondragstart="event.dataTransfer.setData('asset','${a.id}');event.stopPropagation()"
-     ondragover="if(${a.type!=='eq'})event.preventDefault(),this.style.outline='2px dashed var(--accent)'"
-     ondragleave="this.style.outline=''"
-     ondrop="this.style.outline='';migrateDrop(event,'${a.id}')"
-     onclick="selAsset='${a.id}';dossierTab='base';go('tree')">
-    <span class="tw" onclick="event.stopPropagation();treeOpen['${a.id}']=!treeOpen['${a.id}'];go('tree')">${hasKids?(open?'▼':'◀'):'•'}</span>
-    ${icon} ${esc(a.name)} <span class="badge ${st[1]}" style="font-size:9.5px;padding:1px 8px">${st[0]}</span>
-   </div>
-   ${hasKids&&open?`<div class="tchildren">${renderTree(a.id,filter)}</div>`:''}
-  </div>`;
- }).join('');
-}
+function renderTree(){return '';}
 function migrateDrop(ev,targetId){
  ev.preventDefault();ev.stopPropagation();
  const id=ev.dataTransfer.getData('asset');if(!id)return;
@@ -1221,7 +1221,7 @@ function doMigrate(id,targetId){
  treeOpen[targetId]=true;selAsset=id;
  save();audit('مهاجرت تجهیز '+a.name+' به '+newP.name);
  notify('🔀 تجهیز «'+a.name+'» به «'+newP.name+'» منتقل شد');
- closeModal();toast('مهاجرت انجام و در سابقه ثبت شد ✅');go('tree');
+ closeModal();toast('مهاجرت انجام و در سابقه ثبت شد ✅');go('equipment');
 }
 function openMigrateForm(id){
  const a=asset(id);
@@ -1269,9 +1269,9 @@ function saveAssetEdit(id){
  Object.assign(a,{name,code:$('#edCode').value.trim()||a.code,status:$('#edStatus').value,crit:$('#edCrit').value,maker:$('#edMaker').value,model:$('#edModel').value,serial:$('#edSerial').value,power:$('#edPower').value,hours:+$('#edHours').value||0,cls:$('#edCls').value});
  a.history.push({t:new Date().toISOString(),x:'ویرایش شناسنامه توسط '+ME.name+(changes.length?' — فیلدها: '+changes.join('، '):'')});
  save();audit('ویرایش شناسنامه '+a.code);
- closeModal();toast('شناسنامه به‌روزرسانی شد ✅');go('tree');
+ closeModal();toast('شناسنامه به‌روزرسانی شد ✅');go('equipment');
 }
-function treeSearch(v){Object.keys(treeOpen).forEach(()=>{});DB.assets.forEach(a=>treeOpen[a.id]=true);$('#treeBox').innerHTML=renderTree(null,v.trim()||null);}
+function treeSearch(){}
 function renderDossier(){
  const a=asset(selAsset);if(!a)return '<div class="empty">تجهیزی انتخاب نشده</div>';
  if(a.type!=='eq')return `<div class="empty"><div class="big">🏭</div><b>${esc(a.name)}</b><div class="muted">${a.code} — برای مشاهده شناسنامه، یک تجهیز (⚙️) انتخاب کنید</div></div>`;
@@ -1323,7 +1323,7 @@ function renderDossier(){
   <div class="list-row"><div class="list-ic" style="background:var(--blue-bg);color:var(--blue)">📐</div><div style="flex:1"><b>نقشه مونتاژ.dwg</b><div class="muted">نسخه ۱ | ${fa('1.8')}MB</div></div><span class="badge b-green">جاری</span></div>
   <div class="list-row"><div class="list-ic" style="background:var(--green-bg);color:var(--green)">🎬</div><div style="flex:1"><b>فیلم آموزش سرویس.mp4</b><div class="muted">${fa('86')}MB</div></div><span class="badge b-gray">آرشیو</span></div>
   <label class="btn btn-sm btn-ghost" style="margin-top:10px">＋ بارگذاری مدرک (هر فرمت)<input type="file" hidden onchange="toast('فایل با حفظ فرمت اصلی بارگذاری شد (نسخه‌بندی فعال) 📎')"></label>`;
- return `<div class="tabs">${tabs.map(([k,v])=>`<div class="tab ${dossierTab===k?'active':''}" onclick="dossierTab='${k}';go('tree')">${v}</div>`).join('')}</div>${body}`;
+ return `<div class="tabs">${tabs.map(([k,v])=>`<div class="tab ${dossierTab===k?'active':''}" onclick="dossierTab='${k}';go('equipment')">${v}</div>`).join('')}</div>${body}`;
 }
 function openAssetForm(){
  modal(mhead('ثبت تجهیز جدید')+`
@@ -1349,7 +1349,7 @@ function saveAsset(){
  const code=p.code+'-EQ'+String(DB.assets.length).padStart(2,'0');
  const a={id:uid(),parent,code,name,type:'eq',cls:$('#asCls').value,status:'active',crit:$('#asCrit').value,maker:$('#asMaker').value,model:$('#asModel').value,hours:0};
  DB.assets.push(a);treeOpen[parent]=true;selAsset=a.id;save();audit('ثبت تجهیز '+code);
- closeModal();toast('تجهیز با کد '+code+' ثبت شد ✅');go('tree');
+ closeModal();toast('تجهیز با کد '+code+' ثبت شد ✅');go('equipment');
 }
 
 /* ================= PM ================= */
@@ -2016,9 +2016,9 @@ function pgProfile(){
  <div class="card" style="margin-top:16px"><h3><span class="ic">💾</span>پشتیبان‌گیری و داده (پنل Admin)</h3>
   <div style="display:flex;gap:9px;flex-wrap:wrap">
    <button class="btn btn-accent" onclick="backup()">⬇️ دانلود نسخه پشتیبان (JSON)</button>
-   <button class="btn btn-danger" onclick="if(confirm('همه داده‌ها به حالت نمونه اولیه بازنشانی شود؟')){localStorage.removeItem('bfg_cmms_v1');location.reload();}">♻️ بازنشانی داده نمونه</button>
+   <button class="btn btn-danger" onclick="if(window.BFGRuntime&&!window.BFGRuntime.allowsSampleData()){toast('در حالت اتصال به سرور مرکزی داده نمونه ساخته نمی‌شود',1);return;}if(confirm('همه داده‌ها به حالت نمونه اولیه بازنشانی شود؟')){localStorage.removeItem('bfg_cmms_v1');location.reload();}">♻️ بازنشانی داده نمونه</button>
   </div>
-  <div class="muted" style="margin-top:9px">در استقرار واقعی: پشتیبان‌گیری خودکار روزانه + ساعتی از PostgreSQL و فایل‌ها (FR-BCK-01) روی سرور 2.179.95.13.</div></div>`;
+  <div class="muted" style="margin-top:9px">در استقرار واقعی: پشتیبان‌گیری خودکار روزانه از PostgreSQL روی سرور مرکزی انجام می‌شود. آدرس سرور داخل کلاینت ثابت نیست.</div></div>`;
 }
 function backup(){
  const blob=new Blob([JSON.stringify(DB,null,1)],{type:'application/json'});
@@ -2040,7 +2040,7 @@ function globalSearch(q){
  const box=$('#gsResults');q=q.trim();
  if(!q){box.style.display='none';return;}
  const res=[];
- DB.assets.filter(a=>a.name.includes(q)||a.code.includes(q)).slice(0,4).forEach(a=>res.push({g:'تجهیزات',t:a.name,s:a.code,f:()=>{selAsset=a.id;go('tree');}}));
+ DB.assets.filter(a=>a.name.includes(q)||a.code.includes(q)).slice(0,4).forEach(a=>res.push({g:'تجهیزات',t:a.name,s:a.code,f:()=>{selAsset=a.id;go('equipment');}}));
  DB.wos.filter(w=>w.no.includes(q)||w.desc.includes(q)).slice(0,4).forEach(w=>res.push({g:'دستورکارها',t:w.no,s:w.desc.slice(0,44),f:()=>{go('wos');openWO(w.id);}}));
  DB.items.filter(i=>i.name.includes(q)||i.code.includes(q)).slice(0,3).forEach(i=>res.push({g:'قطعات',t:i.name,s:i.code+' — موجودی '+fa(i.stock),f:()=>go('inv')}));
  DB.users.filter(u=>u.name.includes(q)).slice(0,2).forEach(u=>res.push({g:'کاربران',t:u.name,s:ROLES[u.role],f:()=>go('users')}));
@@ -2070,11 +2070,13 @@ function exportCSV(kind){
 /* ================= Boot ================= */
 load();
 if(localStorage.getItem('bfg_theme')==='dark')document.documentElement.classList.add('dark');
+if(localStorage.getItem('bfg_lang')==='en'||localStorage.getItem('bfg_lang')==='fa')document.documentElement.lang=localStorage.getItem('bfg_lang');
+if(window.BFGRuntime&&window.BFGRuntime.shouldPersistOperationalData()){
 const saved=sessionStorage.getItem('bfg_me');
 if(saved){const u=DB.users.find(x=>x.id===saved);if(u){ME=u;
  $('#loginPage').style.display='none';$('#app').style.display='block';
  $('#uName').textContent=ME.name;$('#uRole').textContent=ROLES[ME.role];$('#uAvatar').textContent=ME.name[0];
- buildMenu();go('dash');updateBadge();}}
+ buildMenu();go('dash');updateBadge();}}}
 </script>
 </body>
 </html>
@@ -2218,25 +2220,8 @@ function printReq(id){
 
 /* ================= 2) Real online AI service ================= */
 async function aiCall(messages,imageDataUrl){
- const cfg=DB.settings.ai||{};
- if(cfg.key){
-  try{
-   const msgs=messages.map(m=>({role:m.role,content:m.content}));
-   if(imageDataUrl){
-    const last=msgs[msgs.length-1];
-    last.content=[{type:'text',text:last.content},{type:'image_url',image_url:{url:imageDataUrl}}];
-   }
-   const res=await fetch(cfg.endpoint,{method:'POST',
-    headers:{'Content-Type':'application/json','Authorization':'Bearer '+cfg.key},
-    body:JSON.stringify({model:cfg.model,messages:[{role:'system',content:'تو دستیار هوشمند CMMS شرکت بسپار فوم غرب هستی. متخصص نگهداری و تعمیرات صنعتی. پاسخ فارسی، فنی، کوتاه و کاربردی بده.'},...msgs],max_tokens:700})});
-   if(!res.ok)throw new Error('HTTP '+res.status);
-   const j=await res.json();
-   return {text:j.choices[0].message.content,online:true};
-  }catch(e){
-   return {text:localAI(messages[messages.length-1].content,imageDataUrl)+'\n\n⚠️ اتصال به مدل آنلاین برقرار نشد ('+e.message+') — پاسخ از موتور تحلیلی داخلی ارائه شد.',online:false};
-  }
- }
- return {text:localAI(messages[messages.length-1].content,imageDataUrl)+'\n\n💡 برای پاسخ‌های آنلاین GPT، کلید API را در «پروفایل ← تنظیمات هوش مصنوعی» ثبت کنید.',online:false};
+ if(window.BFGRuntime)window.BFGRuntime.scrubSecrets(DB);
+ return {text:localAI(messages[messages.length-1].content,imageDataUrl)+'\n\nکلید هوش مصنوعی در مرورگر نگهداری نمی‌شود. تحلیل آنلاین فقط از مسیر Backend انجام می‌شود.',online:false};
 }
 function localAI(q,img){
  q=String(q||'');
@@ -2553,8 +2538,8 @@ pgProfile=function(){
    <div class="field"><label>مدل</label><input value="${esc(DB.settings.ai.model)}" onchange="DB.settings.ai.model=this.value;save()"></div>
    <div class="field"><label>Endpoint</label><input value="${esc(DB.settings.ai.endpoint)}" onchange="DB.settings.ai.endpoint=this.value;save()"></div>
   </div>
-  <div class="field"><label>کلید API (OpenAI-compatible)</label><input type="password" value="${esc(DB.settings.ai.key)}" onchange="DB.settings.ai.key=this.value;save();toast(this.value?'کلید ذخیره شد — AI آنلاین فعال است 🌐':'کلید حذف شد — موتور داخلی فعال است')" placeholder="sk-…"></div>
-  <div class="muted">با ثبت کلید، دستیار AI در همه ماژول‌ها (مرکز AI، دستیار تکنسین، تحلیل تصویر) به مدل آنلاین متصل می‌شود؛ بدون کلید، موتور تحلیلی داخلی روی داده‌های سیستم پاسخ می‌دهد (Graceful Degradation — فصل ۲۲ SRS).</div></div>`;
+  <div class="field"><label>کلید API</label><input type="password" value="" disabled placeholder="فقط روی سرور مرکزی"></div>
+  <div class="muted">کلید هوش مصنوعی در مرورگر یا localStorage ذخیره نمی‌شود. Provider و کلید فقط در Environment سرور مرکزی تنظیم می‌شوند.</div></div>`;
  }
  return _pgProfileBase()+extra;
 };
@@ -2921,7 +2906,7 @@ function pgBackup(){
      ${['هارد سرور','هارد اکسترنال','NAS شبکه','فضای ابری','سرور دوم'].map(d=>`<option ${DB.backupCfg.dest===d?'selected':''}>${d}</option>`).join('')}</select></div>
     <div class="field"><label>مدت نگهداری (روز)</label><input type="number" value="${DB.backupCfg.keep}" onchange="DB.backupCfg.keep=+this.value||30;save()"></div>
    </div>
-   <div class="muted">در استقرار سرور (2.179.95.13)، این زمان‌بندی به cron/pg_dump متصل می‌شود؛ در نسخه مرورگر، اجرای دستی و دانلود فایل فعال است.</div></div>
+   <div class="muted">در استقرار سرور مرکزی، این زمان‌بندی به cron/pg_dump متصل می‌شود. آدرس سرور داخل کلاینت ثابت نیست.</div></div>
   <div class="card"><h3><span class="ic">🩺</span>وضعیت سلامت نسخه‌ها</h3>
    <div class="list-row"><div class="list-ic" style="background:var(--${health[1]==='b-green'?'green':'red'}-bg)">${health[1]==='b-green'?'💚':'🚨'}</div>
     <div style="flex:1"><b>وضعیت کلی</b><div class="muted">بر اساس زمان‌بندی ${({daily:'روزانه',weekly:'هفتگی',monthly:'ماهانه',custom:'سفارشی'})[DB.backupCfg.freq]}</div></div>
@@ -3173,7 +3158,7 @@ if(!localStorage.getItem('bfg_theme')){localStorage.setItem('bfg_theme','dark');
 /* ---------- menu & router ---------- */
 (function(){
  const i=MENU.findIndex(m=>m.id==='users');
- MENU.splice(i<0?MENU.length:i,0,{id:'staff',ic:'🪪',t:'مدیریت پرسنل'});
+ MENU.splice(i<0?MENU.length:i+1,0,{id:'staff',ic:'🪪',t:'مدیریت پرسنل'});
 })();
 const _goV6=go;
 go=function(page){
@@ -4181,7 +4166,7 @@ function plOpen(id){
  </div>
  <div class="m-foot">
   ${e.status!=='done'?`<button class="btn btn-accent" onclick="e_=DB.planEvents.find(x=>x.id==='${id}');e_.status='done';save();audit('تکمیل برنامه '+e_.title);closeModal();toast('برنامه انجام شد ✅');go('plan')">✅ ثبت انجام</button>`:''}
-  ${a?`<button class="btn btn-ghost" onclick="closeModal();selAsset='${a.id}';go('tree')">⚙️ صفحه تجهیز</button>`:''}
+  ${a?`<button class="btn btn-ghost" onclick="closeModal();selAsset='${a.id}';go('equipment')">⚙️ صفحه تجهیز</button>`:''}
   <button class="btn btn-danger btn-sm" onclick="DB.planEvents=DB.planEvents.filter(x=>x.id!=='${id}');save();closeModal();go('plan')">حذف</button>
   <button class="btn btn-ghost" onclick="closeModal()">بستن</button>
  </div>`);
@@ -4508,7 +4493,7 @@ function saveAssetV8(){
   history:[{t:new Date().toISOString(),x:'ثبت تجهیز توسط '+ME.name+(p.type==='eq'?' به‌عنوان زیرتجهیزِ '+p.name:'')}]};
  DB.assets.push(a);treeOpen[parent]=true;selAsset=a.id;
  save();audit('ثبت تجهیز '+code+(p.type==='eq'?' (زیرتجهیز '+p.name+')':''));
- closeModal();toast('تجهیز '+code+' ثبت شد ✅');go('tree');
+ closeModal();toast('تجهیز '+code+' ثبت شد ✅');go('equipment');
 }
 /* sub-asset button in dossier */
 const _renderDossierV8=renderDossier;
@@ -4519,7 +4504,7 @@ renderDossier=function(){
   const subs=DB.assets.filter(x=>x.parent===a.id);
   html+=`<div class="card" style="box-shadow:none;background:var(--surface-2);margin-top:14px">
    <h3 style="margin-bottom:9px"><span class="ic">🧩</span>زیرتجهیزات و اجزای متصل (${fa(subs.length)})</h3>
-   ${subs.map(s=>`<div class="list-row" style="cursor:pointer" onclick="selAsset='${s.id}';go('tree')">
+   ${subs.map(s=>`<div class="list-row" style="cursor:pointer" onclick="selAsset='${s.id}';go('equipment')">
     <div class="list-ic" style="background:var(--blue-bg)">⚙️</div>
     <div style="flex:1"><b>${esc(s.name)}</b><div class="muted">${s.code} — ${s.cls||''}</div></div>
     <span class="badge ${AS_ST[s.status][1]}">${AS_ST[s.status][0]}</span></div>`).join('')||'<div class="muted">زیرتجهیزی تعریف نشده — سیستم تعلیق، پمپ هیدرولیک، یاتاقان و… را اینجا اضافه کنید</div>'}
@@ -4707,7 +4692,7 @@ function deleteAsset(id){
  a.deleted=true;a.history=a.history||[];
  a.history.push({t:new Date().toISOString(),x:'بایگانی (Soft Delete) توسط '+ME.name});
  selAsset=a.parent;save();audit('بایگانی تجهیز '+a.code+' — سوابق حفظ شد');
- toast('تجهیز بایگانی شد — سوابق در Audit محفوظ است 🗄️');go('tree');
+ toast('تجهیز بایگانی شد — سوابق در Audit محفوظ است 🗄️');go('equipment');
 }
 const _renderDossierV9=renderDossier;
 renderDossier=function(){
@@ -4935,12 +4920,12 @@ function woSaveInvoice(woId){
 
 /* ---------- FEATURE 5: BFG AI Assistant permanent panel ---------- */
 function woAIPanel(w){
- const online=!!(DB.settings.ai&&DB.settings.ai.key);
+ const online=!!(window.BFGBackend&&window.BFGBackend.user);
  return `<div class="card" style="box-shadow:none;margin-top:14px;border:1.5px solid ${online?'var(--gold)':'var(--border)'};background:linear-gradient(135deg,var(--surface-2),var(--surface))">
   <div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap">
    <div class="list-ic" style="background:linear-gradient(135deg,#8A6D1F,#D4AF37);color:#141414;font-size:19px">🤖</div>
    <div style="flex:1"><b>دستیار هوشمند نگهداری و تعمیرات بسپارفوم غرب</b>
-    <div class="muted">${online?'🌐 متصل به سرویس هوش مصنوعی ('+esc(DB.settings.ai.model)+') — تحلیل تصویر، ریشه‌یابی، مراحل تعمیر':'⚠️ سرویس AI آنلاین متصل نیست — پاسخ‌ها از موتور تحلیلی داخلی روی داده‌های سامانه ارائه می‌شود. اتصال: پروفایل ← تنظیمات AI'}</div></div>
+    <div class="muted">${online?'تحلیل آنلاین فقط از Backend مرکزی انجام می‌شود و کلید در مرورگر ذخیره نمی‌شود':'برای تحلیل آنلاین باید با حساب سرور مرکزی وارد شوید'}</div></div>
    <button class="btn ${online?'btn-accent':'btn-ghost'}" onclick="openTechAssist('${w.id}')">💬 گفتگو و تحلیل تصویر</button>
   </div>
  </div>`;
@@ -5627,7 +5612,7 @@ function codingGuide(){
  const chain=go;
  go=function(page){
   chain(page);
-  if(page==='tree'){
+  if(page==='equipment'){
    const acts=document.querySelector('.head-actions');
    if(acts&&!acts.querySelector('[data-cg]')){
     const b=document.createElement('button');b.className='btn btn-ghost';b.dataset.cg='1';
@@ -5839,7 +5824,7 @@ function pjDossier(id){
   <h3 style="font-size:13.5px;margin:14px 0 8px">👥 اعضای تیم</h3>
   <div style="display:flex;gap:8px;flex-wrap:wrap">${(p.team||[]).map(uid2=>{const u=user(uid2);return u?`<span class="badge b-blue" style="cursor:pointer;padding:6px 13px" onclick="staffCard('${u.id}')">👤 ${esc(u.name)}</span>`:'';}).join('')||'<span class="muted">—</span>'}</div>
   <h3 style="font-size:13.5px;margin:14px 0 8px">⚙️ تجهیزات مرتبط + دستورکارها (${fa(woLinked.length)})</h3>
-  <div style="display:flex;gap:8px;flex-wrap:wrap">${(p.assets||[]).map(aid=>{const a=asset(aid);return a?`<span class="badge b-gray" style="cursor:pointer;padding:6px 13px" onclick="selAsset='${aid}';go('tree')">⚙️ ${esc(a.name)}</span>`:'';}).join('')||'<span class="muted">—</span>'}</div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">${(p.assets||[]).map(aid=>{const a=asset(aid);return a?`<span class="badge b-gray" style="cursor:pointer;padding:6px 13px" onclick="selAsset='${aid}';go('equipment')">⚙️ ${esc(a.name)}</span>`:'';}).join('')||'<span class="muted">—</span>'}</div>
   ${woLinked.slice(0,5).map(w=>`<div class="list-row" style="cursor:pointer" onclick="openWO('${w.id}')"><div class="list-ic" style="background:var(--blue-bg)">🛠️</div>
    <div style="flex:1"><b class="mono">${w.no}</b><div class="muted">${esc(w.desc.slice(0,60))}</div></div>
    <span class="badge ${WO_ST[w.status][1]}">${WO_ST[w.status][0]}</span></div>`).join('')}`;
@@ -6184,7 +6169,7 @@ function pgAbout(){
     <div style="color:#B8B3A6;font-size:12.5px;margin-top:3px">CMMS / EAM — Enterprise Edition — شرکت دانش‌بنیان بسپار فوم غرب</div>
     <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
      <span class="badge" style="background:rgba(212,175,55,.2);color:#E3C878">نسخه 3.1 Enterprise</span>
-     <span class="badge" style="background:rgba(255,255,255,.1);color:#EDEAE2">استقرار: 2.179.95.13:8080</span>
+     <span class="badge" style="background:rgba(255,255,255,.1);color:#EDEAE2">اتصال: سرور مرکزی</span>
      <span class="badge" style="background:rgba(255,255,255,.1);color:#EDEAE2">${fa(mods.length)} ماژول عملیاتی</span>
     </div>
    </div>
@@ -6322,8 +6307,8 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
    ====================================================================== */
 
 /* ---------- deep-link base (configurable; defaults to server address) ---------- */
-if(!DB.settings.qrBase){DB.settings.qrBase='http://2.179.95.13:8080/';save();}
-function eqLink(id){return DB.settings.qrBase.replace(/\/+$/,'/')+'#eq='+id;}
+if(!DB.settings.qrBase){DB.settings.qrBase=(window.BFGRuntime&&window.BFGRuntime.sameOriginBase?window.BFGRuntime.sameOriginBase():'');}
+function eqLink(id){const base=(DB.settings&&DB.settings.qrBase)||(window.BFGRuntime&&window.BFGRuntime.sameOriginBase?window.BFGRuntime.sameOriginBase():'');if(!base)return '#eq='+id;return String(base).replace(/\/+$/,'/')+'#eq='+id;}
 
 /* ---------- QR → SVG renderer (uses embedded qrcode-generator lib) ---------- */
 function qrSVG(text,size){
@@ -6345,7 +6330,7 @@ function handleEqHash(){
  if(!a){toast('تجهیز موردنظر QR یافت نشد',1);return false;}
  selAsset=a.id;dossierTab='base';
  let p=a.parent;while(p){treeOpen[p]=true;p=(asset(p)||{}).parent;}
- go('tree');
+ go('equipment');
  toast('📱 اسکن QR: شناسنامه «'+a.name+'» باز شد');
  audit('بازکردن شناسنامه '+a.code+' از طریق اسکن QR');
  history.replaceState(null,'',location.pathname+location.search);
@@ -6765,7 +6750,7 @@ function vehEditSave(id){
  const it=jStr2iso($('#veInsTo').value);if(it)v.insTo=it;
  const ip=jStr2iso($('#veInsp').value);if(ip)v.techInspExp=ip;
  a.history=a.history||[];a.history.push({t:new Date().toISOString(),x:'ویرایش شناسنامه خودرو توسط '+ME.name});
- save();audit('ویرایش شناسنامه خودرو '+a.code);closeModal();toast('شناسنامه خودرو ذخیره شد ✅');go('tree');
+ save();audit('ویرایش شناسنامه خودرو '+a.code);closeModal();toast('شناسنامه خودرو ذخیره شد ✅');go('equipment');
 }
 
 /* ---------- km log ---------- */
@@ -6778,7 +6763,7 @@ function vehKm(id){
  v.km=km;v.kmLog.push({t:new Date().toISOString(),km});
  if(km>=v.oilDueKm)notify('🛢️ '+a.name+' به سررسید تعویض روغن رسید ('+fa(km)+' km)');
  if(km>=v.serviceDueKm)notify('🔧 '+a.name+' به سررسید سرویس دوره‌ای رسید — پیشنهاد صدور دستورکار PM');
- save();audit('ثبت کیلومتر '+a.code+': '+km);toast('کیلومتر ثبت شد 🧮');go('tree');
+ save();audit('ثبت کیلومتر '+a.code+': '+km);toast('کیلومتر ثبت شد 🧮');go('equipment');
 }
 
 /* ---------- weekly checklist ---------- */
@@ -6822,7 +6807,7 @@ function vehChkSave(id){
    priority:bad.some(x=>x.state==='بحرانی')?'critical':'high',assignee:null,status:'open',parts:[],times:{},createdAt:new Date().toISOString(),est:3});
   save();notify('🛠️ دستورکار رفع ایرادات '+a.name+' صادر شد');toast('بازرسی ثبت و دستورکار صادر شد ✅');go('wos');return;
  }
- toast('بازرسی هفتگی ثبت شد ✅');go('tree');
+ toast('بازرسی هفتگی ثبت شد ✅');go('equipment');
 }
 
 /* ---------- kardex ---------- */
@@ -6852,7 +6837,7 @@ function vehKardex(id){
  const chain=go;
  go=function(page){
   chain(page);
-  if(page==='tree'){
+  if(page==='equipment'){
    const acts=document.querySelector('.head-actions');
    if(acts&&!acts.querySelector('[data-fd]')){
     const b=document.createElement('button');b.className='btn btn-ghost';b.dataset.fd='1';
@@ -6876,15 +6861,15 @@ function fleetDash(){
      ['در تعمیر',vehs.filter(a=>a.status==='repair').length,'🔧'],['نیازمند PM',needPM.length,'🛢️']].map(([t,x,ic])=>
    `<div class="card" style="box-shadow:none;padding:11px;text-align:center"><div style="font-size:19px">${ic}</div><div class="muted">${t}</div><b style="font-size:18px">${fa(x)}</b></div>`).join('')}
   </div>
-  ${insExp.length?`<div class="card" style="box-shadow:none;background:var(--red-bg);margin-bottom:9px;padding:10px 14px;font-size:12.5px">⛔ <b>بیمه منقضی (${fa(insExp.length)}):</b> ${insExp.map(a=>`<a style="cursor:pointer" onclick="closeModal();selAsset='${a.id}';go('tree')">${esc(a.name)}</a>`).join('، ')}</div>`:''}
-  ${inspExp.length?`<div class="card" style="box-shadow:none;background:var(--red-bg);margin-bottom:9px;padding:10px 14px;font-size:12.5px">⛔ <b>معاینه فنی منقضی (${fa(inspExp.length)}):</b> ${inspExp.map(a=>`<a style="cursor:pointer" onclick="closeModal();selAsset='${a.id}';go('tree')">${esc(a.name)}</a>`).join('، ')}</div>`:''}
+  ${insExp.length?`<div class="card" style="box-shadow:none;background:var(--red-bg);margin-bottom:9px;padding:10px 14px;font-size:12.5px">⛔ <b>بیمه منقضی (${fa(insExp.length)}):</b> ${insExp.map(a=>`<a style="cursor:pointer" onclick="closeModal();selAsset='${a.id}';go('equipment')">${esc(a.name)}</a>`).join('، ')}</div>`:''}
+  ${inspExp.length?`<div class="card" style="box-shadow:none;background:var(--red-bg);margin-bottom:9px;padding:10px 14px;font-size:12.5px">⛔ <b>معاینه فنی منقضی (${fa(inspExp.length)}):</b> ${inspExp.map(a=>`<a style="cursor:pointer" onclick="closeModal();selAsset='${a.id}';go('equipment')">${esc(a.name)}</a>`).join('، ')}</div>`:''}
   <h3 style="font-size:13px;margin:11px 0 7px">💰 پرهزینه‌ترین خودروها</h3>
   ${barChart(top.map(({a,c})=>({l:a.name.split(' ')[0].slice(0,7),v:Math.max(1,Math.round(c/1e6)),c:'#C9A24B'})))}
   <div class="muted" style="text-align:center">میلیون ریال — هزینه قطعات دستورکارها</div>
   <h3 style="font-size:13px;margin:12px 0 7px">📋 فهرست ناوگان (کلیک = شناسنامه)</h3>
   <div class="tbl-wrap" style="box-shadow:none;max-height:260px;overflow:auto"><table><thead><tr><th>کد</th><th>خودرو</th><th>تحویل‌گیرنده</th><th>کیلومتر</th><th>بیمه</th><th>معاینه</th><th>هشدار</th></tr></thead><tbody>
   ${vehs.map(a=>{const v=a.veh;const al=vehAlerts(a);
-   return `<tr onclick="closeModal();selAsset='${a.id}';go('tree')"><td class="mono">${a.code}</td><td><b>${esc(a.name)}</b></td>
+   return `<tr onclick="closeModal();selAsset='${a.id}';go('equipment')"><td class="mono">${a.code}</td><td><b>${esc(a.name)}</b></td>
    <td>${esc(v.holder)}</td><td>${fa(v.km.toLocaleString('en-US'))}</td>
    <td>${new Date(v.insTo)<new Date()?'<span class="badge b-red">منقضی</span>':jDate(v.insTo)}</td>
    <td>${new Date(v.techInspExp)<new Date()?'<span class="badge b-red">منقضی</span>':jDate(v.techInspExp)}</td>
@@ -7103,7 +7088,7 @@ const PM_MODULES=[
  {k:'requests',t:'درخواست‌ها',ic:'📝'},
  {k:'wos',t:'دستورکارها',ic:'🛠️'},
  {k:'pm',t:'نگهداری پیشگیرانه (PM)',ic:'🔁'},
- {k:'tree',t:'فهرست جامع تجهیزات',ic:'⚙️'},
+ {k:'equipment',t:'فهرست جامع تجهیزات',ic:'⚙️'},
  {k:'fleet',t:'ناوگان و خودروها',ic:'🚗'},
  {k:'inv',t:'انبار قطعات یدکی',ic:'📦'},
  {k:'tools',t:'ابزار امانی',ic:'🧰'},
@@ -7154,7 +7139,7 @@ function pmDefaultsFor(role){
  }
  /* برنامه‌ریز نت */
  if(role==='planner'){
-  ['plan','requests','wos','pm','tree','fleet','inv','cal','tools','reports','advrep','kpi','docs','projects','contracts','hr','dash','chat','profile','staff','ptw','costs','ai','audit','auditx','trash']
+  ['plan','requests','wos','pm','equipment','fleet','inv','cal','tools','reports','advrep','kpi','docs','projects','contracts','hr','dash','chat','profile','staff','ptw','costs','ai','audit','auditx','trash']
    .forEach(k=>{if(m[k])m[k]=pmSet(['view','create','edit','print','export','close','approve','archive']);});
   PM_GOV.forEach(k=>{m[k]=pmSet(base);});
   m.perms=pmAll(false);
@@ -7229,6 +7214,7 @@ if(!DB.perms||DB.perms.v!==PM_SCHEMA){
   const def=pmDefaultsFor(r);
   PM_MODKEYS.forEach(k=>{if(!DB.perms.roles[r][k]){DB.perms.roles[r][k]=def[k];dirty=true;}});
  });
+ if(migrateEquipmentPermissions())dirty=true;
  if(dirty)save();
 })();
 
@@ -7242,8 +7228,30 @@ function permOf(u,mod,op){
  if(rm&&rm[mod]&&typeof rm[mod][op]==='boolean')return rm[mod][op];
  return false;
 }
+function migrateEquipmentPermissions(){
+ if(!DB.perms)return false;
+ let changed=false;
+ const move=bucket=>{
+  if(!bucket||typeof bucket!=='object')return;
+  Object.keys(bucket).forEach(id=>{
+   const row=bucket[id];
+   if(!row||typeof row!=='object'||!row.tree)return;
+   const next=Object.assign({},row.equipment||{});
+   Object.keys(row.tree).forEach(op=>{
+    const incoming=row.tree[op],existing=next[op];
+    next[op]=typeof existing==='boolean'?!!(existing||incoming):incoming;
+   });
+   row.equipment=next;
+   delete row.tree;
+   changed=true;
+  });
+ };
+ move(DB.perms.roles);move(DB.perms.users);
+ return changed;
+}
 function can(mod,op){
  if(!DB.perms||!DB.perms.enforce)return true;
+ if(mod==='tree')return false;
  return permOf(ME,mod,op);
 }
 function need(mod,op,silent){
@@ -7572,13 +7580,13 @@ function permSaveAll(){save();toast('تنظیمات مجوزها ذخیره شد
  if(typeof deleteAsset==='function'){
   const chain=deleteAsset;
   deleteAsset=function(id){
-   if(!need('tree','delete'))return;
+   if(!need('equipment','delete'))return;
    const a=asset(id);const snap=a?pmClone(a):null;
    chain(id);
    const after=asset(id);
    if(after&&after.deleted){
     DB.trash.unshift({id:uid(),coll:'assets',recId:id,label:(a.code||'')+' — '+(a.name||''),t:new Date().toISOString(),by:ME.name,byId:ME.id,snap,restored:false});
-    auditX('delete','tree',(a.code||'')+' — '+(a.name||''),snap,null,'بایگانی/حذف منطقی تجهیز');save();
+    auditX('delete','equipment',(a.code||'')+' — '+(a.name||''),snap,null,'بایگانی/حذف منطقی تجهیز');save();
    }
   };
  }
@@ -7598,10 +7606,10 @@ function permSaveAll(){save();toast('تنظیمات مجوزها ذخیره شد
  if(typeof saveAssetEdit==='function'){
   const chain=saveAssetEdit;
   saveAssetEdit=function(id){
-   if(!need('tree','edit'))return;
+   if(!need('equipment','edit'))return;
    const before=pmClone(asset(id));
    chain(id);
-   auditX('edit','tree',(before&&before.code||id),before,pmClone(asset(id)),'ویرایش مشخصات تجهیز');
+   auditX('edit','equipment',(before&&before.code||id),before,pmClone(asset(id)),'ویرایش مشخصات تجهیز');
   };
  }
  if(typeof saveWO==='function'){
@@ -8287,7 +8295,7 @@ const AI_PROVIDERS={
  openai:{t:'OpenAI (سازگار با Chat Completions)',url:'https://api.openai.com/v1',hint:'کلید sk-… و مدل مانند gpt-4o-mini'},
  azure:{t:'Azure OpenAI',url:'https://<resource>.openai.azure.com',hint:'Endpoint منبع Azure + کلید + نام Deployment در فیلد مدل'},
  gemini:{t:'Google Gemini',url:'https://generativelanguage.googleapis.com/v1beta',hint:'کلید API گوگل + مدل gemini-1.5-flash'},
- custom:{t:'سرویس داخلی / سازگار OpenAI (On-Premise)',url:'http://2.179.95.13:11434/v1',hint:'مثلاً Ollama یا vLLM داخل شبکه سازمان'},
+ custom:{t:'سرویس داخلی / سازگار OpenAI (On-Premise)',url:'',hint:'آدرس سرویس فقط در Environment سرور تنظیم می‌شود و داخل کلاینت ثابت یا ذخیره نمی‌شود.'},
 };
 const STT_PROVIDERS={
  browser:{t:'موتور مرورگر (Web Speech API — fa-IR)',hint:'بدون هزینه و بدون ارسال داده به بیرون؛ نیازمند مرورگر سازگار'},
@@ -8330,7 +8338,7 @@ function pgAICfg(){
     <div class="muted" style="font-size:11px;margin-top:4px">${esc(AI_PROVIDERS[c.provider].hint)}</div></div>
    ${c.provider!=='offline'?`
    ${f('baseUrl','آدرس سرویس (Base URL)',AI_PROVIDERS[c.provider].url)}
-   ${f('apiKey','کلید API (API Key)','••••••••••••',1)}
+   <div class="muted">کلید API در مرورگر یا localStorage ذخیره نمی‌شود و فقط روی سرور مرکزی نگهداری می‌شود.</div>
    <div class="frow">${f('model','مدل متنی','gpt-4o-mini')}${f('visionModel','مدل تحلیل تصویر','gpt-4o-mini')}</div>
    <div class="frow">${f('temperature','دقت/خلاقیت (Temperature)','0.2',0,'number')}${f('maxTokens','حداکثر توکن پاسخ','900',0,'number')}</div>
    ${f('timeout','مهلت پاسخ (ثانیه)','45',0,'number')}
@@ -8343,8 +8351,8 @@ function pgAICfg(){
      ${Object.entries(STT_PROVIDERS).map(([k,v])=>`<option value="${k}" ${c.sttProvider===k?'selected':''}>${v.t}</option>`).join('')}</select>
     <div class="muted" style="font-size:11px;margin-top:4px">${esc(STT_PROVIDERS[c.sttProvider].hint)}</div></div>
    ${c.sttProvider!=='browser'?`
-   ${f('sttUrl','آدرس سرویس STT','https://api.openai.com/v1')}
-   ${f('sttKey','کلید API سرویس STT','••••••••',1)}
+   ${f('sttUrl','آدرس سرویس STT','')}
+   <div class="muted">کلید سرویس گفتار در مرورگر ذخیره نمی‌شود.</div>
    <div class="frow">${f('sttModel','مدل رونویسی','whisper-1')}${f('sttLang','زبان','fa')}</div>`:''}
    <div class="checkline"><input type="checkbox" ${c.punctuate?'checked':''} ${ed?'':'disabled'} onchange="aiSet('punctuate',this.checked)"> اصلاح خودکار علائم نگارشی و اعداد فارسی</div>
    <div class="checkline"><input type="checkbox" ${c.keepAudio?'checked':''} ${ed?'':'disabled'} onchange="aiSet('keepAudio',this.checked)"> ذخیره هم‌زمان فایل صوتی به‌همراه متن نهایی</div>
@@ -8362,6 +8370,7 @@ function pgAICfg(){
 }
 function aiSet(k,v){
  if(!['admin','mgr'].includes(ME.role)){toast('فقط مدیر سیستم مجاز است',1);return;}
+ if(window.BFGRuntime&&window.BFGRuntime.isAiSecretField(k,'aiCfg')){toast('کلید هوش مصنوعی فقط روی سرور مرکزی نگهداری می‌شود و در مرورگر ذخیره نمی‌شود',1);return;}
  const before={[k]:k.includes('Key')?'•••':DB.aiCfg[k]};
  DB.aiCfg[k]=v;
  if(k==='provider'){DB.aiCfg.status='idle';DB.aiCfg.baseUrl=AI_PROVIDERS[v].url||'';DB.aiCfg.lastMsg=v==='offline'?'حالت دانش داخلی فعال است':'سرویس انتخاب شد — تست اتصال را اجرا کنید';}
@@ -8385,6 +8394,8 @@ async function aiTest(){
 /* ================= generic AI chat call (multi-provider) ================= */
 async function aiChat(messages,opts){
  opts=opts||{};
+ if(window.BFGRuntime)window.BFGRuntime.scrubSecrets(DB);
+ return {ok:false,error:'کلید هوش مصنوعی در مرورگر نگهداری نمی‌شود. تحلیل آنلاین فقط از Backend انجام می‌شود.'};
  const c=DB.aiCfg;
  if(c.provider==='offline')return{ok:false,error:'حالت آفلاین',offline:true};
  if(!c.apiKey||!aiBase())return{ok:false,error:'پیکربندی ناقص است'};
@@ -9008,7 +9019,7 @@ const MOBNAV=[
  {id:'dash',ic:'📊',t:'داشبورد'},
  {id:'wos',ic:'🛠️',t:'دستورکار'},
  {id:'requests',ic:'📝',t:'درخواست'},
- {id:'tree',ic:'🌳',t:'تجهیزات'},
+ {id:'equipment',ic:'⚙️',t:'تجهیزات'},
  {id:'__menu',ic:'☰',t:'منو'},
 ];
 function buildMobNav(){
@@ -9750,7 +9761,7 @@ save();
    ADDITIVE ONLY
    ====================================================================== */
 const BFG_VERSION='3.6.0';
-const BFG_DEPLOY={ip:'2.179.95.13',port:'8080'};
+function bfgDeploymentLabel(){try{if(window.BFGRuntime&&window.BFGRuntime.sameOriginLabel)return window.BFGRuntime.sameOriginLabel();}catch(e){}return 'سرور مرکزی';}
 
 /* ---------- version chips in About page ---------- */
 (function(){
@@ -9774,7 +9785,7 @@ const BFG_DEPLOY={ip:'2.179.95.13',port:'8080'};
     ].map(([ic,t,d])=>`<div class="list-row"><div class="list-ic" style="background:var(--blue-bg)">${ic}</div>
       <div><b>${t}</b><div class="muted">${d}</div></div></div>`).join('')}
    </div>
-   <div class="muted" style="margin-top:10px">تمامی قابلیت‌های نسخه‌های قبلی بدون هیچ تغییری حفظ شده‌اند. استقرار: <b class="mono">${BFG_DEPLOY.ip}:${BFG_DEPLOY.port}</b></div>
+   <div class="muted" style="margin-top:10px">تمامی قابلیت‌های نسخه‌های قبلی بدون هیچ تغییری حفظ شده‌اند. استقرار: <b class="mono">${bfgDeploymentLabel()}</b></div>
   </div>`;
   return html.replace('<div class="grid g2" style="margin-bottom:16px">',add+'<div class="grid g2" style="margin-bottom:16px">');
  };
@@ -9824,7 +9835,7 @@ function pgSelfTest(){
  <div class="card" style="margin-bottom:14px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
   <div class="list-ic" style="background:${ok===t.length?'var(--green-bg)':'var(--orange-bg)'};font-size:19px">${ok===t.length?'✅':'⚠️'}</div>
   <div style="flex:1"><b style="font-size:15px">${fa(ok)} از ${fa(t.length)} تست موفق</b>
-   <div class="muted">نسخه ${fa(BFG_VERSION)} — استقرار ${BFG_DEPLOY.ip}:${BFG_DEPLOY.port} — اجرا: ${jDateTime(new Date())}</div></div>
+   <div class="muted">نسخه ${fa(BFG_VERSION)} — استقرار ${bfgDeploymentLabel()} — اجرا: ${jDateTime(new Date())}</div></div>
   <span class="badge ${ok===t.length?'b-green':'b-orange'}">٪${fa(Math.round(ok/t.length*100))} موفقیت</span>
  </div>
  ${cats.map(([title,keys])=>{
@@ -9861,7 +9872,7 @@ const _runQAV38=runQA;
 runQA=function(){
  const t=_runQAV38();
  t.push(['یکپارچگی نسخه '+BFG_VERSION+' با ماژول‌های قبلی',DB.assets.length>0&&DB.wos.length>0&&DB.users.length>0,'هیچ داده/ماژولی حذف نشد']);
- t.push(['آمادگی استقرار روی '+BFG_DEPLOY.ip+':'+BFG_DEPLOY.port,true,'تنظیمات استقرار بدون تغییر']);
+ t.push(['آمادگی اتصال به '+bfgDeploymentLabel(),typeof window.BFGRuntime==='object','executionMode از Backend دریافت می‌شود']);
  t.push(['کنسول تست جامع سامانه',typeof pgSelfTest==='function','دسته‌بندی امنیت/اعلان/گردش‌کار/AI/واکنش‌گرایی']);
  return t;
 };
@@ -9958,7 +9969,7 @@ function wzInit(){
   createdIds:[]};
 }
 function openAssetWizard(preParent){
- if(typeof need==='function'&&!need('tree','create'))return;
+ if(typeof need==='function'&&!need('equipment','create'))return;
  WZ=wzInit();
  const p=preParent?asset(preParent):null;
  if(p&&p.type!=='eq'){
@@ -10353,12 +10364,12 @@ function wzFinish(){
  selAsset=main.id;dossierTab='base';
  save();
  audit('ایجاد ساختار کامل تجهیز '+main.code+' — '+fa(created.length)+' گره');
- if(typeof auditX==='function')auditX('create','tree',main.code+' — '+main.name,null,
+ if(typeof auditX==='function')auditX('create','equipment',main.code+' — '+main.name,null,
   {nodes:created.length,systems:WZ.systems.length,subs:WZ.systems.reduce((n,s)=>n+s.subs.length,0)},'ایجاد ساختار کامل از طریق ویزارد ۵ مرحله‌ای');
  if(typeof notify==='function')notify('🌳 ساختار تجهیز «'+main.name+'» با '+fa(created.length)+' گره ایجاد شد');
  closeModal();
  toast('✅ ساختار کامل با '+fa(created.length)+' گره ثبت شد');
- WZ=null;go('tree');
+ WZ=null;go('equipment');
 }
 
 /* ---------- tree rendering: icons for systems / sub-equipment ---------- */
@@ -10448,7 +10459,7 @@ function wzFinish(){
 })();
 /* quick add child node without full wizard */
 function wzQuickSub(parentId){
- if(typeof need==='function'&&!need('tree','create'))return;
+ if(typeof need==='function'&&!need('equipment','create'))return;
  const p=asset(parentId);const isSys=p.nodeKind==='sys';
  const sysDef=EQ_SYSTEMS.find(x=>x.k===p.sysKey);
  modal(mhead((isSys?'＋ افزودن زیرتجهیز به ':'＋ افزودن زیرسیستم به ')+esc(p.name))+`
@@ -10483,12 +10494,12 @@ function wzQuickSubDo(parentId){
   history:[{t:new Date().toISOString(),x:'ایجاد ذیل «'+p.name+'» توسط '+ME.name}]};
  DB.assets.push(node);treeOpen[parentId]=true;selAsset=node.id;
  save();audit('ایجاد '+(isSys?'زیرتجهیز ':'زیرسیستم ')+code);
- if(typeof auditX==='function')auditX('create','tree',code+' — '+name,null,node,isSys?'افزودن زیرتجهیز':'افزودن زیرسیستم');
- closeModal();toast('✅ «'+name+'» با کد '+code+' ثبت شد');go('tree');
+ if(typeof auditX==='function')auditX('create','equipment',code+' — '+name,null,node,isSys?'افزودن زیرتجهیز':'افزودن زیرسیستم');
+ closeModal();toast('✅ «'+name+'» با کد '+code+' ثبت شد');go('equipment');
 }
 /* printable structure */
 function wzPrintStruct(rootId){
- if(typeof need==='function'&&!need('tree','print'))return;
+ if(typeof need==='function'&&!need('equipment','print'))return;
  const root=asset(rootId);
  const walk=(id,d)=>{
   const kids=DB.assets.filter(a=>a.parent===id&&!a.deleted);
@@ -10517,7 +10528,7 @@ function wzPrintStruct(rootId){
  <div class="ft">${esc(typeof creditLine==='function'?creditLine():'')}</div>
  <script>setTimeout(()=>window.print(),400);<\/script></body></html>`);
  win.document.close();
- if(typeof auditX==='function')auditX('print','tree',root.code,null,null,'چاپ ساختار تجهیز');
+ if(typeof auditX==='function')auditX('print','equipment',root.code,null,null,'چاپ ساختار تجهیز');
 }
 
 /* ---------- generic checklist engine for sub-equipment WOs ---------- */
@@ -10600,7 +10611,7 @@ const PANEL_CHK_COUNT=PANEL_CHK.reduce((n,g)=>n+g.items.length,0);
 
 /* ---------------- panel registration ---------------- */
 function openPanelForm(id){
- if(typeof need==='function'&&!need('tree',id?'edit':'create'))return;
+ if(typeof need==='function'&&!need('equipment',id?'edit':'create'))return;
  const a=id?asset(id):null;const p=a?a.panel:null;
  const places=DB.assets.filter(x=>x.type!=='eq'&&!x.deleted);
  const unitAbbr=(()=>{const c=a?wzAncestry(a.parent):[];const u=c.find(x=>x.type==='unit');return u?(u.code||'').split('-').pop():'GEN';})();
@@ -10657,8 +10668,8 @@ function panelSave(id){
   a.status=pdata.ops==='در سرویس'?'active':pdata.ops==='در تعمیر'?'repair':pdata.ops==='خارج از سرویس'?'stopped':pdata.ops==='اسقاط'?'scrap':'standby';
   (a.history=a.history||[]).push({t:new Date().toISOString(),x:'ویرایش مشخصات تابلو توسط '+ME.name});
   save();audit('ویرایش تابلو برق '+code);
-  if(typeof auditX==='function')auditX('edit','tree',code+' — '+name,before,a,'ویرایش مشخصات تابلو برق');
-  closeModal();toast('تغییرات تابلو ذخیره شد ✅');selAsset=id;go('tree');return;
+  if(typeof auditX==='function')auditX('edit','equipment',code+' — '+name,before,a,'ویرایش مشخصات تابلو برق');
+  closeModal();toast('تغییرات تابلو ذخیره شد ✅');selAsset=id;go('equipment');return;
  }
  const parent=$('#pnParent').value;
  const a={id:uid(),parent,code,name,type:'eq',cls:'تابلو برق',cat:'تجهیزات برقی',status:pdata.ops==='در سرویس'?'active':'standby',
@@ -10669,9 +10680,9 @@ function panelSave(id){
  DB.panelCfg.seq=Math.max(DB.panelCfg.seq+1,1);
  treeOpen[parent]=true;selAsset=a.id;dossierTab='base';
  save();audit('ثبت تابلو برق '+code);
- if(typeof auditX==='function')auditX('create','tree',code+' — '+name,null,a,'ثبت تابلو برق با کد یکتا');
+ if(typeof auditX==='function')auditX('create','equipment',code+' — '+name,null,a,'ثبت تابلو برق با کد یکتا');
  if(typeof notify==='function')notify('⚡ تابلو برق «'+name+'» با کد '+code+' ثبت شد');
- closeModal();toast('✅ تابلو برق با کد '+code+' ثبت شد');go('tree');
+ closeModal();toast('✅ تابلو برق با کد '+code+' ثبت شد');go('equipment');
 }
 function panelCfgForm(){
  if(!['admin','mgr'].includes(ME.role)){toast('فقط مدیر سیستم مجاز است',1);return;}
@@ -10700,8 +10711,8 @@ function panelCfgSave(){
  c.pattern=$('#pcPat').value.trim()||c.pattern;c.plant=$('#pcPlant').value.trim()||c.plant;
  c.seq=+$('#pcSeq').value||1;c.pad=+$('#pcPad').value||3;
  c.autoChk=$('#pcAuto').checked;c.mandatory=$('#pcMand').checked;
- save();if(typeof auditX==='function')auditX('config','tree','الگوی کدگذاری تابلو',before,c,'تغییر الگوی کدگذاری تابلوهای برق');
- closeModal();toast('الگوی کدگذاری ذخیره شد ✅');go('tree');
+ save();if(typeof auditX==='function')auditX('config','equipment','الگوی کدگذاری تابلو',before,c,'تغییر الگوی کدگذاری تابلوهای برق');
+ closeModal();toast('الگوی کدگذاری ذخیره شد ✅');go('equipment');
 }
 
 /* ---------------- panel dossier block ---------------- */
@@ -10978,7 +10989,7 @@ function panelPrintChk(assetId){
  <div class="ft">${esc(typeof creditLine==='function'?creditLine():'')}</div>
  <script>setTimeout(()=>window.print(),400);<\/script></body></html>`);
  win.document.close();
- if(typeof auditX==='function')auditX('print','tree',a.code,null,null,'چاپ چک‌لیست خام تابلو');
+ if(typeof auditX==='function')auditX('print','equipment',a.code,null,null,'چاپ چک‌لیست خام تابلو');
 }
 
 /* ---------------- render checklists inside WO detail ---------------- */
@@ -11118,7 +11129,7 @@ function panelRegistry(){
     <td>${esc(p.volt||'—')}</td><td>${p.feeders?fa(p.feeders):'—'}</td>
     <td><span class="badge ${p.ops==='در سرویس'?'b-green':p.ops==='در تعمیر'?'b-orange':'b-gray'}">${esc(p.ops||'—')}</span></td>
     <td>${li?jDate(li.t)+(li.bad?` <span class="badge b-red" style="font-size:9px">${fa(li.bad)}</span>`:' ✅'):'—'}</td>
-    <td style="white-space:nowrap"><button class="btn btn-sm btn-ghost" onclick="closeModal();selAsset='${a.id}';dossierTab='base';go('tree')">🔍</button>
+    <td style="white-space:nowrap"><button class="btn btn-sm btn-ghost" onclick="closeModal();selAsset='${a.id}';dossierTab='base';go('equipment')">🔍</button>
      <button class="btn btn-sm btn-accent" onclick="closeModal();panelNewWO('${a.id}')">📋 WO</button></td></tr>`;}).join('')}
   </tbody></table></div>`:'<div class="empty"><div class="big">⚡</div>هنوز تابلویی ثبت نشده — «＋ تابلو جدید» را بزنید</div>'}
  </div>
@@ -11335,7 +11346,7 @@ function ddWO(id){
   ${canEdit?`<button class="btn btn-primary" onclick="closeModal();openWO('${w.id}')">✏️ باز کردن و ویرایش کامل</button>`:''}
   ${canApprove&&w.status==='done'?`<button class="btn btn-accent" onclick="ddCloseWO('${w.id}')">✅ تأیید و بستن</button>`:''}
   ${canEdit?`<button class="btn btn-ghost" onclick="ddAssign('wos','${w.id}')">👤 ارجاع به تکنسین</button>`:''}
-  ${a?`<button class="btn btn-ghost" onclick="closeModal();selAsset='${a.id}';dossierTab='base';go('tree')">🌳 شناسنامه تجهیز</button>`:''}`;
+  ${a?`<button class="btn btn-ghost" onclick="closeModal();selAsset='${a.id}';dossierTab='base';go('equipment')">🌳 شناسنامه تجهیز</button>`:''}`;
  ddShell('جزئیات دستورکار — '+w.no,'🛠️',body,actions,'wos',id);
 }
 function ddCloseWO(id){
@@ -11467,7 +11478,7 @@ function ddAsset(id){
  const cost=wos.reduce((s,w)=>s+(w.parts||[]).reduce((x,p)=>{const it=item(p.itemId);return x+(it?p.qty*it.price:0);},0),0);
  const openWos=wos.filter(w=>!['closed','cancel'].includes(w.status));
  const path=(typeof wzAncestry==='function'?wzAncestry(a.id).slice(1).reverse().map(x=>esc(x.name)).join(' › '):'');
- const canEdit=typeof can==='function'?can('tree','edit'):true;
+ const canEdit=typeof can==='function'?can('equipment','edit'):true;
  const body=`
  ${ddSpec([['کد تجهیز','<b class="mono">'+esc(a.code)+'</b>'],['نام',esc(a.name)],
   ['نوع گره',a.nodeKind==='sys'?'زیرسیستم 🧩':a.nodeKind==='sub'?'زیرتجهیز 🔩':a.nodeKind==='panel'?'تابلو برق ⚡':a.nodeKind==='main'?'تجهیز اصلی 🏗️':'تجهیز ⚙️'],
@@ -11503,10 +11514,10 @@ function ddAsset(id){
    <div style="flex:1"><b>${esc(w.no)}</b> <span class="badge ${(WO_ST[w.status]||['','b-gray'])[1]}" style="font-size:9px">${(WO_ST[w.status]||[''])[0]}</span>
     <div class="muted">${jDate(w.createdAt)} — ${esc((w.desc||'').slice(0,60))}</div></div><span class="rb-open">🔍</span></div>`).join('')}</div>`:''}`;
  const actions=`
-  <button class="btn btn-primary" onclick="closeModal();selAsset='${a.id}';dossierTab='base';go('tree')">🌳 شناسنامه کامل در درخت</button>
+  <button class="btn btn-primary" onclick="closeModal();selAsset='${a.id}';dossierTab='base';go('equipment')">🌳 شناسنامه کامل در درخت</button>
   ${(typeof can!=='function'||can('wos','create'))?`<button class="btn btn-accent" onclick="ddNewWO('${a.id}','')">＋ ایجاد دستورکار</button>`:''}
   ${canEdit&&a.panel?`<button class="btn btn-ghost" onclick="closeModal();openPanelForm('${a.id}')">✏️ ویرایش تابلو</button>`:''}
-  ${canEdit&&!a.panel?`<button class="btn btn-ghost" onclick="closeModal();selAsset='${a.id}';go('tree');setTimeout(()=>openAssetEdit&&openAssetEdit('${a.id}'),200)">✏️ ویرایش شناسنامه</button>`:''}`;
+  ${canEdit&&!a.panel?`<button class="btn btn-ghost" onclick="closeModal();selAsset='${a.id}';go('equipment');setTimeout(()=>openAssetEdit&&openAssetEdit('${a.id}'),200)">✏️ ویرایش شناسنامه</button>`:''}`;
  ddShell('جزئیات تجهیز — '+a.name,a.panel?'⚡':'⚙️',body,actions,'assets',id);
 }
 
@@ -11733,7 +11744,7 @@ if(!DB.__structSeed){
   const badPanels=panels.filter(a=>{const li=(a.panelInsp||[])[0];return li&&li.bad>0;});
   const card=`<div class="card" style="margin-bottom:16px"><h3><span class="ic">🌳</span>ساختار تجهیزات و چک‌لیست‌های تخصصی</h3>
    <div class="grid g4" style="gap:10px">
-    <div class="card kpi" style="box-shadow:none;cursor:pointer" onclick="go('tree')">
+    <div class="card kpi" style="box-shadow:none;cursor:pointer" onclick="go('equipment')">
      <div class="k-title">🔩 زیرتجهیزات ثبت‌شده</div><div class="k-val">${fa(subs.length)}</div>
      <div class="k-sub">با شناسنامه و سوابق مستقل</div></div>
     <div class="card kpi" style="box-shadow:none;cursor:pointer" onclick="panelRegistry()">
@@ -11952,7 +11963,7 @@ if(!DB.__structSeed){
      ].map(([ic,t,d])=>`<div class="list-row"><div class="list-ic" style="background:var(--blue-bg)">${ic}</div>
       <div><b>${t}</b><div class="muted">${d}</div></div></div>`).join('')}
    </div>
-   <div class="muted" style="margin-top:10px">تمامی قابلیت‌های نسخه‌های قبلی بدون تغییر حفظ شده‌اند. استقرار: <b class="mono">2.179.95.13:8080</b></div></div>`;
+   <div class="muted" style="margin-top:10px">تمامی قابلیت‌های نسخه‌های قبلی بدون تغییر حفظ شده‌اند. استقرار: <b class="mono">سرور مرکزی</b></div></div>`;
   return html.replace('<div class="grid g2" style="margin-bottom:16px">',add+'<div class="grid g2" style="margin-bottom:16px">');
  };
 })();
@@ -12886,8 +12897,8 @@ function dtQuickActions(ent,rec){
  h+=`<div class="qa-g">پیمایش</div>`;
  const relAsset=ent==='wos'?rec.assetId:ent==='requests'?rec.assetId:ent==='pms'?rec.assetId:
   ent==='instruments'?rec.asset:ent==='assets'?rec.id:null;
- if(relAsset)h+=B('⚙️','مشاهده تجهیز مرتبط',`dtOpen('assets','${relAsset}',DT.back)`,okx('tree','view'));
- if(relAsset)h+=B('🌳','باز کردن در درخت تجهیزات',`closeModal();selAsset='${relAsset}';dossierTab='base';go('tree')`,okx('tree','view'));
+ if(relAsset)h+=B('⚙️','مشاهده تجهیز مرتبط',`dtOpen('assets','${relAsset}',DT.back)`,okx('equipment','view'));
+ if(relAsset)h+=B('🌳','باز کردن در درخت تجهیزات',`closeModal();selAsset='${relAsset}';dossierTab='base';go('equipment')`,okx('equipment','view'));
  const relPrj=(DB.projects||[]).find(p=>(p.assets||[]).includes(relAsset));
  if(relPrj)h+=B('📁','مشاهده پروژه مرتبط',`dtOpen('projects','${relPrj.id}',DT.back)`,okx('projects','view'));
  h+=B('📊','داشبورد مرتبط',`dtActDash()`);
@@ -12907,7 +12918,7 @@ function dtEdit(){
  if(DT.ent==='items'){go('inv');return;}
  if(DT.ent==='assets'){
   if(rec.panel&&typeof openPanelForm==='function'){openPanelForm(id);return;}
-  selAsset=id;dossierTab='base';go('tree');
+  selAsset=id;dossierTab='base';go('equipment');
   setTimeout(()=>{if(typeof openAssetEdit==='function')openAssetEdit(id);},250);return;}
  if(DT.ent==='pms'){if(!go2('openPM',id))go('pm');return;}
  if(DT.ent==='projects'){go('projects');return;}
@@ -13943,7 +13954,7 @@ const BFG_VERSION_38='3.8.0';
      ].map(([ic,t,d])=>`<div class="list-row"><div class="list-ic" style="background:var(--blue-bg)">${ic}</div>
       <div><b>${t}</b><div class="muted">${d}</div></div></div>`).join('')}
    </div>
-   <div class="muted" style="margin-top:10px">تمامی قابلیت‌های نسخه‌های قبلی بدون تغییر حفظ شده‌اند. استقرار: <b class="mono">2.179.95.13:8080</b></div></div>`;
+   <div class="muted" style="margin-top:10px">تمامی قابلیت‌های نسخه‌های قبلی بدون تغییر حفظ شده‌اند. استقرار: <b class="mono">سرور مرکزی</b></div></div>`;
   return html.replace('<div class="grid g2" style="margin-bottom:16px">',add+'<div class="grid g2" style="margin-bottom:16px">');
  };
 })();
@@ -14022,7 +14033,7 @@ const _runQAV46=runQA;
 runQA=function(){
  const t=_runQAV46();
  t.push(['یکپارچگی نسخه '+BFG_VERSION_38,DB.assets.length>0&&DB.wos.length>0&&DB.users.length>0,'هیچ ماژول یا داده‌ای حذف نشد']);
- t.push(['آمادگی استقرار روی 2.179.95.13:8080',true,'تنظیمات استقرار بدون تغییر']);
+ t.push(['آمادگی اتصال به سرور مرکزی',typeof window.BFGRuntime==='object','بدون آدرس ثابت در کلاینت']);
  t.push(['واکنش‌گرایی صفحه جزئیات (موبایل/تبلت/دسکتاپ)',!!document.getElementById('bfgIrcCss'),'پنل اقدامات ریسپانسیو']);
  return t;
 };
@@ -14091,7 +14102,7 @@ function propDup(v,exceptId){
     propSet(a,v);
     (a.history=a.history||[]).push({t:new Date().toISOString(),
      x:'تغییر کد اموال: '+(before||'—')+' ← '+(v||'—')+' توسط '+ME.name});
-    if(typeof auditX==='function')auditX('edit','tree',a.code+' — '+a.name,{propCode:before},{propCode:v},'ویرایش کد اموال');
+    if(typeof auditX==='function')auditX('edit','equipment',a.code+' — '+a.name,{propCode:before},{propCode:v},'ویرایش کد اموال');
     save();
    }
   }
@@ -14219,13 +14230,13 @@ function propDup(v,exceptId){
     <div style="flex:1;min-width:150px"><b style="font-size:12.7px">کد اموال سازمانی</b>
      <div class="muted" style="font-size:11px">مستقل از کد تجهیز — برای تطبیق با دفتر اموال سازمان</div></div>
     ${p?`<span class="badge b-purple mono" style="font-size:12px;padding:5px 13px">${esc(p)}</span>`:'<span class="badge b-gray">ثبت نشده</span>'}
-    ${(typeof can!=='function'||can('tree','edit'))?`<button class="btn btn-sm btn-ghost" onclick="propQuickEdit('${a.id}')">${p?'✏️ ویرایش':'＋ ثبت کد اموال'}</button>`:''}
+    ${(typeof can!=='function'||can('equipment','edit'))?`<button class="btn btn-sm btn-ghost" onclick="propQuickEdit('${a.id}')">${p?'✏️ ویرایش':'＋ ثبت کد اموال'}</button>`:''}
    </div></div>`;
   return html+block;
  };
 })();
 function propQuickEdit(id){
- if(typeof need==='function'&&!need('tree','edit'))return;
+ if(typeof need==='function'&&!need('equipment','edit'))return;
  const a=asset(id);
  modal(mhead('🏷️ کد اموال — '+esc(a.name))+`
  <div class="m-body">
@@ -14245,8 +14256,8 @@ function propQuickSave(id){
  if(v&&v!==before){const dup=propDup(v,id);if(dup){toast('⛔ این کد اموال قبلاً برای «'+dup.name+'» ثبت شده است',1);return;}}
  propSet(a,v);
  (a.history=a.history||[]).push({t:new Date().toISOString(),x:'ثبت/ویرایش کد اموال: '+(before||'—')+' ← '+(v||'—')+' توسط '+ME.name});
- if(typeof auditX==='function')auditX('edit','tree',a.code+' — '+a.name,{propCode:before},{propCode:v},'ثبت/ویرایش کد اموال');
- save();closeModal();toast(v?'✅ کد اموال ثبت شد':'کد اموال حذف شد');go('tree');
+ if(typeof auditX==='function')auditX('edit','equipment',a.code+' — '+a.name,{propCode:before},{propCode:v},'ثبت/ویرایش کد اموال');
+ save();closeModal();toast(v?'✅ کد اموال ثبت شد':'کد اموال حذف شد');go('equipment');
 }
 
 /* ---------- tree search: include property code ---------- */
@@ -14269,7 +14280,7 @@ function propQuickSave(id){
    /* also render property-code hits that the name filter missed */
    const missing=hit.filter(a=>!html.includes(esc(a.name)));
    if(missing.length){
-    html+=missing.map(a=>`<div><div class="tnode" onclick="selAsset='${a.id}';dossierTab='base';go('tree')">
+    html+=missing.map(a=>`<div><div class="tnode" onclick="selAsset='${a.id}';dossierTab='base';go('equipment')">
       <span class="tw">•</span>🏷️ ${esc(a.name.trim())} <span class="badge b-purple" style="font-size:9px;padding:1px 7px">اموال: ${esc(propOf(a))}</span></div></div>`).join('');
    }
   }finally{saved.forEach(s=>{s.a.name=s.n;});}
@@ -14302,7 +14313,7 @@ function propRegistry(){
   </div>
   <div class="tbl-tools">
    <input placeholder="🔍 جستجو در کد اموال یا نام…" oninput="propRegFilter(this.value)">
-   ${(typeof can!=='function'||can('tree','export'))?`<button class="btn btn-sm btn-ghost" onclick="propExport()">⬇️ خروجی Excel</button>`:''}
+   ${(typeof can!=='function'||can('equipment','export'))?`<button class="btn btn-sm btn-ghost" onclick="propExport()">⬇️ خروجی Excel</button>`:''}
    <button class="btn btn-sm btn-ghost" onclick="window.print()">🖨️ چاپ</button>
   </div>
   <div class="tbl-wrap" style="max-height:400px;overflow:auto"><table id="propTbl"><thead><tr>
@@ -14327,7 +14338,7 @@ function propRegFilter(v){
  });
 }
 function propExport(){
- if(typeof need==='function'&&!need('tree','export'))return;
+ if(typeof need==='function'&&!need('equipment','export'))return;
  const rows=[['کد اموال','کد تجهیز','نام تجهیز','نوع','وضعیت','محل','سازنده','مدل','سریال']];
  DB.assets.filter(a=>!a.deleted&&propOf(a)).forEach(a=>rows.push([propOf(a),a.code,a.name,
   a.panel?'تابلو برق':a.veh?'خودرو':a.nodeKind==='sub'?'زیرتجهیز':'تجهیز',
@@ -14335,7 +14346,7 @@ function propExport(){
  const csv='\uFEFF'+rows.map(r=>r.map(c=>'"'+String(c||'').replace(/"/g,'""')+'"').join(',')).join('\n');
  if(typeof dtDownload==='function')dtDownload(csv,'text/csv;charset=utf-8','BFG-PropertyCodes.csv');
  else{const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);a.download='BFG-PropertyCodes.csv';a.click();}
- if(typeof auditX==='function')auditX('export','tree','کدهای اموال',null,null,'خروجی Excel فهرست کد اموال');
+ if(typeof auditX==='function')auditX('export','equipment','کدهای اموال',null,null,'خروجی Excel فهرست کد اموال');
  toast('خروجی کدهای اموال آماده شد ⬇️');
 }
 
@@ -14389,7 +14400,7 @@ function propExport(){
    const hits=DB.assets.filter(a=>!a.deleted&&propOf(a)&&propOf(a).includes(v)).slice(0,5);
    if(!hits.length||box.querySelector('[data-gsprop]'))return;
    const d=document.createElement('div');d.dataset.gsprop='1';
-   d.innerHTML=hits.map(a=>`<div class="list-row" style="cursor:pointer" onclick="document.getElementById('gsResults').style.display='none';selAsset='${a.id}';dossierTab='base';go('tree')">
+   d.innerHTML=hits.map(a=>`<div class="list-row" style="cursor:pointer" onclick="document.getElementById('gsResults').style.display='none';selAsset='${a.id}';dossierTab='base';go('equipment')">
     <div class="list-ic" style="background:var(--purple-bg);color:var(--purple)">🏷️</div>
     <div style="flex:1"><b>${esc(a.name)}</b><div class="muted">کد اموال: ${esc(propOf(a))}</div></div></div>`).join('');
    box.appendChild(d);box.style.display='block';
@@ -14441,7 +14452,7 @@ function propExport(){
  }
 })();
 function propPrintCard(id){
- if(typeof need==='function'&&!need('tree','print'))return;
+ if(typeof need==='function'&&!need('equipment','print'))return;
  const a=asset(id);const p=propOf(a);
  const win=window.open('','_blank');
  win.document.write(`<!doctype html><html dir="rtl" lang="fa"><head><meta charset="utf-8"><title>شناسنامه ${esc(a.name)}</title>
@@ -14474,7 +14485,7 @@ function propPrintCard(id){
  <div class="ft">${esc(typeof creditLine==='function'?creditLine():'')}</div>
  <script>setTimeout(()=>window.print(),400);<\/script></body></html>`);
  win.document.close();
- if(typeof auditX==='function')auditX('print','tree',a.code,null,null,'چاپ شناسنامه با کد اموال');
+ if(typeof auditX==='function')auditX('print','equipment',a.code,null,null,'چاپ شناسنامه با کد اموال');
 }
 (function(){
  if(typeof renderDossier!=='function')return;
@@ -15884,7 +15895,7 @@ if(!DB.__toolSeed39){
      ].map(([ic,t,d])=>`<div class="list-row"><div class="list-ic" style="background:var(--blue-bg)">${ic}</div>
       <div><b>${t}</b><div class="muted">${d}</div></div></div>`).join('')}
    </div>
-   <div class="muted" style="margin-top:10px">تمامی قابلیت‌های نسخه‌های قبلی بدون تغییر حفظ شده‌اند. استقرار: <b class="mono">2.179.95.13:8080</b></div></div>`;
+   <div class="muted" style="margin-top:10px">تمامی قابلیت‌های نسخه‌های قبلی بدون تغییر حفظ شده‌اند. استقرار: <b class="mono">سرور مرکزی</b></div></div>`;
   return html.replace('<div class="grid g2" style="margin-bottom:16px">',add+'<div class="grid g2" style="margin-bottom:16px">');
  };
 })();
@@ -15897,7 +15908,7 @@ runQA=function(){
  const props=DB.assets.filter(a=>!a.deleted&&typeof propOf==='function'&&propOf(a)).length;
  t.push(['یکپارچگی نسخه '+BFG_VERSION_39,DB.assets.length>0&&DB.wos.length>0&&tools.length>0,
   fa(tools.length)+' ابزار · '+fa(DB.toolLoans.length)+' سند امانت · '+fa(props)+' کد اموال']);
- t.push(['آمادگی استقرار روی 2.179.95.13:8080',true,'تنظیمات استقرار بدون تغییر']);
+ t.push(['آمادگی اتصال به سرور مرکزی',typeof window.BFGRuntime==='object','بدون آدرس ثابت در کلاینت']);
  t.push(['واکنش‌گرایی فرم‌های ابزار و امضای دیجیتال',!!document.getElementById('bfgToolCss'),'موبایل/تبلت/دسکتاپ']);
  return t;
 };
@@ -17316,7 +17327,7 @@ if(!DB.__hrSeed40){
      ].map(([ic,t,d])=>`<div class="list-row"><div class="list-ic" style="background:var(--blue-bg)">${ic}</div>
       <div><b>${t}</b><div class="muted">${d}</div></div></div>`).join('')}
    </div>
-   <div class="muted" style="margin-top:10px">تمامی قابلیت‌های نسخه‌های قبلی بدون تغییر حفظ شده‌اند. استقرار: <b class="mono">2.179.95.13:8080</b></div></div>`;
+   <div class="muted" style="margin-top:10px">تمامی قابلیت‌های نسخه‌های قبلی بدون تغییر حفظ شده‌اند. استقرار: <b class="mono">سرور مرکزی</b></div></div>`;
   return html.replace('<div class="grid g2" style="margin-bottom:16px">',add+'<div class="grid g2" style="margin-bottom:16px">');
  };
 })();
@@ -17388,7 +17399,7 @@ runQA=function(){
  const lv=DB.leaves||[],pe=DB.planEvents||[];
  t.push(['یکپارچگی نسخه '+BFG_VERSION_40,DB.assets.length>0&&DB.wos.length>0,
   fa(lv.length)+' مرخصی · '+fa((DB.missions||[]).length)+' مأموریت · '+fa(pe.length)+' برنامه']);
- t.push(['آمادگی استقرار روی 2.179.95.13:8080',true,'تنظیمات استقرار بدون تغییر']);
+ t.push(['آمادگی اتصال به سرور مرکزی',typeof window.BFGRuntime==='object','بدون آدرس ثابت در کلاینت']);
  t.push(['واکنش‌گرایی فرم‌های مرخصی و برنامه',!!document.getElementById('bfgLeaveCss')&&!!document.getElementById('bfgPlanCss'),'موبایل/تبلت/دسکتاپ']);
  return t;
 };
@@ -17396,14 +17407,19 @@ DB.audit.unshift({t:new Date().toISOString(),u:'سیستم',x:'v'+BFG_VERSION_40
 save();
 setTimeout(()=>{try{const t=runQA();console.log('BFG CMMS v'+BFG_VERSION_40+' — QA: '+t.filter(x=>x[1]).length+'/'+t.length+' passed');}catch(e){}},1900);
 </script>
-<script src="/data/besepar1-data.js?v=20260914.1"></script>
-<script src="/data/equipment-demo-cleanup.js?v=20260914.1"></script>
+<script src="/data/besepar1-data.js?v=20261004.1"></script>
+<script src="/data/equipment-demo-cleanup.js?v=20261004.1"></script>
 <link rel="stylesheet" href="/equipment-v2/equipment-v2.css?v=20260921.1">
+<link rel="stylesheet" href="/equipment-v2/selene-chat.css?v=20261004.9">
 <link rel="stylesheet" href="/design-system/enterprise-compact.css?v=20260930.2">
-<script src="/equipment-v2/equipment-adapter.js?v=20260929.1"></script>
-<script src="/equipment-v2/equipment-v2.js?v=20260930.1"></script>
-<script src="/platform-v2/backend-client.js?v=20260916.1"></script>
-<script src="/ai/ai-client.js?v=20260916.1"></script>
+<script src="/equipment-v2/equipment-adapter.js?v=20261004.2"></script>
+<script src="/equipment-v2/equipment-v2.js?v=20261004.8"></script>
+<script src="/equipment-v2/selene-chat.js?v=20261004.9"></script>
+<script src="/platform-v2/module-registry.js?v=20261004.8"></script>
+<script src="/platform-v2/backend-client.js?v=20261004.5"></script>
+<script src="/ai/ai-client.js?v=20261004.2"></script>
 <script src="/insights/operational-intelligence.js?v=20260929.1"></script>
 <script src="/platform-v2/record-actions.js?v=20260930.1"></script>
+<script src="/platform-v2/maintenance-client.js?v=20261004.3"></script>
+<script src="/platform-v2/inventory-client.js?v=20261004.4"></script>
 </body></html>

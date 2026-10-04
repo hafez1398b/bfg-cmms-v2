@@ -3,14 +3,10 @@
 function configureRealtime({ io, pool, security, logger=console }) {
   io.use(async (socket, next) => {
     try {
-      const authToken = socket.handshake.auth?.token;
-      const header = socket.handshake.headers.authorization || '';
-      const token = authToken || (header.startsWith('Bearer ') ? header.slice(7) : null);
-      if (!token) return next(new Error('AUTHENTICATION_REQUIRED'));
-      socket.user = await security.socketUser(token);
+      socket.user = await security.socketUser(socket.handshake);
       next();
     } catch (error) {
-      logger.warn('Realtime authentication rejected:', error.message);
+      logger.warn('Realtime authentication rejected:', error.code || 'INVALID_ACCESS_TOKEN');
       next(new Error('INVALID_ACCESS_TOKEN'));
     }
   });
@@ -50,7 +46,7 @@ function configureRealtime({ io, pool, security, logger=console }) {
       await client.query('COMMIT');
     } catch (error) {
       if(client)await client.query('ROLLBACK').catch(()=>{});
-      if (Date.now()-lastErrorLogAt>60000){logger.error('Outbox publication unavailable:', error.code||error.message);lastErrorLogAt=Date.now();}
+      if (Date.now()-lastErrorLogAt>60000){logger.error('Outbox publication unavailable:', error.code||'outbox_error');lastErrorLogAt=Date.now();}
     } finally { client?.release(); }
   }
 

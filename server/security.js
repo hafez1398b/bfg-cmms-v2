@@ -1,35 +1,15 @@
 'use strict';
 
-const jwt = require('jsonwebtoken');
-
-function bearerToken(req) {
-  const value = req.headers.authorization || '';
-  return value.startsWith('Bearer ') ? value.slice(7).trim() : null;
-}
-
-function createSecurity({ pool, jwtSecret }) {
+function createSecurity({ pool, jwtSecret, sessions }) {
   if (!jwtSecret) throw new Error('JWT_SECRET is required');
-
-  async function resolveUser(claims) {
-    const { rows } = await pool.query(
-      'SELECT id,username,name,role,unit,active FROM users WHERE id=$1 AND active=true',
-      [claims.id]
-    );
-    return rows[0] || null;
-  }
+  if (!sessions) throw new Error('SESSION_SERVICE_REQUIRED');
 
   async function authenticateToken(req, res, next) {
     try {
-      const token = bearerToken(req);
-      if (!token) return res.status(401).json({ error: 'AUTHENTICATION_REQUIRED' });
-      const claims = jwt.verify(token, jwtSecret, { algorithms: ['HS256'] });
-      const user = await resolveUser(claims);
-      if (!user) return res.status(401).json({ error: 'USER_INACTIVE_OR_MISSING' });
-      req.user = user;
+      req.user = await sessions.authenticate(req);
       next();
     } catch (error) {
-      const status = error.name === 'TokenExpiredError' ? 401 : 403;
-      res.status(status).json({ error: 'INVALID_ACCESS_TOKEN' });
+      res.status(error.status || 401).json({ error: error.code || 'AUTHENTICATION_REQUIRED' });
     }
   }
 
@@ -59,15 +39,23 @@ function createSecurity({ pool, jwtSecret }) {
     return rows;
   }
 
-  async function socketUser(token) {
-    const claims = jwt.verify(token, jwtSecret, { algorithms: ['HS256'] });
-    const user = await resolveUser(claims);
-    if (!user) throw new Error('USER_INACTIVE_OR_MISSING');
-    user.scopes = await scopesFor(user.id);
-    return user;
+  async function socketUser(handshake) {
+    try {
+      const user = await sessions.socketUser(handshake || {});
+      if (!user) {
+        const error = new Error('INVALID_ACCESS_TOKEN');
+        error.code = 'INVALID_ACCESS_TOKEN';
+        throw error;
+      }
+      user.scopes = await scopesFor(user.id);
+      return user;
+    } catch (error) {
+      if (!error.code) error.code = 'INVALID_ACCESS_TOKEN';
+      throw error;
+    }
   }
 
   return { authenticateToken, authorize, hasPermission, scopesFor, socketUser };
 }
 
-module.exports = { createSecurity, bearerToken };
+module.exports = { createSecurity };

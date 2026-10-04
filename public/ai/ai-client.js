@@ -2,6 +2,7 @@
 (function(){
   'use strict';
   const state=window.AIBackend={loading:false,loaded:false,error:null,status:null};
+  const hasSession=()=>Boolean(window.BFGBackend&&window.BFGBackend.user);
   const textOf=content=>typeof content==='string'?content:(content||[]).filter(x=>x.type==='text').map(x=>x.text||'').join('\n');
   const mediaOf=messages=>{
     const media=[];
@@ -20,7 +21,7 @@
   async function backendAIChat(messages,opts={}){
     const userMessages=(messages||[]).filter(x=>x.role==='user'),last=userMessages[userMessages.length-1];
     const equipmentId=opts.equipmentId||window.EQV2?.selected||(typeof selAsset!=='undefined'?selAsset:null);
-    if(!sessionStorage.getItem('bfg_token'))return{ok:false,error:'برای AI واقعی باید با حساب Backend وارد شوید؛ حالت Local پاسخ ساختگی تولید نمی‌کند.'};
+    if(!hasSession())return{ok:false,error:'برای AI واقعی باید با حساب Backend وارد شوید؛ حالت Local پاسخ ساختگی تولید نمی‌کند.'};
     if(!equipmentId)return{ok:false,error:'برای تحلیل نگهداری ابتدا یک تجهیز را انتخاب کنید.'};
     try{
       const result=await bfgApi('/api/ai/analyze',{method:'POST',body:JSON.stringify({purpose:opts.purpose||'repair_recommendation',equipmentId,question:textOf(last?.content)||'تحلیل وضعیت تجهیز',media:mediaOf(messages),useSearch:!!opts.useSearch,preferredProvider:opts.provider||null})});
@@ -38,7 +39,7 @@
   };
 
   window.pgAICfg=function(){
-    if(!sessionStorage.getItem('bfg_token'))return head('موتور هوش مصنوعی','تنظیمات › AI')+`<div class="card"><h3>Backend AI غیرفعال در نشست محلی</h3><p class="muted">PostgreSQL یا ورود Backend در دسترس نیست. برای جلوگیری از پاسخ ساختگی، موتور آفلاین نمایشی پاسخ تولید نمی‌کند. پس از اتصال دیتابیس با حساب Backend وارد شوید.</p></div>`;
+    if(!hasSession())return head('موتور هوش مصنوعی','تنظیمات › AI')+`<div class="card"><h3>Backend AI غیرفعال در نشست محلی</h3><p class="muted">PostgreSQL یا ورود Backend در دسترس نیست. برای جلوگیری از پاسخ ساختگی، موتور آفلاین نمایشی پاسخ تولید نمی‌کند. پس از اتصال دیتابیس با حساب Backend وارد شوید.</p></div>`;
     if(!state.loaded&&!state.loading)setTimeout(()=>refresh(true),0);
     if(state.loading)return head('موتور هوش مصنوعی','تنظیمات › AI')+'<div class="card empty">در حال دریافت وضعیت Backend AI…</div>';
     if(state.error)return head('موتور هوش مصنوعی','تنظیمات › AI')+`<div class="card"><h3>خطا در AI Gateway</h3><p class="muted">${esc(state.error.message)}</p><button class="btn btn-primary" onclick="AIBackend.refresh(true)">تلاش مجدد</button></div>`;
@@ -46,5 +47,5 @@
     return head('موتور هوش مصنوعی','تنظیمات › AI')+`<div class="card" style="margin-bottom:14px"><h3>AI Gateway سازمانی</h3><div class="muted">کلیدها فقط در Environment سرور نگهداری می‌شوند. محاسبات KPI توسط موتور قطعی انجام می‌شود و همه پیشنهادهای AI نیازمند تأیید انسانی هستند.</div></div><div class="grid g3">${Object.entries(providers).map(([name,provider])=>{const policy=policies.find(x=>x.provider===name)||{};return`<div class="card"><h3>${name==='local'?'🏭 Local AI':name==='deepseek'?'🧠 DeepSeek':'✨ Google Gemini'}</h3><p class="muted">مدل: ${esc(provider.model||'تنظیم نشده')}</p><p><span class="badge ${provider.configured?'b-green':'b-red'}">${provider.configured?'پیکربندی‌شده':'کلید/Endpoint تنظیم نشده'}</span> <span class="badge ${policy.enabled?'b-blue':'b-gray'}">${policy.enabled?'مجاز':'غیرفعال در Policy'}</span></p><div class="muted">Text: ${provider.capabilities?.text?'✓':'—'} · Image: ${provider.capabilities?.image?'✓':'—'} · Audio: ${provider.capabilities?.audio?'✓':'—'} · Search: ${provider.capabilities?.search?'✓':'—'}</div>${ME?.role==='admin'?`<div style="margin-top:12px">${name!=='local'?`<label class="checkline"><input type="checkbox" ${policy.allow_sensitive_context?'checked':''} onchange="aiProviderPolicy('${name}',${!!policy.enabled},this.checked,${!!policy.allow_search},${policy.row_version||1})"> مجوز ارسال Context صنعتی به Cloud</label>`:''}${name==='gemini'?`<label class="checkline"><input type="checkbox" ${policy.allow_search?'checked':''} onchange="aiProviderPolicy('${name}',${!!policy.enabled},${!!policy.allow_sensitive_context},this.checked,${policy.row_version||1})"> مجوز Google Search Grounding</label>`:''}<button class="btn btn-sm ${policy.enabled?'btn-danger':'btn-primary'}" onclick="aiProviderPolicy('${name}',${!policy.enabled},${!!policy.allow_sensitive_context},${!!policy.allow_search},${policy.row_version||1})">${policy.enabled?'غیرفعال‌کردن':'فعال‌کردن'}</button></div>`:''}</div>`;}).join('')}</div><div class="card" style="margin-top:14px"><h3>متغیرهای لازم در سرور</h3><pre style="direction:ltr;text-align:left;white-space:pre-wrap">LOCAL_AI_BASE_URL / LOCAL_AI_MODEL\nDEEPSEEK_API_KEY / DEEPSEEK_MODEL\nGEMINI_API_KEY / GEMINI_MODEL\nGEMINI_SEARCH_ENABLED=true</pre><p class="muted">Secretها در این صفحه وارد یا نمایش داده نمی‌شوند.</p></div>`;
   };
   window.addEventListener('bfg:domain-event',event=>{if(event.detail?.type?.startsWith('ai.'))refresh(false);});
-  if(sessionStorage.getItem('bfg_token'))refresh(false);
+  if(hasSession())refresh(false);
 })();

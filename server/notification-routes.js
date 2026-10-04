@@ -42,8 +42,10 @@ function createNotificationRouter({pool,authenticateToken,authorize}){
   }catch(error){next(error);}});
 
   router.use((error,_req,res,_next)=>{
-    console.error('Notification API:',error);
-    res.status(error.status||500).json({error:error.message||'NOTIFICATION_API_ERROR',fields:error.fields});
+    const status=Number(error.status)||500;
+    console.error('Notification API:', error.code || 'request_failed');
+    if(status>=500) return res.status(500).json({error:'NOTIFICATION_API_ERROR'});
+    res.status(status).json({error:error.code||error.message||'NOTIFICATION_API_ERROR',fields:error.fields});
   });
   return router;
 }

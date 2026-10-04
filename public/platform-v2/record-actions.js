@@ -13,7 +13,7 @@
   function requiredReason(message){const reason=prompt(message||'دلیل این عملیات را وارد کنید:');return reason&&reason.trim()?reason.trim():null;}
   function footerButton(html){const foot=document.querySelector('.modal .m-foot');if(!foot||foot.querySelector('[data-record-actions]'))return;const box=document.createElement('div');box.dataset.recordActions='1';box.className='record-actions';box.innerHTML=html;foot.prepend(box);}
 
-  window.openEquipmentRelation=function(assetId){if(!assetId)return;closeModal();go('tree');setTimeout(()=>window.eqv2OpenDetail?.(assetId),80);};
+  window.openEquipmentRelation=function(assetId){if(!assetId)return;closeModal();go('equipment');setTimeout(()=>window.eqv2OpenDetail?.(assetId),80);};
 
   window.editRequestRecord=function(id){
     if(!requirePermission('requests','edit'))return;const record=DB.requests.find(x=>x.id===id&&!x.deleted);if(!record)return;

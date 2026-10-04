@@ -6,9 +6,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-function loadAdapter() {
+function loadAdapter(options = {}) {
   const context = {
-    window: {},
+    window: options.window || {},
     sessionStorage: { getItem: () => null },
     localStorage: { getItem: () => null, setItem() {} },
     DB: {
@@ -30,8 +30,17 @@ function loadAdapter() {
   return context;
 }
 
-test('adapter selects explicit local compatibility mode when no JWT exists', async () => {
+test('adapter does not fall back to a local database when no JWT exists', async () => {
   const context = loadAdapter();
+  assert.equal(context.window.EquipmentRepository.mode, 'server-required');
+  const repository = context.window.EquipmentRepository.current();
+  assert.equal(repository.source, 'server-required');
+  await assert.rejects(() => repository.feature(), /SERVER_REQUIRED/);
+  await assert.rejects(() => repository.list({ q: 'pump', page: 1, limit: 25 }), /SERVER_REQUIRED/);
+});
+
+test('adapter uses local compatibility only when runtime policy explicitly allows sample data', async () => {
+  const context = loadAdapter({ window: { BFGRuntime: { allowsSampleData: () => true } } });
   assert.equal(context.window.EquipmentRepository.mode, 'local-compatibility');
   const repository = context.window.EquipmentRepository.current();
   assert.equal(repository.source, 'local-compatibility');

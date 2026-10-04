@@ -1,0 +1,87 @@
+/* Selene workbench. Uses the CMMS tokens only; it is not a copy of an external chat product. */
+.selene-mount{min-height:640px}
+.selene{
+  display:grid;grid-template-columns:232px minmax(0,1fr);gap:10px;direction:rtl;
+  min-height:640px;color:var(--text);font-family:inherit;
+}
+.selene-side,.selene-main{
+  background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow-s);
+}
+.selene-side{display:flex;flex-direction:column;padding:12px;min-height:640px}
+.selene-brand{display:flex;align-items:center;gap:10px;padding:2px 2px 12px}
+.selene-brand b{display:block;font-size:13px}
+.selene-brand small{display:block;color:var(--text-3);font-size:10px;font-weight:600}
+.selene-seal{
+  width:36px;height:36px;border-radius:11px;display:grid;place-items:center;color:#fff;font-weight:800;
+  background:linear-gradient(135deg,var(--primary),var(--accent));box-shadow:var(--shadow-s);flex:0 0 36px;
+}
+.selene-new{width:100%;justify-content:center;margin-bottom:10px}
+.selene-sessions{display:flex;flex-direction:column;gap:4px;overflow:auto}
+.selene-session{
+  text-align:right;border:1px solid transparent;background:transparent;border-radius:9px;
+  padding:8px 9px;color:var(--text-2);font:600 11px inherit;cursor:pointer;
+}
+.selene-session.on,.selene-session:hover{background:var(--blue-bg);color:var(--primary);border-color:color-mix(in srgb,var(--primary) 18%,var(--border))}
+.selene-side-foot{margin-top:auto;color:var(--text-3);font-size:10px;line-height:1.7;padding:10px 2px 0}
+.selene-main{display:flex;flex-direction:column;min-width:0;min-height:640px}
+.selene-top{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border-bottom:1px solid var(--border)}
+.selene-top b{display:block;font-size:13px}
+.selene-top span{color:var(--text-3);font-size:10.5px}
+.selene-thread{flex:1;overflow:auto;padding:14px}
+.selene-column{display:flex;flex-direction:column;gap:12px}
+.selene-hello{display:flex;flex-direction:column;gap:12px}
+.selene-hero{display:flex;gap:12px;align-items:flex-start;padding:4px 2px 8px}
+.selene-hero h2{font-size:16px;line-height:1.5}
+.selene-hero p{color:var(--text-2);font-size:12px;margin-top:4px}
+.selene-map{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.selene-map article,.selene-draft,.selene-bubble{
+  background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:11px;
+}
+.selene-map span,.selene-kicker{display:block;color:var(--text-3);font-size:10px;margin-bottom:4px}
+.selene-map b{font-size:11.5px;line-height:1.7}
+.selene-suggestions{display:flex;flex-wrap:wrap;gap:6px}
+.selene-suggestions button{
+  border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:999px;
+  padding:6px 10px;font:600 11px inherit;cursor:pointer;
+}
+.selene-suggestions button:hover{border-color:var(--accent);color:var(--primary)}
+.selene-user{align-self:flex-start;max-width:min(78%,560px);background:var(--blue-bg);border-color:color-mix(in srgb,var(--primary) 16%,var(--border))}
+.selene-user .selene-answer{white-space:pre-wrap}
+.selene-assistant{display:flex;gap:10px;align-items:flex-start}
+.selene-assistant .selene-seal{width:28px;height:28px;border-radius:8px;font-size:12px;flex-basis:28px}
+.selene-answer{font-size:13px;line-height:1.85}
+.selene-answer p{margin:0 0 7px}
+.selene-answer code{background:var(--surface-3);border-radius:6px;padding:1px 5px;font-size:12px}
+.selene-file{display:inline-flex;margin-top:6px;padding:4px 8px;border-radius:8px;background:var(--surface);border:1px solid var(--border);font-size:11px}
+.selene-coverage{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.selene-coverage i{font-style:normal;border-radius:999px;padding:3px 8px;font-size:10px;font-weight:700}
+.selene-coverage .found{background:var(--green-bg);color:var(--green)}
+.selene-coverage .missing{background:var(--orange-bg);color:var(--orange)}
+.selene-coverage .empty{background:var(--gray-bg);color:var(--gray)}
+.selene-coverage .default{background:var(--blue-bg);color:var(--blue)}
+.selene-draft{margin-top:10px}
+.selene-draft h3{font-size:12.5px;margin:0 0 8px}
+.selene-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.selene-grid label{font-size:10.5px}
+.selene-grid .wide{grid-column:1/-1}
+.selene-note{color:var(--text-3);font-size:11px;margin-top:8px}
+.selene-composer{padding:10px 12px 12px;border-top:1px solid var(--border)}
+.selene-box{background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:8px}
+.selene-chips{display:flex;gap:6px;flex-wrap:wrap}
+.selene-chip{display:flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:5px 8px;font-size:11px}
+.selene-chip button{border:0;background:transparent;color:var(--text-3);cursor:pointer;font:inherit}
+.selene-box textarea{width:100%;min-height:44px;max-height:160px;resize:none;margin-top:6px;background:var(--surface)}
+.selene-tools{display:flex;align-items:center;gap:8px;margin-top:8px}
+.selene-formats{color:var(--text-3);font-size:10px}
+.selene-tools .btn-primary{margin-inline-start:auto}
+.selene-typing{display:flex;gap:4px;padding:8px 0}
+.selene-typing i{width:6px;height:6px;border-radius:50%;background:var(--accent);display:block;animation:selene-dot 1s infinite}
+.selene-typing i:nth-child(2){animation-delay:.15s}.selene-typing i:nth-child(3){animation-delay:.3s}
+@keyframes selene-dot{0%,80%,100%{opacity:.25}40%{opacity:1}}
+.selene-drop{outline:2px dashed var(--accent);outline-offset:-6px}
+@media(max-width:860px){
+  .selene{grid-template-columns:1fr}
+  .selene-side{min-height:0}
+  .selene-sessions{max-height:120px}
+  .selene-map,.selene-grid{grid-template-columns:1fr}
+}

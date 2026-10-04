@@ -2,9 +2,11 @@
 
 const express=require('express');
 const {v4:uuid}=require('uuid');
-const {requireEquipment,listParams,cleanPatch,validateCreate}=require('./equipment-service');
+const {requireEquipment,listParams,cleanPatch,cleanExt,validateCreate}=require('./equipment-service');
+const {createEquipmentIntakeRouter}=require('./equipment-intake-routes');
+const {createSeleneActionRouter}=require('./selene-action-routes');
 
-function createEquipmentRouter({pool,io,authenticateToken}){
+function createEquipmentRouter({pool,io,authenticateToken,aiRegistry}){
  const router=express.Router();router.use(authenticateToken);
  const emit=(payload)=>io.emit('equipment-changed',payload);
  async function audit(c,req,action,id,before,after,note=''){
@@ -64,6 +66,9 @@ function createEquipmentRouter({pool,io,authenticateToken}){
   res.json({data:rows,parentId:parent,source:'postgresql'});
  }catch(e){next(e);}});
 
+ router.use('/import', createEquipmentIntakeRouter({ pool, registry: aiRegistry || { providers: {}, candidates() { return []; } } }));
+ router.use('/actions', createSeleneActionRouter({ pool }));
+
  router.get('/:id',requireEquipment('view'),async(req,res,next)=>{try{
   const {rows}=await pool.query(`SELECT a.*,c.name category_name,f.name factory_name,p.name parent_name,
    (SELECT count(*)::int FROM work_orders w WHERE w.asset_id=a.id) wo_count,
@@ -102,16 +107,17 @@ function createEquipmentRouter({pool,io,authenticateToken}){
   await c.query('BEGIN');const id=req.body.id||uuid(),kind=req.body.nodeKind,type=['equipment','sub-equipment','subsystem','main-component','sub-component'].includes(kind)?'eq':kind==='factory'||kind==='company'?'site':'unit';
   if(req.body.parentId){const parent=await c.query('SELECT id FROM assets WHERE id=$1 AND deleted_at IS NULL',[req.body.parentId]);if(!parent.rows[0]){await c.query('ROLLBACK');return res.status(422).json({error:'PARENT_NOT_FOUND'});}}
   const ext={...(req.body.ext||{}),nodeKind:kind};
-  const {rows}=await c.query(`INSERT INTO assets(id,parent,code,name,type,cls,status,crit,maker,model,serial,hours,ext,category_id,sort_order,is_active,updated_at)
-    VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,true,now()) RETURNING *`,
-    [id,req.body.parentId||null,String(req.body.code).trim(),String(req.body.name).trim(),type,req.body.cls||null,req.body.status||'active',req.body.crit||'C',req.body.maker||null,req.body.model||null,req.body.serial||null,Number(req.body.hours)||0,JSON.stringify(ext),req.body.categoryId||null,Number(req.body.sortOrder)||0]);
+  const {rows}=await c.query(`INSERT INTO assets(id,parent,code,name,type,cls,status,crit,maker,model,serial,year,install,power,hours,ext,category_id,sort_order,is_active,updated_at)
+    VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,true,now()) RETURNING *`,
+    [id,req.body.parentId||null,String(req.body.code).trim(),String(req.body.name).trim(),type,req.body.cls||null,req.body.status||'active',req.body.crit||'C',req.body.maker||null,req.body.model||null,req.body.serial||null,req.body.year||null,req.body.install||null,req.body.power||null,Number(req.body.hours)||0,JSON.stringify(ext),req.body.categoryId||null,Number(req.body.sortOrder)||0]);
   await audit(c,req,'create',id,null,rows[0]);await c.query('COMMIT');emit({action:'create',id});res.status(201).json({data:rows[0]});
  }catch(e){await c.query('ROLLBACK');next(e);}finally{c.release();}});
 
- router.patch('/:id',requireEquipment('edit'),async(req,res,next)=>{const patch=cleanPatch(req.body);if(!Object.keys(patch).length)return res.status(422).json({error:'NO_EDITABLE_FIELDS'});const map={name:'name',code:'code',status:'status',crit:'crit',maker:'maker',model:'model',serial:'serial',year:'year',install:'install',power:'power',hours:'hours',categoryId:'category_id',sortOrder:'sort_order',isActive:'is_active'};const c=await pool.connect();try{
+ router.patch('/:id',requireEquipment('edit'),async(req,res,next)=>{const patch=cleanPatch(req.body),extPatch=cleanExt(req.body.ext);if(!Object.keys(patch).length&&!Object.keys(extPatch).length)return res.status(422).json({error:'NO_EDITABLE_FIELDS'});const map={name:'name',code:'code',status:'status',crit:'crit',maker:'maker',model:'model',serial:'serial',year:'year',install:'install',power:'power',hours:'hours',cls:'cls',categoryId:'category_id',sortOrder:'sort_order',isActive:'is_active'};const c=await pool.connect();try{
   await c.query('BEGIN');const old=await c.query('SELECT * FROM assets WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',[req.params.id]);if(!old.rows[0]){await c.query('ROLLBACK');return res.sendStatus(404);}if(req.body.rowVersion!==undefined&&Number(req.body.rowVersion)!==Number(old.rows[0].row_version)){await c.query('ROLLBACK');return res.status(409).json({error:'VERSION_CONFLICT',current:old.rows[0].row_version});}
-  const entries=Object.entries(patch),vals=[req.params.id,...entries.map(([,x])=>x)];const set=entries.map(([k],i)=>`${map[k]}=$${i+2}`).join(',');
-  const {rows}=await c.query(`UPDATE assets SET ${set},row_version=row_version+1,updated_at=now() WHERE id=$1 RETURNING *`,vals);await audit(c,req,'edit',req.params.id,old.rows[0],rows[0]);await c.query('COMMIT');emit({action:'edit',id:req.params.id});res.json({data:rows[0]});
+  const entries=Object.entries(patch),vals=[req.params.id,...entries.map(([,x])=>x)],sets=entries.map(([k],i)=>`${map[k]}=$${i+2}`);
+  if(Object.keys(extPatch).length){vals.push(JSON.stringify(extPatch));sets.push(`ext=COALESCE(ext,'{}'::jsonb)||$${vals.length}::jsonb`);}
+  const {rows}=await c.query(`UPDATE assets SET ${sets.join(',')},row_version=row_version+1,updated_at=now() WHERE id=$1 RETURNING *`,vals);await audit(c,req,'edit',req.params.id,old.rows[0],rows[0]);await c.query('COMMIT');emit({action:'edit',id:req.params.id});res.json({data:rows[0]});
  }catch(e){await c.query('ROLLBACK');next(e);}finally{c.release();}});
 
  router.post('/:id/move',requireEquipment('move'),async(req,res,next)=>{const {parentId=null,sortOrder=0,rowVersion}=req.body,c=await pool.connect();try{
@@ -125,7 +131,7 @@ function createEquipmentRouter({pool,io,authenticateToken}){
   const {rows}=await c.query(`UPDATE assets SET is_active=false,status='stopped',deleted_at=now(),deleted_by=$2,delete_reason=$3,row_version=row_version+1,updated_at=now() WHERE id=$1 RETURNING *`,[req.params.id,req.user.id,req.body?.reason||'']);await audit(c,req,'soft-delete',req.params.id,old.rows[0],rows[0]);await c.query('COMMIT');emit({action:'soft-delete',id:req.params.id});res.json({data:rows[0],historyPreserved:true});
  }catch(e){await c.query('ROLLBACK');next(e);}finally{c.release();}});
 
- router.use((e,_req,res,_next)=>{console.error('Equipment V2 API:',e);if(e.code==='23505')return res.status(409).json({error:'DUPLICATE_CODE'});res.status(500).json({error:'EQUIPMENT_API_ERROR',message:e.message});});
+ router.use((e,_req,res,_next)=>{console.error('Equipment V2 API:', e.code||'db_error');if(e.code==='23505')return res.status(409).json({error:'DUPLICATE_CODE'});const status=Number(e.status)||500;if(status>=500)return res.status(500).json({error:'EQUIPMENT_API_ERROR'});res.status(status).json({error:e.code||'EQUIPMENT_API_ERROR'});});
  return router;
 }
 module.exports={createEquipmentRouter};
