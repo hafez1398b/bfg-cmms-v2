@@ -11,6 +11,10 @@ test('company Docker bundle isolates PostgreSQL and requires generated secrets',
   assert.match(compose,/JWT_SECRET: \$\{JWT_SECRET:\?JWT_SECRET is required\}/);
   assert.doesNotMatch(compose.split('\n  app:')[0],/\n    ports:/);
   assert.match(compose,/condition: service_healthy/);
+  assert.match(compose,/bfg_app_storage:\/app\/storage/);
+  assert.match(compose,/\n  bfg_app_storage:/);
+  assert.match(dockerfile,/mkdir -p \/app\/storage \/app\/backups && chown bfg:bfg/);
+  assert.match(read('.dockerignore'),/^storage$/m);
   assert.match(dockerfile,/USER bfg/);
   assert.match(dockerfile,/company-bootstrap\.js/);
 });

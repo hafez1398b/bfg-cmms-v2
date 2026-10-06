@@ -5,6 +5,7 @@
 node_modules
 coverage
 backups
+storage
 *.log
 *.patch
 company-installer

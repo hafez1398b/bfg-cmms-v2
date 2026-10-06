@@ -396,7 +396,7 @@ test('an update verifies a local backup before any migration and records the res
 
 test('numbered migrations are idempotent and the fresh schema includes the registry', () => {
   const files = updates.listMigrationFiles(path.join(root, 'migrations'));
-  assert.deepEqual(files.map(file => file.version), ['002', '003', '004', '005', '006', '007', '008', '009', '010', '011', '012']);
+  assert.deepEqual(files.map(file => file.version), ['002', '003', '004', '005', '006', '007', '008', '009', '010', '011', '012', '013']);
   for (const file of files) {
     assert.match(file.filename, /^\d{3}_[a-z0-9_]+\.sql$/);
     assert.equal(updates.hasRemoteReference(file.sql), false);

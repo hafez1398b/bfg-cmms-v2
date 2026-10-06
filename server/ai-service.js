@@ -52,15 +52,55 @@ function parseStructured(text){
   return value;
 }
 
-function normalizeRecommendations(value,sourceIds,{allowWebUrls=[]}={}){
+function normalizeEvidenceText(value){
+  return String(value||'').normalize('NFKC').toLocaleLowerCase('fa')
+    .replace(/[\u064B-\u065F\u0670]/g,'').replace(/[ي]/g,'ی').replace(/[ك]/g,'ک')
+    .replace(/[\s\u200c]+/g,' ').trim();
+}
+
+function sourceTextIndex(context){
+  const index=new Map();
+  for(const [type,key,rows] of [
+    ['asset','id',[context.asset]],
+    ['work_order','id',context.workOrders],
+    ['failure','id',context.failures],
+    ['pm','id',context.pmPlans],
+    ['request','id',context.requests],
+    ['spare_part','id',context.spareParts]
+  ])for(const row of rows||[])if(row&&row[key]!=null)index.set(`${type}:${String(row[key])}`,normalizeEvidenceText(JSON.stringify(row)));
+  return index;
+}
+
+function validConfidence(value){
+  if(!(typeof value==='number'||(typeof value==='string'&&value.trim())))return false;
+  const score=Number(value);return Number.isFinite(score)&&score>=0&&score<=1;
+}
+
+function normalizeRecommendations(value,sourceIds,{allowWebUrls=[],strictEvidence=false,sourceTexts=new Map()}={}){
   const allowed=new Map(Object.entries(sourceIds).map(([type,ids])=>[type,new Set(ids.map(String))])),webAllowed=new Set(allowWebUrls);
   return value.recommendations.slice(0,12).map((item,index)=>{
-    if(!RECOMMENDATION_TYPES.has(item.type))throw new AIProviderError('INVALID_RECOMMENDATION_TYPE',`Invalid recommendation type at ${index}`);
-    if(!item.recommendation||!item.reason)throw new AIProviderError('INCOMPLETE_RECOMMENDATION',`Recommendation ${index} lacks recommendation or reason`);
+    if(!item||!RECOMMENDATION_TYPES.has(item.type))throw new AIProviderError('INVALID_RECOMMENDATION_TYPE',`Invalid recommendation type at ${index}`);
+    if(typeof item.recommendation!=='string'||!item.recommendation.trim()||typeof item.reason!=='string'||!item.reason.trim())
+      throw new AIProviderError('INCOMPLETE_RECOMMENDATION',`Recommendation ${index} lacks recommendation or reason`);
     const evidence=Array.isArray(item.evidence)?item.evidence:[];
+    if(strictEvidence&&(!evidence.length||!validConfidence(item.confidence)))
+      throw new AIProviderError('UNVERIFIED_EVIDENCE',`Wizard recommendation ${index} requires cited evidence and a confidence from 0 to 1`);
     for(const ev of evidence){
-      if(ev.sourceType==='web'){if(!webAllowed.has(ev.sourceId))throw new AIProviderError('UNVERIFIED_EVIDENCE','Web evidence was not returned by provider grounding');continue;}
-      if(!allowed.get(ev.sourceType)?.has(String(ev.sourceId)))throw new AIProviderError('UNVERIFIED_EVIDENCE',`Evidence is outside authorized context: ${ev.sourceType}/${ev.sourceId}`);
+      if(!ev||typeof ev!=='object')throw new AIProviderError('UNVERIFIED_EVIDENCE','Evidence item is malformed');
+      if(ev.sourceType==='web'){
+        if(!webAllowed.has(ev.sourceId))throw new AIProviderError('UNVERIFIED_EVIDENCE','Web evidence was not returned by provider grounding');
+        if(strictEvidence)throw new AIProviderError('UNVERIFIED_EVIDENCE','Wizard suggestions must cite authorized CMMS data');
+        continue;
+      }
+      if(strictEvidence&&(typeof ev.sourceType!=='string'||typeof ev.sourceId!=='string'||typeof ev.excerpt!=='string'||!ev.sourceId.trim()||!ev.excerpt.trim()))
+        throw new AIProviderError('UNVERIFIED_EVIDENCE','Wizard evidence requires string source identifiers and excerpt text');
+      const sourceType=String(ev.sourceType||''),sourceId=String(ev.sourceId||'');
+      if(!allowed.get(sourceType)?.has(sourceId))throw new AIProviderError('UNVERIFIED_EVIDENCE',`Evidence is outside authorized context: ${sourceType}/${sourceId}`);
+      if(strictEvidence){
+        const excerpt=normalizeEvidenceText(ev.excerpt);
+        const source=sourceTexts.get(`${sourceType}:${sourceId}`)||'';
+        if(excerpt.length<4||!source.includes(excerpt))throw new AIProviderError('UNVERIFIED_EVIDENCE',`Evidence excerpt does not match authorized context: ${sourceType}/${sourceId}`);
+      }
     }
     return {type:item.type,recommendation:String(item.recommendation).slice(0,4000),reason:String(item.reason).slice(0,4000),evidence,confidence:Number.isFinite(Number(item.confidence))?Math.max(0,Math.min(1,Number(item.confidence))):null,sourceContext:item.sourceContext||{}};
   });
@@ -102,7 +142,7 @@ async function analyze({pool,registry,user,input}){
       try{
         const result=await provider.generate({system:SYSTEM_PROMPT,prompt,media:input.media||[],useSearch:!!input.useSearch});
         const webUrls=(result.groundingMetadata?.groundingChunks||[]).map(chunk=>chunk.web?.uri).filter(Boolean);
-        const parsed=parseStructured(result.text),recommendations=normalizeRecommendations(parsed,built.sourceIds,{allowWebUrls:webUrls});
+        const parsed=parseStructured(result.text),recommendations=normalizeRecommendations(parsed,built.sourceIds,{allowWebUrls:webUrls,strictEvidence:input.purpose==='wizard_suggestion',sourceTexts:sourceTextIndex(built.context)});
         fallbackChain.push({provider:provider.name,status:'succeeded'});
         await client.query('BEGIN');transaction=true;
         await client.query(`UPDATE ai_runs SET status='succeeded',model=$2,response_metadata=$3,duration_ms=$4,completed_at=now() WHERE id=$1`,[activeRunId,result.model,JSON.stringify({usage:result.usage,providerRequestId:result.providerRequestId,groundingMetadata:result.groundingMetadata||null,fallbackChain}),Date.now()-attemptStart]);
@@ -129,4 +169,4 @@ async function analyze({pool,registry,user,input}){
   }finally{client.release();}
 }
 
-module.exports={PURPOSES,RECOMMENDATION_TYPES,validateRequest,requireEquipmentScope,buildContext,parseStructured,normalizeRecommendations,analyze,SYSTEM_PROMPT};
+module.exports={PURPOSES,RECOMMENDATION_TYPES,validateRequest,requireEquipmentScope,buildContext,parseStructured,normalizeEvidenceText,validConfidence,normalizeRecommendations,sourceTextIndex,analyze,SYSTEM_PROMPT};

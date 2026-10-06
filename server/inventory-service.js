@@ -492,6 +492,24 @@ async function archiveItem(pool, user, id, input) {
   });
 }
 
+async function listAvailableItems(pool) {
+  const { rows } = await pool.query(
+    `SELECT i.id,i.code,i.name,i.unit,i.cat,
+       COALESCE(SUM(CASE WHEN l.id IS NOT NULL AND w.id IS NOT NULL THEN b.on_hand-b.reserved ELSE 0 END),0) AS available
+     FROM items i
+     LEFT JOIN item_balances b ON b.item_id=i.id
+     LEFT JOIN storage_locations l ON l.id=b.location_id AND l.deleted_at IS NULL
+     LEFT JOIN warehouses w ON w.id=l.warehouse_id AND w.deleted_at IS NULL AND w.active=true
+     WHERE i.deleted_at IS NULL
+     GROUP BY i.id,i.code,i.name,i.unit,i.cat
+     ORDER BY i.code LIMIT 500`
+  );
+  return rows.map(row => ({
+    id:row.id, code:row.code, name:row.name, unit:row.unit, category:row.cat || null,
+    available:Number(row.available) || 0, source:'inventory_balances'
+  }));
+}
+
 async function listItems(pool) {
   const { rows } = await pool.query(
     `SELECT i.*, COALESCE(b.on_hand, i.stock, 0) AS stock
@@ -703,6 +721,6 @@ async function confirmDelivery(pool, user, workOrderId, input) {
 
 module.exports = {
   nextAverage, summarize, receive, issue, reserve, releaseReservation, consume, returnParts,
-  createItem, updateItem, archiveItem, listItems, getItem, listWarehouses, createWarehouse, createLocation,
+  createItem, updateItem, archiveItem, listItems, listAvailableItems, getItem, listWarehouses, createWarehouse, createLocation,
   listLedger, addCost, listCosts, saveAttachment, listAttachments, getAttachment, confirmDelivery
 };
