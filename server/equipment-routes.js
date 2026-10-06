@@ -37,7 +37,7 @@ function createEquipmentRouter({pool,io,authenticateToken,aiRegistry}){
   const from=`FROM assets a LEFT JOIN asset_categories c ON c.id=a.category_id LEFT JOIN assets f ON f.id=c.factory_asset_id LEFT JOIN assets loc ON loc.id=a.parent`;
   const count=await pool.query(`SELECT count(*)::int total ${from} WHERE ${where.join(' AND ')}`,v);
   v.push(p.limit,p.offset);
-  const {rows}=await pool.query(`SELECT a.id,a.code,a.name,a.parent,a.cls,a.status,a.crit,a.maker,a.model,a.serial,a.hours,a.health_score,a.is_active,a.sort_order,a.row_version,a.updated_at,
+  const {rows}=await pool.query(`SELECT a.id,a.code,a.name,a.parent,a.cls,a.status,a.crit,a.maker,a.model,a.serial,a.hours,a.health_score,a.is_active,a.sort_order,a.row_version,a.updated_at,a.ext->>'nodeKind' AS node_kind,
     c.id category_id,c.name category_name,f.id factory_id,f.name factory_name,loc.name location_name,
     lp.last_run,CASE WHEN lp.last_run IS NOT NULL AND lp.interval_days IS NOT NULL THEN lp.last_run+(lp.interval_days||' days')::interval END next_pm,
     (SELECT count(*)::int FROM work_orders w WHERE w.asset_id=a.id AND w.status NOT IN ('closed','cancel')) open_wo,

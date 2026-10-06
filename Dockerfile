@@ -9,6 +9,7 @@ WORKDIR /app
 RUN groupadd --system --gid 10001 bfg && useradd --system --uid 10001 --gid bfg --home-dir /app bfg
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY --chown=bfg:bfg . .
+RUN mkdir -p /app/storage /app/backups && chown bfg:bfg /app/storage /app/backups
 USER bfg
 EXPOSE 8080
 HEALTHCHECK --interval=20s --timeout=5s --start-period=60s --retries=5 CMD ["node","-e","fetch('http://127.0.0.1:8080/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]

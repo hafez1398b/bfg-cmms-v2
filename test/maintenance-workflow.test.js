@@ -188,10 +188,25 @@ test('request, work order and PM stay linked to the same equipment in both direc
   assert.equal(pool.db.audit_x.length > 0, true);
 });
 
+test('a PTW requirement on a source request remains pending when legacy approval omits a choice', async () => {
+  const pool=memoryPool();
+  const request=await service.createRequest(pool,user,{descr:'کار پرخطر روی پمپ',assetId:'eq-1',form:{ptwRequired:true}});
+  const approved=await service.approveRequest(pool,user,request.id,{rowVersion:request.rowVersion});
+  assert.equal(approved.workOrder.ptw,true);
+  assert.equal(approved.workOrder.permitStatus,'pending_issuance');
+  assert.equal(approved.workOrder.ptwId,null);
+  await assert.rejects(
+    ()=>service.updateWorkOrder(pool,user,approved.workOrder.id,{rowVersion:approved.workOrder.rowVersion,ptw:false}),
+    error=>error.code==='PTW_REQUIREMENT_CANNOT_BE_REMOVED'
+  );
+});
+
 test('executed work order is cancelled instead of deleted and closed rows need a correction', async () => {
   const pool = memoryPool();
-  const created = await service.createWorkOrder(pool, user, { descr:'تعویض سیل', assetId:'eq-1', type:'CM', assignee:'u-tech' });
+  const plan = await service.createPmPlan(pool, user, { title:'بازدید پمپ', assetId:'eq-1', interval:30 });
+  const created = await service.createWorkOrder(pool, user, { descr:'تعویض سیل', assetId:'eq-1', type:'CM', assignee:'u-tech', pmId:plan.id });
   assert.equal(created.status, 'assigned');
+  assert.equal(created.pmId, plan.id);
   const started = await service.transitionWorkOrder(pool, user, created.id, { rowVersion:created.rowVersion, status:'doing' });
   await assert.rejects(() => service.archiveWorkOrder(pool, user, created.id, { rowVersion:started.rowVersion, reason:'اشتباه' }), error => error.code === 'EXECUTED_WORK_ORDER_CANNOT_BE_ARCHIVED');
   assert.equal(pool.db.work_orders[0].deleted_at, null);

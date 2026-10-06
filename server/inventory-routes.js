@@ -53,6 +53,7 @@ function createInventoryRouter({ pool, security, storageDir }) {
     };
   }
 
+  router.get('/inventory/items/availability', security.authorize('inventory.view'), send(async () => ({ data:await service.listAvailableItems(pool) })));
   router.get('/items', security.authorize('inventory.view'), send(async () => ({ data: await service.listItems(pool) })));
   router.get('/items/:id', security.authorize('inventory.view'), send(async req => ({ data: await service.getItem(pool, req.params.id) })));
   router.post('/items', security.authorize('inventory.edit'), send(async req => ({ data: await service.createItem(pool, req.user, req.body || {}) })));

@@ -54,6 +54,7 @@ services:
       - "${APP_BIND_IP:-0.0.0.0}:${APP_PORT:-8080}:8080"
     volumes:
       - bfg_app_backups:/app/backups
+      - bfg_app_storage:/app/storage
     networks: [backend]
     security_opt: [no-new-privileges:true]
     init: true
@@ -74,4 +75,5 @@ networks:
 volumes:
   bfg_postgres_data:
   bfg_app_backups:
+  bfg_app_storage:
   bfg_ollama_data:

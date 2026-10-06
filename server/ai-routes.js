@@ -22,7 +22,7 @@ function createAIRouter({pool,authenticateToken,authorize,registry}){
       await client.query('COMMIT');res.json({data:updated.rows[0]});
     }catch(error){await client.query('ROLLBACK').catch(()=>{});next(error);}finally{client.release();}
   });
-  router.post('/analyze',authorize('ai.use'),async(req,res,next)=>{try{res.status(201).json({data:await analyze({pool,registry,user:req.user,input:req.body})});}catch(error){next(error);}});
+  router.post('/analyze',authorize('equipment.view'),authorize('ai.use'),async(req,res,next)=>{try{res.status(201).json({data:await analyze({pool,registry,user:req.user,input:req.body})});}catch(error){next(error);}});
   router.get('/equipment/:id/health',authorize('equipment.view'),async(req,res,next)=>{try{res.json({data:await equipmentHealth(pool,req.user,req.params.id,requireEquipmentScope)});}catch(error){next(error);}});
   router.patch('/recommendations/:id/review',authorize('ai.review'),async(req,res,next)=>{
     const action=req.body.action,note=String(req.body.note||'').slice(0,2000),version=Number(req.body.rowVersion);

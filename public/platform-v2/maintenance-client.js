@@ -20,7 +20,15 @@
     ARCHIVE_REASON_REQUIRED:'دلیل بایگانی الزامی است.',
     CORRECTION_REASON_REQUIRED:'دلیل گردش اصلاح الزامی است.',
     HOLD_REASON_REQUIRED:'دلیل تعلیق الزامی است.',
-    ASSIGNEE_NOT_FOUND:'کاربر انتخاب‌شده در پایگاه مرکزی نیست.'
+    ASSIGNEE_NOT_FOUND:'کاربر انتخاب‌شده در پایگاه مرکزی نیست.',
+    WORK_PERMIT_REQUIRED:'شروع دستورکار تا اتصال مجوز معتبر و تأییدشده مجاز نیست.',
+    PTW_REQUIREMENT_CANNOT_BE_REMOVED:'نیاز ثبت‌شده به مجوز کار را نمی‌توان از دستورکار حذف کرد.',
+    PERMIT_NOT_REQUIRED:'برای این دستورکار مجوز کار تعیین نشده است.',
+    INSUFFICIENT_AVAILABLE_STOCK:'موجودی آزاد واقعی برای مقدار درخواستی کافی نیست؛ هیچ رزروی انجام نشد.',
+    PART_NOT_FOUND:'قلم انتخاب‌شده در Master Data موجود نیست.',
+    WIZARD_DRAFT_NOT_FOUND:'پیش‌نویس در Backend پیدا نشد.',
+    WIZARD_DRAFT_TOO_LARGE:'حجم پیش‌نویس از حد مجاز بیشتر است.',
+    EQUIPMENT_SCOPE_DENIED:'برای مشاهدهٔ اطلاعات این تجهیز دسترسی مکانی ندارید.'
   };
 
   function serverOnly(){ return !!(window.BFGRuntime && window.BFGRuntime.isServerOnly()); }
@@ -258,6 +266,14 @@
       if (!serverOnly()) return typeof originalSave === 'function' ? originalSave.apply(this, args) : undefined;
       sync({ quiet:true }).catch(() => {});
     };
+    wrap('openReqForm', () => {
+      if (window.BFGMaintenanceWizards && typeof window.BFGMaintenanceWizards.openRequest === 'function') return window.BFGMaintenanceWizards.openRequest();
+      if (typeof toast === 'function') toast('موتور ویزارد درخواست کار بارگذاری نشده است.', 1);
+    });
+    wrap('openWOForm', () => {
+      if (window.BFGMaintenanceWizards && typeof window.BFGMaintenanceWizards.openWorkOrder === 'function') return window.BFGMaintenanceWizards.openWorkOrder();
+      if (typeof toast === 'function') toast('موتور ویزارد دستورکار بارگذاری نشده است.', 1);
+    });
     wrap('saveReq', saveRequestFromForm);
     wrap('saveReqWiz', saveRequestWizard);
     wrap('approveReqDo', approveFromDialog);

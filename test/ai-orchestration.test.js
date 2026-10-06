@@ -52,6 +52,16 @@ test('structured recommendations reject evidence outside authorized database con
   assert.equal(normalized[0].confidence,0.7);
 });
 
+test('wizard AI evidence is an exact authorized excerpt and confidence is a bounded numeric score',()=>{
+  const sourceTexts=new Map([['work_order:wo-1','{"descr":"نشتی پمپ شماره دو","status":"done"}']]);
+  const sourceIds={work_order:['wo-1']};
+  const make=(confidence,excerpt='نشتی پمپ شماره دو')=>({recommendations:[{type:'diagnosis',recommendation:'بررسی نشتی',reason:'سابقه ثبت‌شده',confidence,evidence:[{sourceType:'work_order',sourceId:'wo-1',excerpt}]}]});
+  assert.equal(normalizeRecommendations(make(0.75),sourceIds,{strictEvidence:true,sourceTexts}).length,1);
+  for(const confidence of ['',true,-0.1,1.1,'high'])assert.throws(
+    ()=>normalizeRecommendations(make(confidence),sourceIds,{strictEvidence:true,sourceTexts}),/confidence/);
+  assert.throws(()=>normalizeRecommendations(make(0.75,'شواهد ساختگی'),sourceIds,{strictEvidence:true,sourceTexts}),/excerpt does not match/);
+});
+
 test('deterministic Health Score returns N/A until enough verified factors exist',()=>{
   const insufficient=calculateHealth({failures:[],completedWorkOrders:[],pm:{total:0},checklists:{total:0},spares:[]});
   assert.equal(insufficient.score,null);assert.equal(insufficient.status,'insufficient_data');
