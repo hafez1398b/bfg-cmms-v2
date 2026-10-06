@@ -11,7 +11,13 @@ const ACTIONS = {
 };
 const VERIFIED_SOURCES = new Set(['file', 'text', 'document', 'user-confirmed-form', 'import-session']);
 const FAKE_KEYS = ['failure', 'failures', 'repair', 'repairs', 'workOrder', 'workOrders', 'downtime', 'downtimes', 'rca', 'rootCause', 'history'];
-const COMPARE_KEYS = ['name', 'code', 'maker', 'model', 'serial', 'year', 'install', 'power', 'cls', 'status', 'crit', 'location', 'notes'];
+const COMPARE_KEYS = [
+  'name', 'code', 'maker', 'model', 'serial', 'year', 'install', 'installDate', 'power', 'cls',
+  'status', 'crit', 'location', 'locationDescription', 'notes', 'functionDescription',
+  'activityType', 'manufacturerCountry', 'operationalStatus', 'responsibleUserId', 'generalNotes',
+  'technicalSpecification', 'capacity', 'panelCode', 'refrigerant', 'dailyOperatingHours',
+  'criticalityScore', 'keyParts'
+];
 
 function coded(status, code) {
   const error = new Error(code);

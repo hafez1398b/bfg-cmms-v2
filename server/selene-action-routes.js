@@ -10,7 +10,7 @@ function sendError(res, error) {
   res.status(status).json({ error: status < 500 ? (error.code || 'REQUEST_FAILED') : 'SELENE_ACTION_FAILED' });
 }
 
-function createSeleneActionRouter({ pool, service }) {
+function createSeleneActionRouter({ pool, service, io }) {
   const actions = service || createSeleneActions({
     repository: pgRepository(pool),
     commands: { apply: applyControlledAction },
@@ -43,8 +43,11 @@ function createSeleneActionRouter({ pool, service }) {
     catch (error) { sendError(res, error); }
   });
   router.post('/drafts/:id/execute', async (req, res) => {
-    try { res.json(await actions.executeDraft(req.user, req.params.id, req.body || {})); }
-    catch (error) { sendError(res, error); }
+    try {
+      const result = await actions.executeDraft(req.user, req.params.id, req.body || {});
+      if (result.committed && result.data) io?.emit('equipment-changed', { action: 'selene-save', id: result.data.id });
+      res.json(result);
+    } catch (error) { sendError(res, error); }
   });
   return router;
 }
