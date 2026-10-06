@@ -743,7 +743,7 @@ function toggleTheme(){document.documentElement.classList.toggle('dark');localSt
 const MENU=[
  {g:'عملیات'},
  {id:'dash',ic:'📊',t:'داشبورد مدیریتی'},
- {id:'requests',ic:'📝',t:'درخواست‌ها'},
+ {id:'requests',ic:'📝',t:'درخواست کار'},
  {id:'wos',ic:'🛠️',t:'دستورکارها'},
  {id:'pm',ic:'🔁',t:'نگهداری پیشگیرانه (PM)'},
  {g:'دارایی‌ها'},
@@ -911,8 +911,8 @@ function mhead(t){return `<div class="m-head"><h3>${t}</h3><button class="x" onc
 let rqFilter='';
 function pgRequests(){
  const list=DB.requests.filter(r=>!rqFilter||r.no.includes(rqFilter)||r.desc.includes(rqFilter));
- return head('درخواست تعمیرات / ساخت و خدمات','درخواست‌ها',
- `<button class="btn btn-ghost" onclick="exportCSV('requests')">⬇️ خروجی Excel</button><button class="btn btn-primary" onclick="openReqForm()">＋ ثبت درخواست جدید</button>`)+`
+ return head('درخواست کار / ساخت و خدمات','درخواست کار',
+ `<button class="btn btn-ghost" onclick="exportCSV('requests')">⬇️ خروجی Excel</button><button class="btn btn-primary" onclick="openReqForm()">＋ ثبت درخواست کار جدید</button>`)+`
  <div class="tbl-tools"><input placeholder="جستجو در شماره/شرح…" value="${esc(rqFilter)}" oninput="rqFilter=this.value;go('requests')">
  </div>
  <div class="tbl-wrap"><table><thead><tr><th>شماره</th><th>نوع</th><th>تجهیز / محل</th><th>شرح</th><th>اضطرار</th><th>درخواست‌دهنده</th><th>تاریخ</th><th>وضعیت</th><th></th></tr></thead><tbody>
@@ -927,7 +927,7 @@ function pgRequests(){
  </tbody></table></div>`;
 }
 function openReqForm(){
- modal(mhead('ثبت درخواست تعمیرات / ساخت و خدمات')+`
+ modal(mhead('ثبت درخواست کار / ساخت و خدمات')+`
  <div class="m-body">
   <div class="frow">
    <div class="field"><label>نوع درخواست *</label><select id="rqType" onchange="$('#fabRow').style.display=this.value==='fab'?'grid':'none';$('#srvRow').style.display=this.value==='service'?'block':'none'">
@@ -17412,6 +17412,7 @@ setTimeout(()=>{try{const t=runQA();console.log('BFG CMMS v'+BFG_VERSION_40+' �
 <link rel="stylesheet" href="/equipment-v2/equipment-v2.css?v=20260921.1">
 <link rel="stylesheet" href="/equipment-v2/selene-chat.css?v=20261004.9">
 <link rel="stylesheet" href="/design-system/enterprise-compact.css?v=20260930.2">
+<link rel="stylesheet" href="/platform-v2/step-wizard.css?v=20261006.1">
 <script src="/equipment-v2/equipment-adapter.js?v=20261004.2"></script>
 <script src="/equipment-v2/equipment-v2.js?v=20261004.8"></script>
 <script src="/equipment-v2/selene-chat.js?v=20261004.9"></script>
@@ -17420,6 +17421,9 @@ setTimeout(()=>{try{const t=runQA();console.log('BFG CMMS v'+BFG_VERSION_40+' �
 <script src="/ai/ai-client.js?v=20261004.2"></script>
 <script src="/insights/operational-intelligence.js?v=20260929.1"></script>
 <script src="/platform-v2/record-actions.js?v=20260930.1"></script>
-<script src="/platform-v2/maintenance-client.js?v=20261004.3"></script>
+<script src="/platform-v2/step-wizard.js?v=20261006.1"></script>
+<script src="/platform-v2/equipment-wizard-adapter.js?v=20261006.1"></script>
+<script src="/platform-v2/maintenance-wizards.js?v=20261006.1"></script>
+<script src="/platform-v2/maintenance-client.js?v=20261006.1"></script>
 <script src="/platform-v2/inventory-client.js?v=20261004.4"></script>
 </body></html>
