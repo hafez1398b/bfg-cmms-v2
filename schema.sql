@@ -1267,3 +1267,46 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_request_files_upload_token
   WHERE upload_token IS NOT NULL;
 
 COMMIT;
+
+-- Equipment V2 Phase 2: internal equipment structure permissions and indexes.
+-- Mirrors migrations/015_digital_equipment_structure.sql. Additive and idempotent:
+-- structure nodes reuse assets rows (type='eq') with ext->>'nodeKind' in
+-- ('subsystem','main-component','sub-component'); structural profile fields live
+-- in assets.ext (componentType, partNumber, brand, manufacturer,
+-- technicalSpecification, structureNotes, requiredQuantity, inventoryItemId).
+
+BEGIN;
+
+INSERT INTO role_permissions(role, permission) VALUES
+  ('mgr','equipment.structure.view'),
+  ('mgr','equipment.structure.create'),
+  ('mgr','equipment.structure.update'),
+  ('mgr','equipment.structure.move'),
+  ('mgr','equipment.structure.move_cross_equipment'),
+  ('mgr','equipment.structure.archive'),
+  ('mgr','equipment.structure.suggest'),
+  ('mgr','equipment.structure.approve_ai'),
+  ('planner','equipment.structure.view'),
+  ('planner','equipment.structure.create'),
+  ('planner','equipment.structure.update'),
+  ('planner','equipment.structure.move'),
+  ('planner','equipment.structure.suggest'),
+  ('store','equipment.structure.view'),
+  ('op','equipment.structure.view'),
+  ('hse','equipment.structure.view'),
+  ('cal','equipment.structure.view')
+ON CONFLICT (role, permission) DO NOTHING;
+
+CREATE INDEX IF NOT EXISTS idx_assets_structure_parent
+  ON assets(parent, sort_order, name)
+  WHERE deleted_at IS NULL AND type='eq';
+
+CREATE INDEX IF NOT EXISTS idx_assets_structure_kind
+  ON assets((COALESCE(ext->>'nodeKind','equipment')), parent)
+  WHERE deleted_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_assets_structure_inventory_item
+  ON assets((ext->>'inventoryItemId'))
+  WHERE deleted_at IS NULL AND ext->>'inventoryItemId' IS NOT NULL;
+
+COMMIT;

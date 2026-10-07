@@ -3,16 +3,29 @@
 const express = require('express');
 const { v4: uuid } = require('uuid');
 const {
-  requireEquipment, listParams, validateCreate, validateEquipmentPatch, coded
+  requireEquipment, canEquipment, listParams, validateCreate, validateEquipmentPatch, coded
 } = require('./equipment-service');
 const { createEquipment, completeEquipment } = require('./equipment-commands');
 const { createEquipmentIntakeRouter } = require('./equipment-intake-routes');
 const { createSeleneActionRouter } = require('./selene-action-routes');
+const structure = require('./equipment-structure');
+const suggestions = require('./structure-suggestions');
 
-function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry }) {
+function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry, security }) {
   const router = express.Router();
   router.use(authenticateToken);
-  const emit = payload => io.emit('equipment-changed', payload);
+  const emit = payload => io?.emit('equipment-changed', payload);
+
+  async function structurePermission(req, res, permission) {
+    try {
+      if (await structure.hasPermission({ pool, security, user: req.user, permission })) return true;
+      res.status(403).json({ error: 'PERMISSION_DENIED', permission });
+      return false;
+    } catch (error) {
+      res.status(500).json({ error: 'PERMISSION_CHECK_FAILED' });
+      return false;
+    }
+  }
 
   async function audit(client, req, action, id, before, after, note = '') {
     await client.query(
@@ -193,9 +206,39 @@ function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry }) {
   });
 
   router.use('/import', createEquipmentIntakeRouter({
-    pool, registry: aiRegistry || { providers: {}, candidates() { return []; } }
+    pool, security, registry: aiRegistry || { providers: {}, candidates() { return []; } }
   }));
-  router.use('/actions', createSeleneActionRouter({ pool, io }));
+  router.use('/actions', createSeleneActionRouter({ pool, io, security }));
+
+  router.get('/:id/structure', async (req, res, next) => {
+    try {
+      if (!(await structurePermission(req, res, 'equipment.structure.view'))) return;
+      const canArchive = await structure.hasPermission({ pool, security, user: req.user, permission: 'equipment.structure.archive' });
+      const includeArchived = req.query.includeArchived === 'true' && canArchive;
+      const data = await structure.getStructure({
+        pool, security, user: req.user, rootEquipmentId: req.params.id, includeArchived
+      });
+      res.json({ data, source: 'postgresql' });
+    } catch (error) { next(error); }
+  });
+
+  router.get('/inventory-items', async (req, res, next) => {
+    try {
+      const data = await suggestions.searchInventoryItems({
+        pool, security, user: req.user, query: req.query.q, limit: req.query.limit
+      });
+      res.json({ data, source: 'inventory_master_data' });
+    } catch (error) { next(error); }
+  });
+
+  router.post('/:id/structure/suggestions', async (req, res, next) => {
+    try {
+      const data = await suggestions.suggestStructures({
+        pool, registry: aiRegistry, security, user: req.user, rootEquipmentId: req.params.id
+      });
+      res.status(201).json({ data, source: 'postgresql' });
+    } catch (error) { next(error); }
+  });
 
   router.get('/:id', requireEquipment('view'), async (req, res, next) => {
     try {
@@ -226,11 +269,7 @@ function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry }) {
             'quantity_required',rel.quantity_required,'notes',rel.notes
           ) ORDER BY i.name) FROM asset_spare_parts rel JOIN items i ON i.id=rel.item_id
             WHERE rel.asset_id=a.id AND i.deleted_at IS NULL),'[]'::jsonb) spare_parts,
-          COALESCE((SELECT jsonb_agg(jsonb_build_object(
-            'id',ch.id,'parent',ch.parent,'code',ch.code,'name',ch.name,'type',ch.type,
-            'status',ch.status,'crit',ch.crit,'nodeKind',ch.ext->>'nodeKind',
-            'child_count',(SELECT count(*)::int FROM assets g WHERE g.parent=ch.id AND g.deleted_at IS NULL)
-          ) ORDER BY ch.sort_order,ch.name) FROM assets ch WHERE ch.parent=a.id AND ch.deleted_at IS NULL),'[]'::jsonb) children,
+          '[]'::jsonb children,
           COALESCE((SELECT jsonb_agg(jsonb_build_object(
             'id',n.id,'code',n.code,'name',n.name,'period_days',n.period_days,
             'last_cal',n.last_cal,'type',n.type,'cls',n.cls
@@ -260,7 +299,10 @@ function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry }) {
          LEFT JOIN assets f ON f.id=COALESCE(c.factory_asset_id,ancestry_factory.id)
          LEFT JOIN assets p ON p.id=a.parent
          LEFT JOIN users responsible ON responsible.id=a.responsible_user_id
-         WHERE (a.id=$1 OR lower(a.code)=lower($1)) AND a.deleted_at IS NULL`,
+         WHERE (a.id=$1 OR lower(a.code)=lower($1)) AND a.deleted_at IS NULL
+           AND COALESCE(a.ext->>'nodeKind','equipment') NOT IN ('sub-equipment','subsystem','main-component','sub-component')
+           AND NOT EXISTS(SELECT 1 FROM assets structural_parent WHERE structural_parent.id=a.parent
+             AND structural_parent.type='eq' AND structural_parent.deleted_at IS NULL)`,
         [req.params.id]
       );
       if (!rows[0]) return res.sendStatus(404);
@@ -315,15 +357,30 @@ function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry }) {
     } catch (error) { next(error); }
   });
 
-  router.post('/', requireEquipment('create'), async (req, res, next) => {
-    const errors = validateCreate(req.body || {});
-    if (errors.length) return res.status(422).json({ error: 'VALIDATION_ERROR', fields: errors });
+  router.post('/', async (req, res, next) => {
+    const body = req.body || {};
+    const internalNode = structure.isStructureKind(body.nodeKind);
+    if (internalNode) {
+      if (!(await structurePermission(req, res, 'equipment.structure.create'))) return;
+      const errors = structure.validateStructureInput(body, { requireParentVersion: true });
+      if (errors.length) return res.status(422).json({ error: 'VALIDATION_ERROR', fields: errors });
+    } else {
+      if (!canEquipment(req.user, 'create')) return res.status(403).json({ error: 'EQUIPMENT_PERMISSION_DENIED', permission: 'Equipment.create' });
+      const errors = validateCreate(body);
+      if (errors.length) return res.status(422).json({ error: 'VALIDATION_ERROR', fields: errors });
+    }
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      const row = await createEquipment(client, req.user, req.body || {});
+      const row = internalNode
+        ? await structure.createStructureNode({
+          client, pool, security, user: req.user,
+          rootEquipmentId: body.rootEquipmentId || body.equipmentId,
+          input: body
+        })
+        : await createEquipment(client, req.user, body);
       await client.query('COMMIT');
-      emit({ action: 'create', id: row.id });
+      if (!internalNode) emit({ action: 'create', id: row.id });
       res.status(201).json({ data: row, committed: true });
     } catch (error) {
       await client.query('ROLLBACK').catch(() => {});
@@ -331,98 +388,148 @@ function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry }) {
     } finally { client.release(); }
   });
 
-  router.patch('/:id', requireEquipment('edit'), async (req, res, next) => {
+  router.patch('/:id', async (req, res, next) => {
     const body = req.body || {};
     const rowVersion = Number(body.rowVersion ?? body.row_version);
     if (!Number.isInteger(rowVersion) || rowVersion < 1) return res.status(422).json({ error: 'ROW_VERSION_REQUIRED' });
-    const errors = validateEquipmentPatch(body);
-    if (errors.length) return res.status(422).json({ error: 'VALIDATION_ERROR', fields: errors });
-    const client = await pool.connect();
     try {
-      await client.query('BEGIN');
-      const row = await completeEquipment(client, req.user, req.params.id, body, rowVersion);
-      await client.query('COMMIT');
-      emit({ action: 'edit', id: req.params.id });
-      res.json({ data: row, committed: true });
-    } catch (error) {
-      await client.query('ROLLBACK').catch(() => {});
-      next(error);
-    } finally { client.release(); }
+      const target = await pool.query('SELECT id,type,ext FROM assets WHERE id=$1 AND deleted_at IS NULL', [req.params.id]);
+      if (!target.rows[0]) return res.sendStatus(404);
+      const internalNode = structure.isInternalKind(structure.kindOf(target.rows[0]));
+      if (internalNode) {
+        if (!(await structurePermission(req, res, 'equipment.structure.update'))) return;
+      } else if (!canEquipment(req.user, 'edit')) return res.status(403).json({ error: 'EQUIPMENT_PERMISSION_DENIED', permission: 'Equipment.edit' });
+      if (!internalNode) {
+        const errors = validateEquipmentPatch(body);
+        if (errors.length) return res.status(422).json({ error: 'VALIDATION_ERROR', fields: errors });
+      }
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const row = internalNode
+          ? await structure.updateStructureNode({ client, pool, security, user: req.user, id: req.params.id, input: body })
+          : await completeEquipment(client, req.user, req.params.id, body, rowVersion);
+        await client.query('COMMIT');
+        if (!internalNode) emit({ action: 'edit', id: req.params.id });
+        res.json({ data: row, committed: true });
+      } catch (error) {
+        await client.query('ROLLBACK').catch(() => {});
+        next(error);
+      } finally { client.release(); }
+    } catch (error) { next(error); }
   });
 
-  router.post('/:id/move', requireEquipment('move'), async (req, res, next) => {
-    const { parentId = null, sortOrder = 0, rowVersion } = req.body || {};
-    if (!Number.isInteger(Number(rowVersion)) || Number(rowVersion) < 1) return res.status(422).json({ error: 'ROW_VERSION_REQUIRED' });
-    const client = await pool.connect();
+  router.post('/:id/move', async (req, res, next) => {
     try {
-      await client.query('BEGIN');
-      const old = await client.query('SELECT * FROM assets WHERE id=$1 AND deleted_at IS NULL FOR UPDATE', [req.params.id]);
-      if (!old.rows[0]) { await client.query('ROLLBACK'); return res.sendStatus(404); }
-      if (Number(rowVersion) !== Number(old.rows[0].row_version)) {
-        await client.query('ROLLBACK');
-        return res.status(409).json({ error: 'VERSION_CONFLICT', current: old.rows[0].row_version });
-      }
-      if (parentId === req.params.id) { await client.query('ROLLBACK'); return res.status(422).json({ error: 'TREE_CYCLE' }); }
-      if (parentId) {
-        const parent = await client.query('SELECT id FROM assets WHERE id=$1 AND deleted_at IS NULL', [parentId]);
-        if (!parent.rows[0]) { await client.query('ROLLBACK'); return res.status(422).json({ error: 'PARENT_NOT_FOUND' }); }
-        const cycle = await client.query(
-          `WITH RECURSIVE descendants(id) AS (
-             SELECT id FROM assets WHERE parent=$1 AND deleted_at IS NULL
-             UNION ALL SELECT a.id FROM assets a JOIN descendants d ON a.parent=d.id WHERE a.deleted_at IS NULL
-           ) SELECT 1 FROM descendants WHERE id=$2 LIMIT 1`, [req.params.id, parentId]
-        );
-        if (cycle.rows[0]) { await client.query('ROLLBACK'); return res.status(422).json({ error: 'TREE_CYCLE' }); }
-      }
-      const { rows } = await client.query(
-        `UPDATE assets SET parent=$2,sort_order=$3,updated_by=$4,row_version=row_version+1,updated_at=now()
-         WHERE id=$1 AND row_version=$5 RETURNING *`,
-        [req.params.id, parentId, Number(sortOrder) || 0, req.user.id, rowVersion]
-      );
-      await audit(client, req, 'move', req.params.id, old.rows[0], rows[0], req.body.reason || '');
-      await client.query('COMMIT');
-      emit({ action: 'move', id: req.params.id });
-      res.json({ data: rows[0] });
-    } catch (error) {
-      await client.query('ROLLBACK').catch(() => {});
-      next(error);
-    } finally { client.release(); }
+      const target = await pool.query('SELECT id,type,ext FROM assets WHERE id=$1 AND deleted_at IS NULL', [req.params.id]);
+      if (!target.rows[0]) return res.sendStatus(404);
+      const internalNode = structure.isInternalKind(structure.kindOf(target.rows[0]));
+      if (!internalNode && !canEquipment(req.user, 'move')) return res.status(403).json({ error: 'EQUIPMENT_PERMISSION_DENIED', permission: 'Equipment.move' });
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        let row;
+        if (internalNode) {
+          row = await structure.moveStructureNode({ client, pool, security, user: req.user, id: req.params.id, input: req.body || {} });
+        } else {
+          const { parentId = null, sortOrder = 0, rowVersion } = req.body || {};
+          if (!Number.isInteger(Number(rowVersion)) || Number(rowVersion) < 1) throw Object.assign(new Error('ROW_VERSION_REQUIRED'), { status: 422, code: 'ROW_VERSION_REQUIRED' });
+          const old = await client.query('SELECT * FROM assets WHERE id=$1 AND deleted_at IS NULL FOR UPDATE', [req.params.id]);
+          if (!old.rows[0]) throw Object.assign(new Error('EQUIPMENT_NOT_FOUND'), { status: 404, code: 'EQUIPMENT_NOT_FOUND' });
+          if (Number(rowVersion) !== Number(old.rows[0].row_version)) throw Object.assign(new Error('VERSION_CONFLICT'), { status: 409, code: 'VERSION_CONFLICT' });
+          if (parentId === req.params.id) throw Object.assign(new Error('TREE_CYCLE'), { status: 422, code: 'TREE_CYCLE' });
+          if (parentId) {
+            const parent = await client.query('SELECT id FROM assets WHERE id=$1 AND deleted_at IS NULL', [parentId]);
+            if (!parent.rows[0]) throw Object.assign(new Error('PARENT_NOT_FOUND'), { status: 422, code: 'PARENT_NOT_FOUND' });
+            const cycle = await client.query(
+              `WITH RECURSIVE descendants(id) AS (
+                 SELECT id FROM assets WHERE parent=$1 AND deleted_at IS NULL
+                 UNION ALL SELECT a.id FROM assets a JOIN descendants d ON a.parent=d.id WHERE a.deleted_at IS NULL
+               ) SELECT 1 FROM descendants WHERE id=$2 LIMIT 1`, [req.params.id, parentId]
+            );
+            if (cycle.rows[0]) throw Object.assign(new Error('TREE_CYCLE'), { status: 422, code: 'TREE_CYCLE' });
+          }
+          const updated = await client.query(
+            `UPDATE assets SET parent=$2,sort_order=$3,updated_by=$4,row_version=row_version+1,updated_at=now()
+             WHERE id=$1 AND row_version=$5 RETURNING *`,
+            [req.params.id, parentId, Number(sortOrder) || 0, req.user.id, rowVersion]
+          );
+          row = updated.rows[0];
+          await audit(client, req, 'move', req.params.id, old.rows[0], row, req.body.reason || '');
+        }
+        await client.query('COMMIT');
+        if (!internalNode) emit({ action: 'move', id: req.params.id });
+        res.json({ data: row, committed: true });
+      } catch (error) {
+        await client.query('ROLLBACK').catch(() => {});
+        next(error);
+      } finally { client.release(); }
+    } catch (error) { next(error); }
   });
 
-  router.delete('/:id', requireEquipment('delete'), async (req, res, next) => {
+  router.delete('/:id', async (req, res, next) => {
     const reason = String(req.body?.reason || '').trim();
     const rowVersion = Number(req.body?.rowVersion ?? req.body?.row_version);
     if (!reason) return res.status(422).json({ error: 'ARCHIVE_REASON_REQUIRED' });
     if (!Number.isInteger(rowVersion) || rowVersion < 1) return res.status(422).json({ error: 'ROW_VERSION_REQUIRED' });
-    const client = await pool.connect();
     try {
-      await client.query('BEGIN');
-      const old = await client.query('SELECT * FROM assets WHERE id=$1 AND deleted_at IS NULL FOR UPDATE', [req.params.id]);
-      if (!old.rows[0]) { await client.query('ROLLBACK'); return res.sendStatus(404); }
-      if (Number(old.rows[0].row_version) !== rowVersion) {
-        await client.query('ROLLBACK');
-        return res.status(409).json({ error: 'VERSION_CONFLICT', current: old.rows[0].row_version });
-      }
-      const children = await client.query('SELECT count(*)::int count FROM assets WHERE parent=$1 AND deleted_at IS NULL', [req.params.id]);
-      if (children.rows[0].count) {
-        await client.query('ROLLBACK');
-        return res.status(409).json({ error: 'HAS_ACTIVE_CHILDREN', count: children.rows[0].count });
-      }
-      const archived = await client.query(
-        `UPDATE assets SET is_active=false,status='stopped',deleted_at=now(),deleted_by=$2,
-          delete_reason=$3,updated_by=$2,row_version=row_version+1,updated_at=now()
-         WHERE id=$1 AND row_version=$4 AND deleted_at IS NULL RETURNING *`,
-        [req.params.id, req.user.id, reason, rowVersion]
-      );
-      if (!archived.rows[0]) { await client.query('ROLLBACK'); return res.status(409).json({ error: 'VERSION_CONFLICT' }); }
-      await audit(client, req, 'soft-delete', req.params.id, old.rows[0], archived.rows[0], reason);
-      await client.query('COMMIT');
-      emit({ action: 'soft-delete', id: req.params.id });
-      res.json({ data: archived.rows[0], historyPreserved: true });
-    } catch (error) {
-      await client.query('ROLLBACK').catch(() => {});
-      next(error);
-    } finally { client.release(); }
+      const target = await pool.query('SELECT id,type,ext FROM assets WHERE id=$1 AND deleted_at IS NULL', [req.params.id]);
+      if (!target.rows[0]) return res.sendStatus(404);
+      const internalNode = structure.isInternalKind(structure.kindOf(target.rows[0]));
+      if (internalNode) {
+        if (!(await structurePermission(req, res, 'equipment.structure.archive'))) return;
+      } else if (!canEquipment(req.user, 'delete')) return res.status(403).json({ error: 'EQUIPMENT_PERMISSION_DENIED', permission: 'Equipment.delete' });
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        if (internalNode) {
+          const data = await structure.archiveStructureNode({ client, pool, security, user: req.user, id: req.params.id, input: { reason, rowVersion } });
+          await client.query('COMMIT');
+          return res.json({ data, historyPreserved: true, archived: true });
+        }
+        const old = await client.query('SELECT * FROM assets WHERE id=$1 AND deleted_at IS NULL FOR UPDATE', [req.params.id]);
+        if (!old.rows[0]) { await client.query('ROLLBACK'); return res.sendStatus(404); }
+        if (Number(old.rows[0].row_version) !== rowVersion) {
+          await client.query('ROLLBACK');
+          return res.status(409).json({ error: 'VERSION_CONFLICT', current: old.rows[0].row_version });
+        }
+        const children = await client.query('SELECT count(*)::int count FROM assets WHERE parent=$1 AND deleted_at IS NULL', [req.params.id]);
+        if (children.rows[0].count) {
+          await client.query('ROLLBACK');
+          return res.status(409).json({ error: 'HAS_ACTIVE_CHILDREN', count: children.rows[0].count });
+        }
+        const archived = await client.query(
+          `UPDATE assets SET is_active=false,status='stopped',deleted_at=now(),deleted_by=$2,
+            delete_reason=$3,updated_by=$2,row_version=row_version+1,updated_at=now()
+           WHERE id=$1 AND row_version=$4 AND deleted_at IS NULL RETURNING *`,
+          [req.params.id, req.user.id, reason, rowVersion]
+        );
+        if (!archived.rows[0]) { await client.query('ROLLBACK'); return res.status(409).json({ error: 'VERSION_CONFLICT' }); }
+        await audit(client, req, 'soft-delete', req.params.id, old.rows[0], archived.rows[0], reason);
+        await client.query('COMMIT');
+        emit({ action: 'soft-delete', id: req.params.id });
+        res.json({ data: archived.rows[0], historyPreserved: true });
+      } catch (error) {
+        await client.query('ROLLBACK').catch(() => {});
+        next(error);
+      } finally { client.release(); }
+    } catch (error) { next(error); }
+  });
+
+  router.post('/:id/restore', async (req, res, next) => {
+    try {
+      if (!(await structurePermission(req, res, 'equipment.structure.archive'))) return;
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const data = await structure.restoreStructureNode({ client, pool, security, user: req.user, id: req.params.id, input: req.body || {} });
+        await client.query('COMMIT');
+        res.json({ data, restored: true, historyPreserved: true, committed: true });
+      } catch (error) {
+        await client.query('ROLLBACK').catch(() => {});
+        next(error);
+      } finally { client.release(); }
+    } catch (error) { next(error); }
   });
 
   router.use((error, _req, res, _next) => {

@@ -215,7 +215,7 @@ app.put('/api/data/:collection/:id', authenticateToken, async (req, res) => {
     }catch(error){await client.query('ROLLBACK').catch(()=>{});res.status(500).json({error:'RECORD_UPDATE_FAILED'});}finally{client.release();}
 });
 
-app.use('/api/equipment', createEquipmentRouter({ pool, io, authenticateToken, aiRegistry: aiProviders }));
+app.use('/api/equipment', createEquipmentRouter({ pool, io, authenticateToken, aiRegistry: aiProviders, security }));
 app.use('/api', createMaintenanceRouter({ pool, security, requestStorageDir:process.env.REQUEST_ATTACHMENT_DIR || path.join(__dirname, 'storage', 'request-files') }));
 app.use('/api', createInventoryRouter({ pool, security, storageDir: process.env.ATTACHMENT_DIR || path.join(__dirname, 'storage', 'work-order-files') }));
 app.use('/api/notifications', createNotificationRouter({ pool, authenticateToken, authorize }));

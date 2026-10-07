@@ -6,6 +6,7 @@ const {
   isISODate, resolvePlacement, coded
 } = require('./equipment-service');
 const { HISTORY_LABEL } = require('./selene-actions');
+const structure = require('./equipment-structure');
 
 async function audit(client, user, action, entity, note, before, after) {
   await client.query(
@@ -45,6 +46,9 @@ function profileExtension(proposed = {}) {
 }
 
 async function createEquipment(client, user, proposed) {
+  if (['subsystem', 'main-component', 'sub-component'].includes(String(proposed && proposed.nodeKind || ''))) {
+    throw coded(422, 'STRUCTURE_ACTION_REQUIRED');
+  }
   const errors = validateCreate(proposed);
   if (errors.length) throw coded(422, 'VALIDATION_ERROR');
   const kind = proposed.nodeKind;
@@ -182,10 +186,25 @@ async function appendRetrospectiveHistory(client, user, targetId, proposed, reco
   return { id: rows[0].id, occurredAt: proposed.occurredAt, label: HISTORY_LABEL, row_version: rows[0].row_version };
 }
 
-async function applyControlledAction(client, user, draft) {
+async function applyControlledAction(client, user, draft, options = {}) {
   if (draft.actionType === 'equipment.create') return createEquipment(client, user, draft.proposed);
   if (draft.actionType === 'equipment.complete') return completeEquipment(client, user, draft.targetId, draft.proposed, draft.recordVersion);
   if (draft.actionType === 'equipment.retrospective-history') return appendRetrospectiveHistory(client, user, draft.targetId, draft.proposed, draft.recordVersion);
+  if (draft.actionType === 'equipment.structure.add') {
+    return structure.createStructureNode({
+      client,
+      pool: options.pool,
+      security: options.security,
+      user,
+      rootEquipmentId: draft.proposed.rootEquipmentId,
+      permission: 'equipment.structure.approve_ai',
+      input: {
+        ...draft.proposed,
+        parentId: draft.proposed.parentId || draft.targetId,
+        parentRowVersion: draft.recordVersion
+      }
+    });
+  }
   throw coded(422, 'ACTION_NOT_ALLOWED');
 }
 
