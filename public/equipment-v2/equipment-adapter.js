@@ -33,7 +33,20 @@
     move:(id,data)=>api('/'+encodeURIComponent(id)+'/move',{method:'POST',body:JSON.stringify(data)}),
     remove:(id,reason,rowVersion)=>api('/'+encodeURIComponent(id),{
       method:'DELETE',body:JSON.stringify({reason,rowVersion})
-    })
+    }),
+    structure:(id,options)=>api('/'+encodeURIComponent(id)+'/structure'+(options&&options.includeArchived?'?includeArchived=true':'')),
+    structureCreate:data=>api('/',{method:'POST',body:JSON.stringify(data)}),
+    structureUpdate:(id,data)=>api('/'+encodeURIComponent(id),{method:'PATCH',body:JSON.stringify(data)}),
+    structureMove:(id,data)=>api('/'+encodeURIComponent(id)+'/move',{method:'POST',body:JSON.stringify(data)}),
+    structureArchive:(id,reason,rowVersion)=>api('/'+encodeURIComponent(id),{
+      method:'DELETE',body:JSON.stringify({reason,rowVersion})
+    }),
+    structureRestore:(id,data)=>api('/'+encodeURIComponent(id)+'/restore',{method:'POST',body:JSON.stringify(data)}),
+    structureSuggestions:id=>api('/'+encodeURIComponent(id)+'/structure/suggestions',{method:'POST',body:'{}'}),
+    inventoryItems:q=>api('/inventory-items?'+new URLSearchParams(q?{q}:{})),
+    actionConfirm:id=>api('/actions/drafts/'+encodeURIComponent(id)+'/confirm',{method:'POST',body:'{}'}),
+    actionExecute:(id,data)=>api('/actions/drafts/'+encodeURIComponent(id)+'/execute',{method:'POST',body:JSON.stringify(data)}),
+    actionReject:id=>api('/actions/drafts/'+encodeURIComponent(id)+'/reject',{method:'POST',body:'{}'})
   };
   const unavailable={
     source:'server-required',
@@ -45,7 +58,18 @@
     async create(){throw Object.assign(new Error('SERVER_REQUIRED'),{status:503});},
     async update(){throw Object.assign(new Error('SERVER_REQUIRED'),{status:503});},
     async move(){throw Object.assign(new Error('SERVER_REQUIRED'),{status:503});},
-    async remove(){throw Object.assign(new Error('SERVER_REQUIRED'),{status:503});}
+    async remove(){throw Object.assign(new Error('SERVER_REQUIRED'),{status:503});},
+    async structure(){throw Object.assign(new Error('SERVER_REQUIRED'),{status:503});},
+    async structureCreate(){throw Object.assign(new Error('SERVER_REQUIRED'),{status:503});},
+    async structureUpdate(){throw Object.assign(new Error('SERVER_REQUIRED'),{status:503});},
+    async structureMove(){throw Object.assign(new Error('SERVER_REQUIRED'),{status:503});},
+    async structureArchive(){throw Object.assign(new Error('SERVER_REQUIRED'),{status:503});},
+    async structureRestore(){throw Object.assign(new Error('SERVER_REQUIRED'),{status:503});},
+    async structureSuggestions(){throw Object.assign(new Error('SERVER_REQUIRED'),{status:503});},
+    async inventoryItems(){throw Object.assign(new Error('SERVER_REQUIRED'),{status:503});},
+    async actionConfirm(){throw Object.assign(new Error('SERVER_REQUIRED'),{status:503});},
+    async actionExecute(){throw Object.assign(new Error('SERVER_REQUIRED'),{status:503});},
+    async actionReject(){throw Object.assign(new Error('SERVER_REQUIRED'),{status:503});}
   };
   window.EquipmentRepository={
     mode:hasSession()?'postgresql':'server-required',
