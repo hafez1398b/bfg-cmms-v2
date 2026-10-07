@@ -24,8 +24,16 @@
     let payload = null;
     try { payload = await response.json(); } catch (_) {}
     if (response.status === 401 && allowRefresh && path !== '/api/auth/login' && path !== '/api/auth/refresh' && path !== '/api/auth/logout') {
-      await api('/api/auth/refresh', { method:'POST', body:'{}' }, false);
-      return api(path, options, false);
+      try {
+        await api('/api/auth/refresh', { method:'POST', body:'{}' }, false);
+        return api(path, options, false);
+      } catch (refreshError) {
+        if (refreshError.status === 401) {
+          state.realtime?.disconnect();
+          showLoginPage();
+        }
+        throw refreshError;
+      }
     }
     if (!response.ok) {
       const error = new Error(payload?.error || 'BACKEND_REQUEST_FAILED');

@@ -5,7 +5,8 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 
 const ACCESS_TTL_SECONDS = 15 * 60;
-const REFRESH_TTL_SECONDS = 12 * 60 * 60;
+// Absolute session lifetime. Refreshing access cookies never extends this deadline.
+const SESSION_TTL_SECONDS = 45 * 60;
 const LOGIN_WINDOW_MINUTES = 15;
 const LOGIN_FAIL_LIMIT = 5;
 const ACCESS_COOKIE = 'bfg_access';
@@ -88,7 +89,7 @@ function createSessionService({ pool, jwtSecret, env = process.env, clock = () =
     clearCookie(res, REFRESH_COOKIE, '/api/auth', true);
   }
 
-  function issueCsrf(res, maxAge = REFRESH_TTL_SECONDS) {
+  function issueCsrf(res, maxAge = SESSION_TTL_SECONDS) {
     const token = crypto.randomBytes(32).toString('base64url');
     setCookie(res, CSRF_COOKIE, token, '/', { httpOnly: false, maxAge });
     return token;
@@ -116,9 +117,18 @@ function createSessionService({ pool, jwtSecret, env = process.env, clock = () =
     return Math.max(0, Math.ceil(remainingMs / 1000));
   }
 
+  function sessionExpiresAt(session) {
+    const absoluteExpiry = new Date(session.absolute_expires_at).getTime();
+    const createdAt = new Date(session.created_at).getTime();
+    const policyExpiry = Number.isFinite(createdAt)
+      ? createdAt + SESSION_TTL_SECONDS * 1000
+      : absoluteExpiry;
+    return new Date(Math.min(absoluteExpiry, policyExpiry));
+  }
+
   function active(session) {
     if (!session || session.revoked_at) return false;
-    return secondsUntil(session.absolute_expires_at) > 0;
+    return secondsUntil(sessionExpiresAt(session)) > 0;
   }
 
   async function resolveUser(id) {
@@ -131,7 +141,7 @@ function createSessionService({ pool, jwtSecret, env = process.env, clock = () =
 
   async function loadSession(id) {
     const { rows } = await pool.query(
-      `SELECT id, user_id, refresh_token_hash, previous_refresh_token_hash, csrf_token_hash, absolute_expires_at, revoked_at
+      `SELECT id, user_id, refresh_token_hash, previous_refresh_token_hash, csrf_token_hash, absolute_expires_at, created_at, revoked_at
        FROM auth_sessions WHERE id=$1`,
       [id]
     );
@@ -141,7 +151,7 @@ function createSessionService({ pool, jwtSecret, env = process.env, clock = () =
   async function findByHash(column, hash) {
     if (column !== 'refresh_token_hash' && column !== 'previous_refresh_token_hash') throw coded(500, 'AUTHENTICATION_UNAVAILABLE');
     const { rows } = await pool.query(
-      `SELECT id, user_id, refresh_token_hash, previous_refresh_token_hash, csrf_token_hash, absolute_expires_at, revoked_at
+      `SELECT id, user_id, refresh_token_hash, previous_refresh_token_hash, csrf_token_hash, absolute_expires_at, created_at, revoked_at
        FROM auth_sessions WHERE ${column}=$1`,
       [hash]
     );
@@ -176,8 +186,8 @@ function createSessionService({ pool, jwtSecret, env = process.env, clock = () =
     return readCookie(req, ACCESS_COOKIE) || bearer(req);
   }
 
-  function writeSessionCookies(res, user, sessionId, refreshToken, csrfToken, absoluteExpiresAt) {
-    const refreshTtl = Math.min(REFRESH_TTL_SECONDS, secondsUntil(absoluteExpiresAt));
+  function writeSessionCookies(res, user, sessionId, refreshToken, csrfToken, expiresAt) {
+    const refreshTtl = Math.min(SESSION_TTL_SECONDS, secondsUntil(expiresAt));
     const accessTtl = Math.min(ACCESS_TTL_SECONDS, refreshTtl);
     setCookie(res, ACCESS_COOKIE, signAccess(user, sessionId, accessTtl), '/', { httpOnly: true, maxAge: accessTtl });
     setCookie(res, REFRESH_COOKIE, refreshToken, '/api/auth', { httpOnly: true, maxAge: refreshTtl });
@@ -187,7 +197,7 @@ function createSessionService({ pool, jwtSecret, env = process.env, clock = () =
   async function createSession(user, csrfToken, req) {
     const sessionId = crypto.randomUUID();
     const refreshToken = crypto.randomBytes(32).toString('base64url');
-    const expires = new Date(clock().getTime() + REFRESH_TTL_SECONDS * 1000);
+    const expires = new Date(clock().getTime() + SESSION_TTL_SECONDS * 1000);
     await pool.query(
       `INSERT INTO auth_sessions
         (id, user_id, refresh_token_hash, csrf_token_hash, absolute_expires_at, user_agent, ip_hash)
@@ -377,7 +387,9 @@ function createSessionService({ pool, jwtSecret, env = process.env, clock = () =
       [current.id, hmac(nextRefresh), hmac(nextCsrf), hmac(found.refreshToken)]
     );
     if (!updated.rowCount) throw coded(401, 'SESSION_REVOKED');
-    writeSessionCookies(res, user, current.id, nextRefresh, nextCsrf, updated.rows[0].absolute_expires_at);
+    writeSessionCookies(res, user, current.id, nextRefresh, nextCsrf, sessionExpiresAt({
+      ...current, absolute_expires_at: updated.rows[0].absolute_expires_at
+    }));
     return { user: publicUser(user) };
   }
 
@@ -413,7 +425,8 @@ function createSessionService({ pool, jwtSecret, env = process.env, clock = () =
     const claims = verifyAccess(token);
     const session = await loadSession(claims.sid);
     if (!active(session) || session.user_id !== claims.sub) return null;
-    return resolveUser(claims.sub);
+    const user = await resolveUser(claims.sub);
+    return user ? { ...user, sessionExpiresAt: sessionExpiresAt(session).toISOString() } : null;
   }
 
   function pathOf(req) {
@@ -447,7 +460,7 @@ function createSessionService({ pool, jwtSecret, env = process.env, clock = () =
 
   return {
     ACCESS_TTL_SECONDS,
-    REFRESH_TTL_SECONDS,
+    SESSION_TTL_SECONDS,
     LOGIN_FAIL_LIMIT,
     LOGIN_WINDOW_MINUTES,
     ACCESS_COOKIE,
@@ -473,7 +486,7 @@ function createSessionService({ pool, jwtSecret, env = process.env, clock = () =
 module.exports = {
   createSessionService,
   ACCESS_TTL_SECONDS,
-  REFRESH_TTL_SECONDS,
+  SESSION_TTL_SECONDS,
   ACCESS_COOKIE,
   REFRESH_COOKIE,
   CSRF_COOKIE

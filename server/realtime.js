@@ -13,6 +13,11 @@ function configureRealtime({ io, pool, security, logger=console }) {
 
   io.on('connection', socket => {
     const { id, role, scopes=[] } = socket.user;
+    const sessionExpiresAt = Date.parse(socket.user.sessionExpiresAt);
+    if (Number.isFinite(sessionExpiresAt)) {
+      const expiryTimer = setTimeout(() => socket.disconnect(true), Math.max(0, sessionExpiresAt - Date.now()));
+      socket.once('disconnect', () => clearTimeout(expiryTimer));
+    }
     socket.join(`user:${id}`);
     socket.join(`role:${role}`);
     for (const scope of scopes) socket.join(`${scope.scope_type}:${scope.scope_id}`);

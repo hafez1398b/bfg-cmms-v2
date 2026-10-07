@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
-const { createSessionService, ACCESS_TTL_SECONDS, REFRESH_TTL_SECONDS } = require('../server/session');
+const { createSessionService, ACCESS_TTL_SECONDS, SESSION_TTL_SECONDS } = require('../server/session');
 
 const root = path.join(__dirname, '..');
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
@@ -54,7 +54,8 @@ function memoryPool() {
       if (text.includes('INSERT INTO auth_sessions')) {
         sessions.push({
           id: params[0], user_id: params[1], refresh_token_hash: params[2], csrf_token_hash: params[3],
-          absolute_expires_at: params[4], user_agent: params[5], ip_hash: params[6],
+          absolute_expires_at: params[4], created_at: new Date(Date.parse(params[4]) - SESSION_TTL_SECONDS * 1000).toISOString(),
+          user_agent: params[5], ip_hash: params[6],
           previous_refresh_token_hash: null, revoked_at: null
         });
         return { rows: [], rowCount: 1 };
@@ -136,7 +137,7 @@ test('session migration is additive and bootstrap schema contains the same table
   assert.match(migration, /previous_refresh_token_hash/);
   assert.doesNotMatch(migration, /\b(DROP|TRUNCATE|DELETE FROM)\b/i);
   assert.equal(ACCESS_TTL_SECONDS, 15 * 60);
-  assert.equal(REFRESH_TTL_SECONDS, 12 * 60 * 60);
+  assert.equal(SESSION_TTL_SECONDS, 45 * 60);
 });
 
 test('login sets host-only cookies and stores only a hashed refresh token', async () => {
@@ -160,7 +161,8 @@ test('login sets host-only cookies and stores only a hashed refresh token', asyn
   assert.match(refreshLine, /Secure/);
   assert.match(refreshLine, /SameSite=Strict/);
   assert.match(refreshLine, /Path=\/api\/auth/);
-  assert.match(refreshLine, /Max-Age=43200/);
+  assert.match(refreshLine, /Max-Age=2700/);
+  assert.match(csrfLine, /Max-Age=2700/);
   assert.doesNotMatch(csrfLine, /HttpOnly/);
   assert.match(csrfLine, /Secure/);
   assert.match(csrfLine, /SameSite=Strict/);
@@ -259,20 +261,22 @@ test('logout revokes one session and logout-all revokes the account', async () =
   );
 });
 
-test('refresh cannot extend the absolute 12-hour session', async () => {
+test('refresh cannot extend the absolute 45-minute session', async () => {
   const pool = memoryPool();
   let now = Date.parse('2026-10-04T08:00:00Z');
   const service = serviceFor(pool, { NODE_ENV: 'test' }, () => new Date(now));
   const started = await login(service);
   const originalExpiry = pool.sessions[0].absolute_expires_at;
-  now += 60 * 60 * 1000;
+  assert.equal(Date.parse(originalExpiry), now + SESSION_TTL_SECONDS * 1000);
+  now += 30 * 60 * 1000;
   const refreshed = mockRes();
   await service.refresh(request({
     cookies: { bfg_refresh: started.refresh, bfg_csrf: started.csrf },
     headers: { 'x-csrf-token': started.csrf }
   }), refreshed);
   assert.equal(pool.sessions[0].absolute_expires_at, originalExpiry);
-  now += 12 * 60 * 60 * 1000;
+  assert.match(setCookies(refreshed).find(item => item.startsWith('bfg_refresh=')), /Max-Age=900/);
+  now += 15 * 60 * 1000 + 1000;
   await assert.rejects(
     () => service.refresh(request({
       cookies: { bfg_refresh: cookieValue(refreshed, 'bfg_refresh'), bfg_csrf: cookieValue(refreshed, 'bfg_csrf') },
@@ -281,6 +285,34 @@ test('refresh cannot extend the absolute 12-hour session', async () => {
     error => error.code === 'SESSION_REVOKED'
   );
   assert.equal(pool.sessions[0].absolute_expires_at, originalExpiry);
+});
+
+test('realtime authentication carries the fixed session deadline and rejects expired sessions', async () => {
+  const pool = memoryPool();
+  let now = Date.parse('2026-10-04T08:00:00Z');
+  const service = serviceFor(pool, { NODE_ENV: 'test' }, () => new Date(now));
+  const started = await login(service);
+  const handshake = { headers: { cookie: `bfg_access=${encodeURIComponent(started.access)}` } };
+  const user = await service.socketUser(handshake);
+  assert.equal(user.sessionExpiresAt, new Date(now + SESSION_TTL_SECONDS * 1000).toISOString());
+  now += SESSION_TTL_SECONDS * 1000 + 1000;
+  assert.equal(await service.socketUser(handshake), null);
+});
+
+test('sessions issued under the previous longer lifetime are capped at 45 minutes', async () => {
+  const pool = memoryPool();
+  let now = Date.parse('2026-10-04T08:00:00Z');
+  const service = serviceFor(pool, { NODE_ENV: 'test' }, () => new Date(now));
+  const started = await login(service);
+  pool.sessions[0].absolute_expires_at = new Date(now + 12 * 60 * 60 * 1000).toISOString();
+  now += SESSION_TTL_SECONDS * 1000 + 1000;
+  await assert.rejects(
+    () => service.refresh(request({
+      cookies: { bfg_refresh: started.refresh, bfg_csrf: started.csrf },
+      headers: { 'x-csrf-token': started.csrf }
+    }), mockRes()),
+    error => error.code === 'SESSION_REVOKED'
+  );
 });
 
 test('five failed logins lock the subject and database errors stay generic', async () => {
