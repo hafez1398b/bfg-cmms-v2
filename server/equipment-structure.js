@@ -7,6 +7,9 @@ const { coded } = require('./equipment-service');
 
 const STRUCTURE_KINDS = new Set(['subsystem', 'main-component', 'sub-component']);
 const INTERNAL_KINDS = new Set([...STRUCTURE_KINDS, 'sub-equipment']);
+// Kinds that may own a dossier structure. Legacy rows may carry an explicit 'equipment',
+// the old 'sub-equipment', or nothing at all (resolved to 'equipment' above).
+const STRUCTURE_ROOT_KINDS = new Set(['equipment', 'sub-equipment']);
 const CHILD_KINDS = Object.freeze({
   equipment: new Set(['subsystem']),
   subsystem: new Set(['main-component']),
@@ -56,8 +59,36 @@ function kindOf(row) {
   return String(ext.nodeKind || row?.node_kind || row?.nodeKind || '');
 }
 
+// Single fallback rule shared by the resolver, the root check and the parent-kind check so a
+// legacy row can never be read as equipment in one place and as "unknown" in another.
+function effectiveKindOf(row) {
+  const declared = kindOf(row);
+  if (declared) return declared;
+  if (!row) return '';
+  return row.type === 'eq' ? 'equipment' : 'location';
+}
+
 function allowedChildKinds(parentKind) {
   return [...(CHILD_KINDS[parentKind] || [])];
+}
+
+// Normalizes the single newest real inventory_ledger receipt for an item.
+// Returns null when no purchase exists, so the UI can print "ثبت نشده".
+function lastPurchaseDto(source) {
+  if (!source || typeof source !== 'object') return null;
+  const at = source.at == null ? null : new Date(source.at);
+  return {
+    at: at && !Number.isNaN(at.getTime()) ? at.toISOString() : null,
+    entryNo: source.entryNo == null ? null : String(source.entryNo),
+    qty: source.qty == null ? null : Number(source.qty),
+    unitCost: source.unitCost == null ? null : Number(source.unitCost),
+    note: source.note == null || source.note === '' ? null : String(source.note),
+    movement: source.movement == null ? null : String(source.movement),
+    warehouseId: source.warehouseId == null ? null : String(source.warehouseId),
+    // No supplier column exists on inventory_ledger; never fabricate one.
+    supplier: null,
+    source: 'inventory_ledger'
+  };
 }
 
 function relationStatus(parentKind, childKind) {
@@ -190,7 +221,11 @@ function buildStructureTree(root, rows = []) {
       is_active: source.is_active !== false,
       sort_order: Number(source.sort_order) || 0,
       depth: Number(source.depth) || 1,
-      inventory_item: source.inventory_item || null
+      inventory_item: source.inventory_item || null,
+      stock_on_hand: source.stock_on_hand == null ? null : Number(source.stock_on_hand),
+      stock_reserved: source.stock_reserved == null ? null : Number(source.stock_reserved),
+      stock_available: source.stock_available == null ? null : Number(source.stock_available),
+      last_purchase: source.last_purchase || null
     };
     normalized.push(row);
     indexed.set(row.id, {
@@ -212,11 +247,24 @@ function buildStructureTree(root, rows = []) {
       serial: row.serial,
       componentType: ext.componentType || null,
       partNumber: ext.partNumber || null,
+      brand: ext.brand || null,
+      manufacturer: ext.manufacturer || null,
       technicalSpecification: ext.technicalSpecification || null,
       structureNotes: ext.structureNotes || null,
       requiredQuantity: ext.requiredQuantity == null ? null : Number(ext.requiredQuantity),
       inventoryItemId: ext.inventoryItemId || null,
       inventoryItem: row.inventory_item,
+      // Real stock only: read from item_balances through active storage_locations/warehouses.
+      // It is never typed by the user and never written back into structure fields.
+      stockOnHand: row.inventory_item ? row.stock_on_hand : null,
+      stockReserved: row.inventory_item ? row.stock_reserved : null,
+      stockAvailable: row.inventory_item
+        ? row.stock_available
+        : null,
+      // Real purchase only: the newest non-reversed 'receipt' row of inventory_ledger.
+      // The schema stores no supplier on a receipt, so supplier stays null ("ثبت نشده")
+      // instead of being invented.
+      lastPurchase: lastPurchaseDto(row.last_purchase),
       validRelation: false,
       legacy: false,
       path: [],
@@ -326,13 +374,21 @@ async function getFactoryId(client, rootId) {
   return rows[0]?.factory_id || null;
 }
 
+// Legacy equipment rows created before the digital dossier never stored ext->>'nodeKind';
+// only location rows (factory/site/area/line/unit/category) carry an explicit nodeKind.
+// The registry has always read those assets as equipment through
+// COALESCE(ext->>'nodeKind','equipment'), so the structure resolver must apply exactly the
+// same fallback. Without it every real legacy equipment record resolved to "no root" and the
+// dossier answered ROOT_EQUIPMENT_NOT_FOUND even though the row exists and is visible in the list.
 async function resolveRootEquipment(client, assetId) {
   const { rows } = await client.query(
     `WITH RECURSIVE ancestry AS (
-       SELECT a.id,a.parent,a.type,a.ext->>'nodeKind' AS node_kind,a.category_id,0 AS depth,ARRAY[a.id]::text[] AS path
+       SELECT a.id,a.parent,a.type,COALESCE(NULLIF(a.ext->>'nodeKind',''),'equipment') AS node_kind,
+         a.category_id,0 AS depth,ARRAY[a.id]::text[] AS path
        FROM assets a WHERE a.id=$1
        UNION ALL
-       SELECT p.id,p.parent,p.type,p.ext->>'nodeKind',p.category_id,ancestry.depth+1,ancestry.path||p.id
+       SELECT p.id,p.parent,p.type,COALESCE(NULLIF(p.ext->>'nodeKind',''),'equipment'),p.category_id,
+         ancestry.depth+1,ancestry.path||p.id
        FROM assets p JOIN ancestry ON ancestry.parent=p.id
        WHERE ancestry.depth<64 AND NOT p.id=ANY(ancestry.path)
      )
@@ -344,18 +400,27 @@ async function resolveRootEquipment(client, assetId) {
   return rows[0] || null;
 }
 
+// The structure API is addressed by the real PostgreSQL assets.id that the equipment list
+// already returns. An empty identifier or a location/registry node is rejected explicitly;
+// only a genuinely missing (or archived) equipment row yields 404.
 async function rootEquipmentById(client, rootId) {
+  const identifier = rootId == null ? '' : String(rootId).trim();
+  if (!identifier || identifier.length > 200) throw coded(404, 'EQUIPMENT_NOT_FOUND');
   const { rows } = await client.query(
     `SELECT id,parent,code,name,type,category_id,ext,row_version,deleted_at
-     FROM assets WHERE id=$1`, [rootId]
+     FROM assets WHERE id=$1`, [identifier]
   );
   const row = rows[0];
-  if (!row || row.deleted_at) throw coded(404, 'EQUIPMENT_NOT_FOUND');
-  const kind = kindOf(row) || 'equipment';
-  if (row.type !== 'eq' || kind !== 'equipment') throw coded(404, 'ROOT_EQUIPMENT_NOT_FOUND');
-  const resolved = await resolveRootEquipment(client, rootId);
-  if (!resolved || String(resolved.id) !== String(rootId)) throw coded(404, 'ROOT_EQUIPMENT_NOT_FOUND');
-  return { ...row, node_kind: kind, factory_id: await getFactoryId(client, rootId) };
+  if (!row) throw coded(404, 'EQUIPMENT_NOT_FOUND');
+  if (row.deleted_at) throw coded(404, 'EQUIPMENT_NOT_FOUND');
+  // type='eq' with no explicit nodeKind is a real equipment record: keep it working.
+  const kind = effectiveKindOf(row);
+  if (row.type !== 'eq' || !STRUCTURE_ROOT_KINDS.has(kind)) throw coded(404, 'ROOT_EQUIPMENT_NOT_FOUND');
+  const resolved = await resolveRootEquipment(client, identifier);
+  // An existing root equipment without any child is valid: it resolves to itself.
+  if (!resolved) throw coded(404, 'ROOT_EQUIPMENT_NOT_FOUND');
+  if (String(resolved.id) !== String(identifier)) throw coded(404, 'PARENT_OUTSIDE_ROOT_EQUIPMENT');
+  return { ...row, node_kind: kind, factory_id: await getFactoryId(client, identifier) };
 }
 
 async function assertEquipmentScope(client, user, rootId, factoryId = null) {
@@ -453,7 +518,7 @@ async function publishStructureEvent(client, user, roots, action, node) {
 
 async function parentForNode(client, parentId, childKind) {
   const parent = await lockAsset(client, parentId);
-  const parentKind = kindOf(parent) || (parent.type === 'eq' ? '' : 'location');
+  const parentKind = effectiveKindOf(parent);
   validateParentKind(childKind, parentKind);
   return { row: parent, kind: parentKind };
 }
@@ -494,17 +559,40 @@ async function getStructure({ pool, security, user, rootEquipmentId, includeArch
          'partNumber',COALESCE(inventory.ext->>'partNumber',inventory.code),
          'specification',COALESCE(inventory.ext->>'technicalSpecification',inventory.ext->>'specification'),
          'available',COALESCE(availability.available,0),'archived',inventory.deleted_at IS NOT NULL
-       ) END AS inventory_item
+       ) END AS inventory_item,
+       availability.on_hand AS stock_on_hand,
+       availability.reserved AS stock_reserved,
+       availability.available AS stock_available,
+       CASE WHEN inventory.id IS NULL OR purchase.entry_no IS NULL THEN NULL ELSE jsonb_build_object(
+         'at',purchase.created_at,'entryNo',purchase.entry_no,'qty',purchase.qty,
+         'unitCost',purchase.unit_cost,'note',purchase.note,'movement',purchase.movement,
+         'warehouseId',purchase.warehouse_id
+       ) END AS last_purchase
      FROM structure
      LEFT JOIN items inventory ON inventory.id=structure.ext->>'inventoryItemId'
      LEFT JOIN LATERAL (
        SELECT COALESCE(SUM(CASE WHEN location.id IS NOT NULL AND warehouse.id IS NOT NULL
-         THEN balance.on_hand-balance.reserved ELSE 0 END),0) AS available
+         THEN balance.on_hand-balance.reserved ELSE 0 END),0) AS available,
+         COALESCE(SUM(CASE WHEN location.id IS NOT NULL AND warehouse.id IS NOT NULL
+         THEN balance.on_hand ELSE 0 END),0) AS on_hand,
+         COALESCE(SUM(CASE WHEN location.id IS NOT NULL AND warehouse.id IS NOT NULL
+         THEN balance.reserved ELSE 0 END),0) AS reserved
        FROM item_balances balance
        LEFT JOIN storage_locations location ON location.id=balance.location_id AND location.deleted_at IS NULL
        LEFT JOIN warehouses warehouse ON warehouse.id=location.warehouse_id AND warehouse.deleted_at IS NULL AND warehouse.active=true
        WHERE balance.item_id=inventory.id
      ) availability ON true
+     LEFT JOIN LATERAL (
+       SELECT receipt.created_at,receipt.entry_no,receipt.qty,receipt.unit_cost,receipt.note,
+         receipt.movement,receipt.warehouse_id
+       FROM inventory_ledger receipt
+       WHERE receipt.item_id=inventory.id AND receipt.movement='receipt'
+         AND NOT EXISTS (
+           SELECT 1 FROM inventory_ledger reversal
+           WHERE reversal.reverses_entry_id=receipt.id
+         )
+       ORDER BY receipt.created_at DESC,receipt.entry_no DESC LIMIT 1
+     ) purchase ON true
      WHERE structure.depth>0
      ORDER BY structure.depth,structure.sort_order,structure.name`,
     [root.id, !!includeArchived]
@@ -683,8 +771,8 @@ async function moveStructureNode({ client, pool, security, user, id, input = {} 
   }
   const parentRow = await lockAsset(client, parentId);
   if (await isDescendant(client, parentId, current.id)) throw coded(422, 'TREE_CYCLE');
-  validateParentKind(kindOf(current), kindOf(parentRow));
-  const parent = { row: parentRow, kind: kindOf(parentRow) };
+  validateParentKind(kindOf(current), effectiveKindOf(parentRow));
+  const parent = { row: parentRow, kind: effectiveKindOf(parentRow) };
   const code = current.code || null;
   await assertUniqueCode(client, code, current.id);
   const { rows } = await client.query(
@@ -766,11 +854,13 @@ async function assertDraftScope(pool, user, draft) {
 module.exports = {
   STRUCTURE_KINDS,
   INTERNAL_KINDS,
+  STRUCTURE_ROOT_KINDS,
   CHILD_KINDS,
   LEVEL_LABELS,
   isStructureKind,
   isInternalKind,
   kindOf,
+  effectiveKindOf,
   allowedChildKinds,
   relationStatus,
   validateParentKind,
@@ -778,6 +868,7 @@ module.exports = {
   structureExt,
   validateStructureInput,
   buildStructureTree,
+  lastPurchaseDto,
   hasPermission,
   assertPermission,
   resolveRootEquipment,

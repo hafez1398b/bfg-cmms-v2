@@ -239,7 +239,11 @@ async function searchInventoryItems({ pool, security, user, query, limit = 50 })
        COALESCE((SELECT SUM(CASE WHEN l.id IS NOT NULL AND w.id IS NOT NULL THEN b.on_hand-b.reserved ELSE 0 END)
          FROM item_balances b LEFT JOIN storage_locations l ON l.id=b.location_id AND l.deleted_at IS NULL
          LEFT JOIN warehouses w ON w.id=l.warehouse_id AND w.deleted_at IS NULL AND w.active=true
-         WHERE b.item_id=i.id),0) AS available
+         WHERE b.item_id=i.id),0) AS available,
+       (SELECT receipt.created_at FROM inventory_ledger receipt
+         WHERE receipt.item_id=i.id AND receipt.movement='receipt'
+           AND NOT EXISTS (SELECT 1 FROM inventory_ledger reversal WHERE reversal.reverses_entry_id=receipt.id)
+         ORDER BY receipt.created_at DESC,receipt.entry_no DESC LIMIT 1) AS last_purchase_at
      FROM items i
      WHERE ${filters.join(' AND ')}
      ORDER BY i.code LIMIT $${values.length}`,
@@ -251,6 +255,8 @@ async function searchInventoryItems({ pool, security, user, query, limit = 50 })
     partNumber: row.ext?.partNumber || null,
     specification: row.ext?.technicalSpecification || null,
     available: Number(row.available) || 0,
+    // Real receipt date from inventory_ledger, or null so the UI prints "ثبت نشده".
+    lastPurchaseAt: row.last_purchase_at ? new Date(row.last_purchase_at).toISOString() : null,
     source: 'inventory_master_data'
   }));
 }

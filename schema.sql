@@ -1310,3 +1310,51 @@ CREATE INDEX IF NOT EXISTS idx_assets_structure_inventory_item
   WHERE deleted_at IS NULL AND ext->>'inventoryItemId' IS NOT NULL;
 
 COMMIT;
+
+-- Equipment V2 Phase 2 correction: backfill ext->>'nodeKind' for legacy equipment records.
+-- Mirrors migrations/016_structure_root_equipment_backfill.sql. Additive, re-runnable and
+-- non-destructive: only a missing/empty nodeKind key is filled on real assets rows with
+-- type='eq' that have no equipment ancestor; existing values, parents and history are preserved.
+
+BEGIN;
+
+WITH RECURSIVE equipment_ancestry AS (
+  SELECT a.id,
+         a.parent,
+         NULLIF(a.ext->>'nodeKind','') AS node_kind,
+         0 AS depth,
+         ARRAY[a.id]::text[] AS path,
+         false AS has_equipment_ancestor
+  FROM assets a
+  WHERE a.type='eq' AND a.deleted_at IS NULL AND NULLIF(a.ext->>'nodeKind','') IS NULL
+  UNION ALL
+  SELECT p.id,
+         p.parent,
+         NULLIF(p.ext->>'nodeKind',''),
+         equipment_ancestry.depth+1,
+         equipment_ancestry.path||p.id,
+         equipment_ancestry.has_equipment_ancestor
+           OR (p.type='eq' AND NOT p.id=ANY(equipment_ancestry.path))
+  FROM assets p
+  JOIN equipment_ancestry ON equipment_ancestry.parent=p.id
+  WHERE equipment_ancestry.depth<64 AND NOT p.id=ANY(equipment_ancestry.path)
+), root_equipment AS (
+  SELECT DISTINCT equipment_ancestry.id
+  FROM equipment_ancestry
+  WHERE equipment_ancestry.node_kind IS NULL
+    AND equipment_ancestry.has_equipment_ancestor=false
+)
+UPDATE assets
+SET ext=COALESCE(assets.ext,'{}'::jsonb) || jsonb_build_object('nodeKind','equipment'),
+    updated_at=now()
+FROM root_equipment
+WHERE assets.id=root_equipment.id
+  AND assets.type='eq'
+  AND assets.deleted_at IS NULL
+  AND NULLIF(assets.ext->>'nodeKind','') IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_assets_structure_root_equipment
+  ON assets((COALESCE(NULLIF(ext->>'nodeKind',''),'equipment')), parent)
+  WHERE deleted_at IS NULL AND type='eq';
+
+COMMIT;

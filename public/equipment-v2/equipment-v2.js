@@ -22,6 +22,7 @@
     options:{factories:[],categories:[],locations:[],responsibleUsers:[]},routeBusy:false,
     intakeReturn:null,wizard:null,
     structure:null,structurePanel:[],structureFocus:null,structureArchived:false,structureLoading:false,
+    structureExpanded:{},
     structureError:null,structureSuggestNotice:null,structurePendingReject:null,inventoryOptions:[]
   };
 
@@ -251,6 +252,12 @@
     EQUIPMENT_SCOPE_DENIED:'این تجهیز در Scope دسترسی شما نیست.',
     PARENT_ARCHIVED:'والد بایگانی شده است؛ ابتدا والد را بازیابی کنید.',
     STRUCTURE_NODE_NOT_FOUND:'جزء ساختاری پیدا نشد.',
+    EQUIPMENT_NOT_FOUND:'این تجهیز در پایگاه‌داده پیدا نشد؛ فهرست تجهیزات را تازه‌سازی کنید.',
+    ROOT_EQUIPMENT_NOT_FOUND:'این رکورد تجهیز ریشه‌ای نیست؛ ساختار فقط در پروندهٔ خود تجهیز باز می‌شود.',
+    EQUIPMENT_ID_INVALID:'شناسهٔ تجهیز نامعتبر است؛ ساختار فقط با شناسهٔ واقعی رکورد باز می‌شود.',
+    STRUCTURE_ROOT_CHANGED:'ساختار هم‌زمان تغییر کرده است؛ دوباره تازه‌سازی کنید.',
+    STRUCTURE_FAILED:'ساختار از Backend دریافت نشد؛ دوباره تلاش کنید.',
+    SERVER_REQUIRED:'اتصال به Backend برقرار نیست؛ ساختار فقط از سرور خوانده می‌شود.',
     STRUCTURE_NODE_NOT_ARCHIVED:'این جزء بایگانی نشده است.',
     AI_PROVIDER_DISABLED_BY_POLICY:'سرویس تحلیل غیرفعال است؛ پیشنهاد سلن برای ساختار در دسترس نیست. فرم دستی کامل فعال است.',
     AI_PURPOSE_DENIED_BY_POLICY:'سیاست سرور پیشنهاد ساختار را مجاز نکرده است؛ فرم دستی فعال است.',
@@ -274,16 +281,25 @@
     return[{value:ctx.asset.id,label:`${ctx.asset.code?ctx.asset.code+' — ':''}${ctx.asset.name} (ریشه تجهیز)`},
       ...nodes.map(node=>({value:node.id,label:`${node.code?node.code+' — ':''}${node.name} (${STRUCTURE_KIND_LABEL[node.nodeKind]||node.nodeKind})`}))];
   }
+  // The dossier is always keyed by the real PostgreSQL assets.id; the API field is
+  // rootEquipmentId, so it is normalized here and never re-derived from a code or local cache.
+  function normalizeStructure(id,payload){
+    const data=payload&&typeof payload==='object'?payload:{};
+    const rootId=data.rootEquipmentId||(data.root&&data.root.id)||id;
+    return {...data,rootId,rootEquipmentId:rootId,nodes:Array.isArray(data.nodes)?data.nodes:[],
+      capabilities:data.capabilities||{},suggestions:Array.isArray(data.suggestions)?data.suggestions:[],
+      diagnostics:Array.isArray(data.diagnostics)?data.diagnostics:[]};
+  }
   async function loadStructure(id,options={}){
-    if(typeof R().structure!=='function'){E.structure={rootId:id,nodes:[],capabilities:{},error:'SERVER_REQUIRED'};if(E.tab==='structure')await renderCurrentDetail();return;}
+    if(typeof R().structure!=='function'){E.structure=normalizeStructure(id,{error:'SERVER_REQUIRED'});if(E.tab==='structure')await renderCurrentDetail();return;}
     try{
       const result=await R().structure(id,{includeArchived:E.structureArchived});
-      E.structure=result.data;E.structureError=null;
+      E.structure=normalizeStructure(id,result.data);E.structureError=null;
       if(!options.keepPanel)E.structurePanel=[];
       if(options.focus&&structureNodeById(options.focus))E.structureFocus=options.focus;
     }catch(error){
       E.structureError=(error.payload&&error.payload.error)||error.message||'STRUCTURE_FAILED';
-      E.structure={rootId:id,nodes:[],capabilities:{},suggestions:[],error:E.structureError};
+      E.structure=normalizeStructure(id,{error:E.structureError});
     }
     if(E.tab==='structure')await renderCurrentDetail();
   }
@@ -306,31 +322,94 @@
       <span>موجودی قابل دسترس (فقط از دفتر انبار): ${faText(item.available==null?0:item.available)} ${escText(item.unit||'')}</span>
       <span>شماره قطعه: ${escText(item.partNumber||'ثبت نشده')} · برند/سازنده: ${escText(item.manufacturer||'ثبت نشده')} · مشخصات: ${escText(item.specification||'ثبت نشده')}</span></div>`;
   }
-  function structureRow(node){
-    const caps=(E.structure&&E.structure.capabilities)||{};
-    const childrenCount=(node.children||[]).length;
+  const STRUCTURE_COLUMNS=['نام','کد','نوع','برند / سازنده','مدل','شماره قطعه','تعداد','وضعیت','بحرانیت',
+    'قلم انبار مرتبط','موجودی واقعی','آخرین خرید','تأمین‌کننده آخرین خرید','عملیات'];
+  function structureCell(value){return value==null||value===''?'<span class="eqv2-na">—</span>':escText(String(value));}
+  function faDate(value){
+    if(!value)return null;
+    const date=new Date(value);
+    if(Number.isNaN(date.getTime()))return null;
+    try{return new Intl.DateTimeFormat('fa-IR',{dateStyle:'short'}).format(date);}catch(_){return date.toLocaleDateString();}
+  }
+  function structureStockCell(node){
+    if(!node.inventoryItemId&&!node.inventoryItem)return '<span class="eqv2-na">ثبت نشده</span>';
+    const value=node.stockAvailable==null?(node.inventoryItem&&node.inventoryItem.available):node.stockAvailable;
+    const unit=(node.inventoryItem&&node.inventoryItem.unit)||node.unit||'';
+    if(value==null)return '<span class="eqv2-na">ثبت نشده</span>';
+    const reserved=node.stockReserved==null?0:node.stockReserved;
+    return `<b>${faText(value)}</b> ${escText(unit)}${reserved?` <span class="muted">(رزرو ${faText(reserved)})</span>`:''}`;
+  }
+  function structurePurchaseCell(node){
+    const purchase=node.lastPurchase;
+    if(!purchase||!purchase.at)return '<span class="eqv2-na">ثبت نشده</span>';
+    return `${escText(faDate(purchase.at)||'')} <span class="muted">${escText(purchase.entryNo||'')}</span>`;
+  }
+  function structureSupplierCell(node){
+    // A real receipt in inventory_ledger carries no supplier, so nothing is invented.
+    if(!node.lastPurchase)return '<span class="eqv2-na">ثبت نشده</span>';
+    return node.lastPurchase.supplier?escText(node.lastPurchase.supplier):'<span class="eqv2-na">ثبت نشده</span>';
+  }
+  function structureInventoryCell(node){
+    const item=node.inventoryItem;
+    if(!item)return '<span class="eqv2-na">ثبت نشده</span>';
+    return `<span title="${escText(item.name||'')}">${escText(item.code||'—')}</span>`;
+  }
+  function structureRowActions(node,caps,canChild){
+    return `<button type="button" class="btn btn-sm btn-ghost" onclick="eqv2StructureFocus('${escText(node.id)}')">مشاهده جزئیات</button>
+      ${canChild&&!node.archived?`<button type="button" class="btn btn-sm btn-ghost" onclick="eqv2StructureAdd('${escText(node.id)}')">افزودن فرزند</button>`:''}
+      ${caps.update&&!node.archived?`<button type="button" class="btn btn-sm btn-ghost" onclick="eqv2StructureEdit('${escText(node.id)}')">ویرایش</button>`:''}
+      ${(caps.move||caps.moveAcrossEquipment)&&!node.archived?`<button type="button" class="btn btn-sm btn-ghost" onclick="eqv2StructureMove('${escText(node.id)}')">جابه‌جایی</button>`:''}
+      ${caps.archive&&!node.archived?`<button type="button" class="btn btn-sm btn-danger" onclick="eqv2StructureArchive('${escText(node.id)}')">بایگانی</button>`:''}
+      ${caps.archive&&node.archived?`<button type="button" class="btn btn-sm btn-ghost" onclick="eqv2StructureRestore('${escText(node.id)}')">بازیابی</button>`:''}`;
+  }
+  function structureRowCells(node,caps,level){
+    const children=node.children||[];
     const canChild=caps.create&&structureAllowedChildren(node.nodeKind).length>0;
-    const brand=node.brand||node.manufacturer||node.maker||null;
-    return`<article class="eqv2-structure-row" data-structure-node="${escText(node.id)}">
-      <div class="eqv2-structure-main"><b>${escText(node.name||'بدون نام')}</b><span class="eqv2-code">${escText(node.code||'—')}</span>
-        <span class="badge b-gray">${escText(STRUCTURE_KIND_LABEL[node.nodeKind]||node.nodeKind||'')}</span>
+    const expanded=E.structureExpanded[node.id]!==false;
+    const brand=node.brand||node.manufacturer||node.inventoryItem&&node.inventoryItem.manufacturer||node.maker||null;
+    const partNumber=node.partNumber||(node.inventoryItem&&node.inventoryItem.partNumber)||null;
+    const quantity=node.requiredQuantity==null?null:faText(node.requiredQuantity)+(node.unit?' '+node.unit:'');
+    return `<tr class="eqv2-structure-tr${node.archived?' is-archived':''}${node.validRelation===false?' is-invalid':''}" data-structure-node="${escText(node.id)}">
+      <td class="eqv2-structure-name" style="--eqv2-level:${Math.max(level,0)}">
+        ${children.length?`<button type="button" class="eqv2-structure-toggle" aria-expanded="${expanded}" aria-label="${expanded?'بستن':'باز کردن'} زیرمجموعه‌های ${escText(node.name||node.code||'')}" onclick="eqv2StructureToggle('${escText(node.id)}')">${expanded?'▾':'◂'}</button>`:'<span class="eqv2-structure-leaf" aria-hidden="true"></span>'}
+        <b>${escText(node.name||'بدون نام')}</b>
         ${node.archived?'<span class="badge b-orange">بایگانی</span>':''}
-        ${node.validRelation===false?'<span class="badge b-orange">رابطه ناسازگار ثبت‌شده</span>':''}</div>
-      <div class="eqv2-structure-meta">
-        <span>برند/سازنده: ${escText(brand||'ثبت نشده')}</span>
-        <span>تعداد: ${node.requiredQuantity==null?notRecorded:faText(node.requiredQuantity)+(node.unit?' '+escText(node.unit):'')}</span>
-        <span>وضعیت: ${escText(node.status||'ثبت نشده')}</span>
-        <span>بحرانیت: ${escText(node.crit||'ثبت نشده')}</span>
-        <span>فرزندان: ${faText(childrenCount)}</span>
-      </div>
-      <div class="eqv2-structure-actions">
-        <button type="button" class="btn btn-sm btn-ghost" onclick="eqv2StructureFocus('${escText(node.id)}')">جزئیات</button>
-        ${canChild&&!node.archived?`<button type="button" class="btn btn-sm btn-ghost" onclick="eqv2StructureAdd('${escText(node.id)}')">＋ افزودن فرزند</button>`:''}
-        ${caps.update&&!node.archived?`<button type="button" class="btn btn-sm btn-ghost" onclick="eqv2StructureEdit('${escText(node.id)}')">ویرایش</button>`:''}
-        ${(caps.move||caps.moveAcrossEquipment)&&!node.archived?`<button type="button" class="btn btn-sm btn-ghost" onclick="eqv2StructureMove('${escText(node.id)}')">جابه‌جایی</button>`:''}
-        ${caps.archive&&!node.archived?`<button type="button" class="btn btn-sm btn-danger" onclick="eqv2StructureArchive('${escText(node.id)}')">بایگانی</button>`:''}
-        ${caps.archive&&node.archived?`<button type="button" class="btn btn-sm btn-ghost" onclick="eqv2StructureRestore('${escText(node.id)}')">بازیابی</button>`:''}
-      </div></article>`;
+        ${node.validRelation===false?'<span class="badge b-orange">رابطه ناسازگار ثبت‌شده</span>':''}
+      </td>
+      <td>${structureCell(node.code)}</td>
+      <td>${structureCell(STRUCTURE_KIND_LABEL[node.nodeKind]||node.nodeKind)}</td>
+      <td>${structureCell(brand)}</td>
+      <td>${structureCell(node.model)}</td>
+      <td>${structureCell(partNumber)}</td>
+      <td>${quantity==null?'<span class="eqv2-na">ثبت نشده</span>':escText(quantity)}</td>
+      <td>${structureCell(node.status)}</td>
+      <td>${structureCell(node.crit)}</td>
+      <td>${structureInventoryCell(node)}</td>
+      <td class="eqv2-structure-stock">${structureStockCell(node)}</td>
+      <td>${structurePurchaseCell(node)}</td>
+      <td>${structureSupplierCell(node)}</td>
+      <td class="eqv2-structure-actions">${structureRowActions(node,caps,canChild)}</td>
+    </tr>${expanded&&children.length?children.map(child=>structureRowCells(child,caps,level+1)).join(''):''}`;
+  }
+  function structureTable(nodes,caps){
+    return `<div class="eqv2-structure-table-wrap"><table class="eqv2-structure-table">
+      <thead><tr>${STRUCTURE_COLUMNS.map((column,index)=>`<th${index===0?' class="eqv2-structure-name"':''}${index===STRUCTURE_COLUMNS.length-1?' class="eqv2-structure-actions"':''}>${escText(column)}</th>`).join('')}</tr></thead>
+      <tbody>${nodes.map(node=>structureRowCells(node,caps,0)).join('')}</tbody></table></div>`;
+  }
+  function structureToggle(id){
+    E.structureExpanded[id]=E.structureExpanded[id]===false;
+    if(E.tab==='structure')renderCurrentDetail();
+  }
+  function structureEmptyState(caps){
+    return `<div class="eqv2-empty eqv2-structure-empty"><div><i>—</i>
+      <div>این تجهیز هنوز زیرسیستم، قطعه اصلی یا زیرقطعه‌ای ثبت نشده دارد.</div>
+      <div class="muted">هیچ ساختاری خودکار یا آزمایشی ساخته نمی‌شود؛ اولین سطح را خودتان ثبت کنید.</div>
+      ${caps.create?`<button type="button" class="btn btn-primary" onclick="eqv2StructureAddRoot()">افزودن زیرسیستم</button>`:''}</div></div>`;
+  }
+  function structureAddRoot(){
+    const st=E.structure;
+    if(!st||!st.root)return;
+    structureAdd(st.root.id);
   }
   function structureSuggestionPanel(){
     const st=E.structure;if(!st)return'';
@@ -364,12 +443,12 @@
       return`<section class="eqv2-section-heading"><div><span>ساختار داخلی پرونده همین تجهیز</span><h2>ساختار</h2><p>زیرسیستم‌ها، قطعات اصلی و زیرقطعات فقط داخل پرونده همین تجهیز مدیریت می‌شوند؛ رجیستری اصلی فهرست جامع و مسطح باقی می‌ماند.</p></div></section><div class="eqv2-loading">در حال دریافت ساختار تجهیز…</div>`;
     }
     if(st.error){
-      return`<section class="eqv2-section-heading"><div><span>ساختار داخلی پرونده همین تجهیز</span><h2>ساختار</h2><p>ساختار از Backend دریافت نشد: ${escText(STRUCTURE_MESSAGES[st.error]||st.error)}</p></div></section>${empty('ساختار تجهیز در دسترس نیست.')}`;
+      return`<section class="eqv2-section-heading"><div><span>ساختار داخلی پرونده همین تجهیز</span><h2>ساختار</h2><p>${escText(STRUCTURE_MESSAGES[st.error]||'ساختار از Backend دریافت نشد؛ دوباره تلاش کنید.')}</p></div></section>${empty('ساختار تجهیز در دسترس نیست.')}`;
     }
     const caps=st.capabilities||{};
     const focusNode=E.structureFocus?structureNodeById(E.structureFocus):null;
     const levelNode=focusNode||structureNodeById((E.structurePanel||[]).at(-1))||{id:st.root.id,children:st.nodes,nodeKind:'equipment',name:st.root.name};
-    const rows=(levelNode.children||[]).map(structureRow).join('');
+    const levelChildren=levelNode.children||[];
     const heading=`<section class="eqv2-section-heading"><div><span>ساختار داخلی پرونده همین تجهیز</span><h2>ساختار</h2><p>زیرسیستم ← قطعه اصلی ← زیرقطعه؛ فقط داخل پرونده همین تجهیز. رجیستری اصلی فهرست جامع و مسطح باقی می‌ماند و اجزای داخلی در آن نمایش داده نمی‌شوند.</p></div>
       <div class="eqv2-section-actions">
         ${canDo('edit')?`<button type="button" class="btn btn-sm btn-primary" onclick="eqv2OpenWizard('${escText(a.id)}','structure','structure')">ویرایش ساختار</button>`:''}
@@ -383,7 +462,11 @@
         ${[['نوع',STRUCTURE_KIND_LABEL[focusNode.nodeKind]||focusNode.nodeKind],['کد',focusNode.code],['نام',focusNode.name],
           ['نوع قطعه',focusNode.componentType],['برند',focusNode.brand],['سازنده',focusNode.manufacturer||focusNode.maker],
           ['مدل',focusNode.model],['شماره قطعه',focusNode.partNumber],['تعداد',focusNode.requiredQuantity==null?null:faText(focusNode.requiredQuantity)+(focusNode.unit?' '+focusNode.unit:'')],
-          ['وضعیت',focusNode.status],['بحرانیت',focusNode.crit],['تعداد فرزند فعال',faText((focusNode.children||[]).length)]
+          ['وضعیت',focusNode.status],['بحرانیت',focusNode.crit],['تعداد فرزند فعال',faText((focusNode.children||[]).length)],
+          ['قلم انبار مرتبط',focusNode.inventoryItem?`${focusNode.inventoryItem.code||''} — ${focusNode.inventoryItem.name||''}`:null],
+          ['موجودی واقعی (از دفتر انبار)',focusNode.stockAvailable==null?null:faText(focusNode.stockAvailable)+((focusNode.inventoryItem&&focusNode.inventoryItem.unit)?' '+(focusNode.inventoryItem.unit||''):'')],
+          ['آخرین خرید',focusNode.lastPurchase?faDate(focusNode.lastPurchase.at):null],
+          ['تأمین‌کننده آخرین خرید',focusNode.lastPurchase?focusNode.lastPurchase.supplier:null]
         ].map(([key,value])=>`<div class="eqv2-info-card"><span>${escText(key)}</span><b>${value==null||value===''?'—':escText(value)}</b></div>`).join('')}
       </div>
       <div class="eqv2-detail-grid"><div class="eqv2-info-card"><span>مشخصات فنی</span><b>${escText(focusNode.technicalSpecification||'ثبت نشده')}</b></div>
@@ -394,7 +477,7 @@
     return`${heading}${structureCrumb()}${focusCard}
       <div class="eqv2-structure-level"><b>سطح جاری: ${escText(STRUCTURE_KIND_LABEL[levelNode.nodeKind]||levelNode.nodeKind||'')} — ${escText(levelNode.name||levelNode.code||'')}</b>
       <span class="muted">${faText((levelNode.children||[]).length)} جزء در این سطح</span></div>
-      ${rows?`<div class="eqv2-structure-rows">${rows}</div>`:empty(E.structureArchived?'جزء بایگانی‌شده‌ای ثبت نشده است.':'زیرسیستم، قطعه اصلی یا زیرقطعه‌ای در این سطح ثبت نشده است؛ هیچ ساختاری خودکار ساخته نمی‌شود.')}
+      ${levelChildren.length?structureTable(levelChildren,caps):(E.structureArchived?empty('جزء بایگانی‌شده‌ای ثبت نشده است.'):structureEmptyState(caps))}
       ${structureSuggestionPanel()}`;
   }
   async function refreshStructure(options={}){
@@ -446,7 +529,7 @@
           steps.inventoryTimer=setTimeout(async()=>{
             try{
               const result=await R().inventoryItems(String(value||'').trim());
-              E.inventoryOptions=(result.data||[]).map(item=>({value:item.id,label:`${item.code} — ${item.name} · موجودی قابل دسترس: ${item.available} ${item.unit||''}`}));
+              E.inventoryOptions=(result.data||[]).map(item=>({value:item.id,label:`${item.code} — ${item.name} · موجودی واقعی (دفتر انبار): ${item.available} ${item.unit||''} · آخرین خرید: ${item.lastPurchaseAt?faDate(item.lastPurchaseAt):'ثبت نشده'}`}));
             }catch(error){E.inventoryOptions=[];}
             wizardApi&&wizardApi.render();
           },250);
@@ -1141,6 +1224,7 @@
   window.eqv2CloseSummary=closeSummary;window.eqv2DetailTab=async tab=>{if(!DETAIL_TABS.some(item=>item[0]===tab))return;E.tab=tab;await renderCurrentDetail();};window.eqv2Related=createRelated;
   window.eqv2StructureAdd=structureAdd;window.eqv2StructureEdit=structureEdit;window.eqv2StructureMove=structureMoveModal;
   window.eqv2StructureArchive=structureArchive;window.eqv2StructureRestore=structureRestore;window.eqv2StructureFocus=structureFocusNode;
+  window.eqv2StructureToggle=structureToggle;window.eqv2StructureAddRoot=structureAddRoot;
   window.eqv2StructureClose=structureClosePanel;window.eqv2StructureCrumb=structureCrumbTo;window.eqv2StructureArchivedToggle=structureArchivedToggle;
   window.eqv2StructureSuggest=structureSuggest;window.eqv2StructureApprove=structureApprove;window.eqv2StructureReject=structureReject;
   window.eqv2StructureEditSuggestion=structureEditSuggestion;window.eqv2StructureMoveSubmit=structureMoveSubmit;window.eqv2StructureCrossSearch=structureCrossSearch;

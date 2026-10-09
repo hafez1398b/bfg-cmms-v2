@@ -210,13 +210,44 @@ function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry, securi
   }));
   router.use('/actions', createSeleneActionRouter({ pool, io, security }));
 
+  // The structure dossier is always addressed by the real PostgreSQL assets.id that the
+  // equipment list returns. Addressing by the unique equipment code is opt-in and explicit
+  // through ?by=code, validated and permission-checked like any other read.
+  async function resolveStructureRootId(req, res) {
+    const mode = String(req.query.by || 'id').toLowerCase();
+    if (mode !== 'id' && mode !== 'code') {
+      res.status(422).json({ error: 'EQUIPMENT_ID_INVALID' });
+      return null;
+    }
+    const identifier = String(req.params.id == null ? '' : req.params.id).trim();
+    if (!identifier || identifier.length > 200) {
+      res.status(404).json({ error: 'EQUIPMENT_NOT_FOUND' });
+      return null;
+    }
+    if (mode === 'id') return identifier;
+    const { rows } = await pool.query(
+      `SELECT id FROM assets
+       WHERE code=$1 AND type='eq' AND deleted_at IS NULL
+         AND COALESCE(NULLIF(ext->>'nodeKind',''),'equipment') IN ('equipment','sub-equipment')
+       LIMIT 1`,
+      [identifier]
+    );
+    if (!rows[0]) {
+      res.status(404).json({ error: 'EQUIPMENT_NOT_FOUND' });
+      return null;
+    }
+    return String(rows[0].id);
+  }
+
   router.get('/:id/structure', async (req, res, next) => {
     try {
       if (!(await structurePermission(req, res, 'equipment.structure.view'))) return;
+      const rootEquipmentId = await resolveStructureRootId(req, res);
+      if (!rootEquipmentId) return;
       const canArchive = await structure.hasPermission({ pool, security, user: req.user, permission: 'equipment.structure.archive' });
       const includeArchived = req.query.includeArchived === 'true' && canArchive;
       const data = await structure.getStructure({
-        pool, security, user: req.user, rootEquipmentId: req.params.id, includeArchived
+        pool, security, user: req.user, rootEquipmentId, includeArchived
       });
       res.json({ data, source: 'postgresql' });
     } catch (error) { next(error); }
@@ -233,8 +264,10 @@ function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry, securi
 
   router.post('/:id/structure/suggestions', async (req, res, next) => {
     try {
+      const rootEquipmentId = await resolveStructureRootId(req, res);
+      if (!rootEquipmentId) return;
       const data = await suggestions.suggestStructures({
-        pool, registry: aiRegistry, security, user: req.user, rootEquipmentId: req.params.id
+        pool, registry: aiRegistry, security, user: req.user, rootEquipmentId
       });
       res.status(201).json({ data, source: 'postgresql' });
     } catch (error) { next(error); }
