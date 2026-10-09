@@ -281,15 +281,15 @@
     return{save,get rowVersion(){return rowVersion;},flush:flushAll};
   }
   function shell(title,hostId,message=''){return`${typeof root.mhead==='function'?root.mhead(esc(title)):`<div class="m-head"><h3>${esc(title)}</h3><button class="x" onclick="closeModal()">×</button></div>`}<div class="m-body" style="padding:0"><div id="${hostId}">${message?`<div class="empty">${esc(message)}</div>`:''}</div></div>`;}
-  function chooseDraft(type,title,drafts,rt){
+  function chooseDraft(type,title,drafts,rt,initialAnswers={}){
     const hostId='bfg-wizard-drafts',buttons=drafts.map(row=>`<button type="button" class="sw-option" data-sw-draft="${esc(row.id)}"><span><b>ادامهٔ پیش‌نویس</b><br><small>${esc(row.stepId||'ابتدای فرم')} — ${esc(row.updatedAt||'')}</small></span></button>`).join('');
     root.modal(`${shell(title,hostId)}<div class="sw-draft-actions"><button type="button" class="btn btn-primary" data-sw-new>شروع پیش‌نویس تازه</button></div><div class="sw-options" aria-label="پیش‌نویس‌های ذخیره‌شده">${buttons}</div><div class="sw-actions"><button type="button" class="btn btn-ghost" data-sw-close>بستن</button></div>`,true);
-    const host=root.document.getElementById(hostId);host&&host.addEventListener('click',event=>{const button=event.target.closest('[data-sw-draft],[data-sw-new],[data-sw-close]');if(!button)return;if(button.hasAttribute('data-sw-close'))return root.closeModal();if(button.hasAttribute('data-sw-new'))return startWizard(type,title,rt,null);const draft=drafts.find(row=>row.id===button.dataset.swDraft);if(draft)startWizard(type,title,rt,draft);});
+    const host=root.document.getElementById(hostId);host&&host.addEventListener('click',event=>{const button=event.target.closest('[data-sw-draft],[data-sw-new],[data-sw-close]');if(!button)return;if(button.hasAttribute('data-sw-close'))return root.closeModal();if(button.hasAttribute('data-sw-new'))return startWizard(type,title,rt,null,initialAnswers);const draft=drafts.find(row=>row.id===button.dataset.swDraft);if(draft)startWizard(type,title,rt,draft);});
   }
-  async function open(type){
+  async function open(type,initialAnswers={}){
     const title=type==='request'?'درخواست کار / ساخت و خدمات':'صدور دستورکار راهنمایی‌شده',draftPath=`/api/${type==='request'?'requests':'work-orders'}/wizard-drafts`;
-    try{if(root.modal)root.modal(shell(title,'bfg-wizard-loading','در حال دریافت فهرست‌های واقعی و پیش‌نویس‌های Backend…'),true);const[existing,rt]=await Promise.all([api(draftPath),loadRuntime(type)]);chooseDraft(type,title,payloadData(existing)||[],rt);}
-    catch(error){const host=root.document.getElementById('bfg-wizard-loading');if(host){host.innerHTML=`<div class="sw-alert" role="alert">${esc(error.payload&&error.payload.error||error.message||'اتصال Backend برقرار نشد')}</div><button type="button" class="btn btn-primary" data-sw-retry>تلاش دوباره</button>`;host.addEventListener('click',event=>{if(event.target.closest('[data-sw-retry]'))open(type);},{once:true});}}
+    try{if(root.modal)root.modal(shell(title,'bfg-wizard-loading','در حال دریافت فهرست‌های واقعی و پیش‌نویس‌های Backend…'),true);const[existing,rt]=await Promise.all([api(draftPath),loadRuntime(type)]);chooseDraft(type,title,payloadData(existing)||[],rt,initialAnswers);}
+    catch(error){const host=root.document.getElementById('bfg-wizard-loading');if(host){host.innerHTML=`<div class="sw-alert" role="alert">${esc(error.payload&&error.payload.error||error.message||'اتصال Backend برقرار نشد')}</div><button type="button" class="btn btn-primary" data-sw-retry>تلاش دوباره</button>`;host.addEventListener('click',event=>{if(event.target.closest('[data-sw-retry]'))open(type,initialAnswers);},{once:true});}}
   }
   async function loadDraft(rt,draft){const response=await api(`/api/${rt.type==='request'?'requests':'work-orders'}/wizard-drafts/${part(draft.id)}`);return payloadData(response)||draft;}
   function defaults(type){return type==='request'?{actionType:'',serviceType:'',factoryId:'',categoryId:ALL,equipmentId:'',subsystemId:'',failureType:'',failureOccurredAt:{date:'',time:''},stopProduction:'',stopOccurredAt:{date:'',time:''},stopDurationMinutes:'',urgency:'',description:'',extraDescription:'',unit:root.ME&&root.ME.unit||'',phone:'',needBy:{date:''},attachments:[]}: {requestId:'',requestRowVersion:null,workOrderType:'',factoryId:'',categoryId:ALL,equipmentId:'',subsystemId:'',priority:'',failureType:'',workDescription:'',probableCause:'',confirmedRootCause:'',recommendedAction:'',performedAction:'',estimatedHours:'',assignee:'',requiredParts:[],partQuantities:{},ptwRequired:false,ptwChoice:''};}
@@ -329,10 +329,14 @@
       await api(`/api/requests/${part(requestId)}/attachments`,{method:'POST',body:file,headers:{'content-type':file.type||'application/octet-stream','x-file-name':encodeURIComponent(file.name),'x-upload-token':token}});rt.uploadedFiles.add(file);
     }
   }
-  async function startWizard(type,title,rt,selected){
+  async function startWizard(type,title,rt,selected,initialAnswers={}){
     let draft=null,answers=defaults(type),initialStepId=null;
     try{
       if(selected){draft=await loadDraft(rt,selected);answers=restoreAnswers(type,{...answers,...(draft.draft&&draft.draft.answers||{})});initialStepId=draft.stepId||null;await prepareExisting(rt,answers);}
+      else if(initialAnswers&&typeof initialAnswers==='object'){
+        answers=restoreAnswers(type,{...answers,...initialAnswers});
+        await prepareExisting(rt,answers);
+      }
       let steps=type==='request'?requestSteps(rt):workOrderSteps(rt);
       if(!selected){const first=steps.find(step=>step.kind!=='review');const created=await api(`/api/${type==='request'?'requests':'work-orders'}/wizard-drafts`,{method:'POST',body:JSON.stringify({wizardType:type,draft:{answers:normalizedDraftAnswers(type,answers),progress:0},stepId:first.id})});draft=payloadData(created);}
       steps=type==='request'?requestSteps(rt):workOrderSteps(rt);
@@ -361,11 +365,17 @@
       state.activeWizard=wizard;
     }catch(error){
       root.modal(`${shell(title,'bfg-wizard-failure')}<div class="sw-alert" role="alert">${esc(error.payload&&error.payload.error||error.message||'ساخت ویزارد ناموفق بود')}</div><div class="sw-actions"><button type="button" class="btn btn-primary" data-sw-reopen>تلاش دوباره</button><button type="button" class="btn btn-ghost" data-sw-close>بستن</button></div>`,true);
-      const dialog=root.document.querySelector('#modalRoot .modal');dialog&&dialog.addEventListener('click',event=>{if(event.target.closest('[data-sw-close]'))root.closeModal();if(event.target.closest('[data-sw-reopen]'))open(type);});
+      const dialog=root.document.querySelector('#modalRoot .modal');dialog&&dialog.addEventListener('click',event=>{if(event.target.closest('[data-sw-close]'))root.closeModal();if(event.target.closest('[data-sw-reopen]'))open(type,selected?{}:initialAnswers);});
     }
   }
   function installCloseHook(){if(state.closeWrapped||typeof root.closeModal!=='function')return;const original=root.closeModal;root.closeModal=function(...args){if(state.activeWizard&&!state.allowClose){if(!state.closePending&&typeof state.activeWizard.cancel==='function'){state.closePending=true;Promise.resolve(state.activeWizard.cancel()).catch(()=>{}).finally(()=>{state.closePending=false;});}return;}if(state.allowClose)state.allowClose=false;if(state.activeWizard){state.activeWizard.destroy();state.activeWizard=null;}state.saver=null;state.draftId=null;state.draftVersion=null;return original.apply(this,args);};state.closeWrapped=true;}
-  function openRequest(){installCloseHook();return open('request');}
-  function openWorkOrder(){installCloseHook();return open('work_order');}
+  function linkedAssetAnswers(options={}){
+    return{
+      equipmentId:options&&options.equipmentId?String(options.equipmentId):'',
+      factoryId:options&&options.factoryId?String(options.factoryId):''
+    };
+  }
+  function openRequest(options={}){installCloseHook();return open('request',linkedAssetAnswers(options));}
+  function openWorkOrder(options={}){installCloseHook();return open('work_order',linkedAssetAnswers(options));}
   return{NONE,MAX_FILE_BYTES,ACTIONS,SERVICES,FAILURE_TYPES,PRIORITIES,WO_TYPES,mapRequestAnswers,mapWorkOrderAnswers,normalizedDraftAnswers,restoreAnswers,validAi,preflightFiles,requestSteps,workOrderSteps,configureQuantities,factoryIdFor,openRequest,openWorkOrder,_state:state};
 });

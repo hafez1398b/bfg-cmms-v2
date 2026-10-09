@@ -7,11 +7,22 @@ const HISTORY_LABEL = 'سابقه گذشته‌نگر تأییدشده توسط 
 const ACTIONS = {
   'equipment.create': { destination: 'equipment', permission: 'create', required: ['name', 'code', 'nodeKind'] },
   'equipment.complete': { destination: 'equipment.profile', permission: 'edit', required: ['targetId'] },
-  'equipment.retrospective-history': { destination: 'equipment.history', permission: 'edit', required: ['targetId', 'occurredAt', 'summary'] }
+  'equipment.retrospective-history': { destination: 'equipment.history', permission: 'edit', required: ['targetId', 'occurredAt', 'summary'] },
+  'equipment.structure.add': {
+    destination: 'equipment.structure', permission: 'equipment.structure.suggest',
+    approvalPermission: 'equipment.structure.approve_ai',
+    required: ['name', 'nodeKind', 'parentId', 'rootEquipmentId']
+  }
 };
 const VERIFIED_SOURCES = new Set(['file', 'text', 'document', 'user-confirmed-form', 'import-session']);
 const FAKE_KEYS = ['failure', 'failures', 'repair', 'repairs', 'workOrder', 'workOrders', 'downtime', 'downtimes', 'rca', 'rootCause', 'history'];
-const COMPARE_KEYS = ['name', 'code', 'maker', 'model', 'serial', 'year', 'install', 'power', 'cls', 'status', 'crit', 'location', 'notes'];
+const COMPARE_KEYS = [
+  'name', 'code', 'maker', 'model', 'serial', 'year', 'install', 'installDate', 'power', 'cls',
+  'status', 'crit', 'location', 'locationDescription', 'notes', 'functionDescription',
+  'activityType', 'manufacturerCountry', 'operationalStatus', 'responsibleUserId', 'generalNotes',
+  'technicalSpecification', 'capacity', 'panelCode', 'refrigerant', 'dailyOperatingHours',
+  'criticalityScore', 'keyParts'
+];
 
 function coded(status, code) {
   const error = new Error(code);
@@ -60,6 +71,12 @@ function assessDraft(input) {
     if (!Number.isFinite(occurred)) missing.push('occurredAt');
   }
   if (input.actionType === 'equipment.create' && proposed.nodeKind && !['equipment', 'sub-equipment', 'subsystem', 'main-component', 'sub-component'].includes(proposed.nodeKind)) missing.push('nodeKind');
+  if (input.actionType === 'equipment.create' && ['subsystem', 'main-component', 'sub-component'].includes(proposed.nodeKind)) throw coded(422, 'STRUCTURE_ACTION_REQUIRED');
+  if (input.actionType === 'equipment.structure.add') {
+    if (!['subsystem', 'main-component', 'sub-component'].includes(proposed.nodeKind)) missing.push('nodeKind');
+    if (!source || !cleanText(source.ref, 180) || !source.kind) missing.push('verifiedSource');
+    if (!evidence.length) missing.push('evidence');
+  }
   const conflicting = [];
   const current = input.current && typeof input.current === 'object' ? input.current : null;
   const accepted = new Set(Array.isArray(input.acceptConflicts) ? input.acceptConflicts : []);
@@ -77,6 +94,7 @@ function assessDraft(input) {
     actionType: input.actionType,
     destination: action.destination,
     permission: action.permission,
+    approvalPermission: action.approvalPermission || action.permission,
     proposed,
     source: source || {},
     evidence,
@@ -110,16 +128,25 @@ function publicDraft(row) {
   };
 }
 
-function createSeleneActions({ repository, commands, authorize, now = () => new Date(), ttlMs = CONFIRMATION_TTL_MS }) {
+function createSeleneActions({ repository, commands, authorize, accessDraft, now = () => new Date(), ttlMs = CONFIRMATION_TTL_MS }) {
   if (!repository || !commands || typeof authorize !== 'function') throw new Error('SELENE_ACTIONS_REQUIRE_COLLABORATORS');
 
-  function deny(user, permission) {
-    if (!authorize(user, permission)) throw coded(403, 'PERMISSION_DENIED');
+  async function deny(user, permission) {
+    if (!(await authorize(user, permission))) throw coded(403, 'PERMISSION_DENIED');
+  }
+
+  async function assertDraftAccess(user, draft, operation) {
+    if (!draft) throw coded(404, 'DRAFT_NOT_FOUND');
+    if (draft.createdBy === user.id) return;
+    const action = ACTIONS[draft.actionType];
+    if (!action?.approvalPermission || typeof accessDraft !== 'function'
+        || !(await accessDraft(user, draft, operation))) throw coded(404, 'DRAFT_NOT_FOUND');
+    await deny(user, action.approvalPermission);
   }
 
   async function createDraft(user, input) {
     const assessed = assessDraft(input);
-    deny(user, assessed.permission);
+    await deny(user, assessed.permission);
     const row = await repository.insertDraft({
       ...assessed,
       id: crypto.randomUUID(),
@@ -133,13 +160,13 @@ function createSeleneActions({ repository, commands, authorize, now = () => new 
 
   async function getDraft(user, id) {
     const row = await repository.getDraft(id);
-    if (!row || row.createdBy !== user.id) throw coded(404, 'DRAFT_NOT_FOUND');
+    await assertDraftAccess(user, row, 'view');
     return publicDraft(row);
   }
 
   async function editDraft(user, id, input) {
     const current = await repository.getDraft(id);
-    if (!current || current.createdBy !== user.id) throw coded(404, 'DRAFT_NOT_FOUND');
+    await assertDraftAccess(user, current, 'edit');
     if (current.status === 'executed' || current.status === 'rejected') throw coded(409, 'DRAFT_CLOSED');
     if (input.rowVersion != null && Number(input.rowVersion) !== Number(current.rowVersion)) throw coded(409, 'VERSION_CONFLICT');
     const assessed = assessDraft({
@@ -153,7 +180,7 @@ function createSeleneActions({ repository, commands, authorize, now = () => new 
       recordVersion: input.recordVersion === undefined ? current.recordVersion : input.recordVersion,
       targetId: input.targetId === undefined ? current.targetId : input.targetId
     });
-    deny(user, assessed.permission);
+    await deny(user, assessed.permission);
     const row = await repository.updateDraft(id, {
       ...assessed,
       updatedAt: now().toISOString(),
@@ -165,8 +192,8 @@ function createSeleneActions({ repository, commands, authorize, now = () => new 
   async function confirmDraft(user, id) {
     return repository.transaction(async tx => {
       const draft = await tx.lockDraft(id);
-      if (!draft || draft.createdBy !== user.id) throw coded(404, 'DRAFT_NOT_FOUND');
-      deny(user, ACTIONS[draft.actionType].permission);
+      await assertDraftAccess(user, draft, 'confirm');
+      await deny(user, ACTIONS[draft.actionType].approvalPermission || ACTIONS[draft.actionType].permission);
       if (draft.status === 'incomplete') throw coded(422, 'DRAFT_INCOMPLETE');
       if (draft.status === 'conflict') throw coded(409, 'DRAFT_CONFLICT');
       if (draft.status !== 'pending') throw coded(409, 'DRAFT_CLOSED');
@@ -187,7 +214,7 @@ function createSeleneActions({ repository, commands, authorize, now = () => new 
 
   async function rejectDraft(user, id) {
     const draft = await repository.getDraft(id);
-    if (!draft || draft.createdBy !== user.id) throw coded(404, 'DRAFT_NOT_FOUND');
+    await assertDraftAccess(user, draft, 'reject');
     if (draft.status === 'executed') throw coded(409, 'DRAFT_CLOSED');
     const row = await repository.updateDraft(id, { status: 'rejected', updatedAt: now().toISOString(), rowVersion: Number(draft.rowVersion) + 1 });
     return publicDraft(row);
@@ -210,16 +237,16 @@ function createSeleneActions({ repository, commands, authorize, now = () => new 
       if (confirmation.usedAt) throw coded(409, 'CONFIRMATION_USED');
       if (Date.parse(confirmation.expiresAt) <= now().getTime()) throw coded(409, 'CONFIRMATION_EXPIRED');
       const draft = await tx.lockDraft(id);
-      if (!draft || draft.createdBy !== user.id) throw coded(404, 'DRAFT_NOT_FOUND');
-      deny(user, ACTIONS[draft.actionType].permission);
+      await assertDraftAccess(user, draft, 'execute');
+      await deny(user, ACTIONS[draft.actionType].approvalPermission || ACTIONS[draft.actionType].permission);
       if (draft.status !== 'pending') throw coded(draft.status === 'incomplete' ? 422 : 409, draft.status === 'incomplete' ? 'DRAFT_INCOMPLETE' : 'DRAFT_CLOSED');
       if (Number(confirmation.recordVersion) !== Number(draft.recordVersion) && !(confirmation.recordVersion == null && draft.recordVersion == null)) throw coded(409, 'VERSION_CONFLICT');
       const applied = await commands.apply(tx.client, user, clone(draft));
       await tx.markUsed(confirmation.id, requestId, now().toISOString());
       await tx.markExecuted(draft.id, now().toISOString());
-      return applied;
+      return { actionType: draft.actionType, data: applied };
     });
-    return { committed: true, data: result };
+    return { committed: true, ...result };
   }
 
   return { createDraft, getDraft, editDraft, confirmDraft, rejectDraft, evidenceOf, executeDraft, assessDraft };
@@ -372,6 +399,7 @@ module.exports = {
   HISTORY_LABEL,
   ACTIONS,
   assessDraft,
+  publicDraft,
   createSeleneActions,
   memoryRepository,
   pgRepository

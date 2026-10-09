@@ -396,7 +396,23 @@ test('an update verifies a local backup before any migration and records the res
 
 test('numbered migrations are idempotent and the fresh schema includes the registry', () => {
   const files = updates.listMigrationFiles(path.join(root, 'migrations'));
-  assert.deepEqual(files.map(file => file.version), ['002', '003', '004', '005', '006', '007', '008', '009', '010', '011', '012', '013']);
+  assert.deepEqual(files.map(file => file.version), ['002', '003', '004', '005', '006', '007', '008', '009', '010', '011', '012', '013', '014', '015', '016']);
+  const structureMigration = read('migrations/015_digital_equipment_structure.sql');
+  assert.match(structureMigration, /equipment\.structure\.view/);
+  assert.match(structureMigration, /ON CONFLICT \(role, permission\) DO NOTHING/);
+  assert.doesNotMatch(structureMigration, /\b(DROP|TRUNCATE|DELETE)\b/i);
+  assert.match(read('schema.sql'), /equipment\.structure\.approve_ai/);
+  // 016 backfills the missing nodeKind of real legacy equipment rows so an existing
+  // equipment dossier stops answering ROOT_EQUIPMENT_NOT_FOUND. It must stay additive,
+  // re-runnable and free of any destructive statement.
+  const backfill = read('migrations/016_structure_root_equipment_backfill.sql');
+  assert.match(backfill, /NULLIF\(a\.ext->>'nodeKind',''\) IS NULL/);
+  assert.match(backfill, /jsonb_build_object\('nodeKind','equipment'\)/);
+  assert.match(backfill, /HAVING bool_or\(has_equipment_ancestor\)=false/);
+  assert.match(backfill, /CREATE INDEX IF NOT EXISTS idx_assets_structure_root_equipment/);
+  assert.doesNotMatch(backfill, /\b(DROP|TRUNCATE|DELETE)\b/i);
+  assert.doesNotMatch(backfill, /SET\s+parent\s*=/i);
+  assert.match(read('schema.sql'), /idx_assets_structure_root_equipment/);
   for (const file of files) {
     assert.match(file.filename, /^\d{3}_[a-z0-9_]+\.sql$/);
     assert.equal(updates.hasRemoteReference(file.sql), false);

@@ -9,3 +9,115 @@
 @media(max-width:1100px){.eqv2{--side:285px}.eqv2-toolbar select{min-width:105px}.eqv2-layout{grid-template-columns:minmax(0,1fr) var(--side)}.eqv2-detail-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:780px){.eqv2-layout{display:block}.eqv2-dossier{display:none}.eqv2-toolbar select{flex:1;min-width:calc(50% - 5px)}.eqv2-head .btn{padding:7px 10px}.eqv2-table-wrap{max-height:none}.eqv2-tree{max-height:none}.eqv2-main{min-height:520px}.eqv2-detail-page{padding-bottom:80px}.eqv2-detail-header{top:0;border-radius:0;margin:-14px -14px 0;padding:10px;gap:9px}.eqv2-back{position:sticky;top:0;min-width:108px;padding:8px}.eqv2-detail-identity h1{font-size:14px}.eqv2-detail-identity>div span:not(.badge){display:none}.eqv2-detail-tabs{top:75px;border-radius:0;margin:0 -14px;padding-right:14px}.eqv2-detail-body{border-radius:10px;padding:11px}.eqv2-detail-grid{grid-template-columns:1fr}.eqv2-breadcrumb{margin-top:7px}}
 @media print{.sidebar,.topbar,.eqv2-head,.eqv2-toolbar,.eqv2-dossier,.eqv2-back{display:none!important}.main{margin:0!important}.content{padding:0!important}.eqv2-layout{display:block}.eqv2-main,.eqv2-detail-body{border:0;box-shadow:none}.eqv2-table-wrap{max-height:none;overflow:visible}.eqv2-detail-header,.eqv2-detail-tabs{position:static}.eqv2-detail-grid{grid-template-columns:repeat(2,1fr)}}
+
+/* Phase 1 dossier: compact RTL header, exact 11-section navigation and shared wizard. */
+.eqv2-compact-header{display:grid;grid-template-columns:auto minmax(180px,1fr) auto;gap:12px;padding:10px 12px;align-items:center}
+.eqv2-header-primary{display:flex;align-items:center;gap:9px;min-width:0}
+.eqv2-header-primary h1{font-size:15px;line-height:1.5;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.eqv2-header-meta{display:flex;gap:6px 12px;align-items:center;flex-wrap:wrap;margin-top:5px;color:var(--text-2);font-size:10px}
+.eqv2-detail-actions{display:flex;gap:5px;align-items:center;justify-content:flex-end;flex-wrap:wrap}
+.eqv2-breadcrumb{font-size:10px;color:var(--text-3);direction:rtl}
+.eqv2-breadcrumb i{font-style:normal;color:var(--border-2);padding-inline:3px}
+.eqv2-breadcrumb .current{color:var(--text);font-weight:800}
+.eqv2-detail-tabs{top:125px}
+.eqv2-detail-tabs button{font-size:10px;padding:8px 10px}
+.eqv2-detail-body{padding:15px}
+.eqv2-section-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin:0 0 12px}
+.eqv2-section-heading h2{font-size:16px;margin:2px 0}
+.eqv2-section-heading p,.eqv2-section-heading>div>span{font-size:10px;color:var(--text-3);line-height:1.7}
+.eqv2-section-actions{display:flex;gap:6px;flex-wrap:wrap}
+.eqv2-path-card{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:12px}
+.eqv2-path-card>b{font-size:10px;color:var(--text-3)}
+.eqv2-path-card>div{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:7px;font-size:11px}
+.eqv2-path-card i{font-style:normal;color:var(--text-3)}
+.eqv2-subsection{margin-top:16px}
+.eqv2-subsection h3{font-size:12px;margin:0 0 8px}
+.eqv2-subsection>.muted{font-size:10px;margin-bottom:7px}
+.eqv2-checklist{padding-right:20px;margin:8px 0 0;color:var(--text-2);font-size:11px;line-height:1.9}
+.eqv2-record-list details{margin-top:8px;font-size:10.5px}
+.eqv2-record-list summary{cursor:pointer;color:var(--primary)}
+.eqv2-wizard-modal{padding:0!important;max-height:min(80vh,820px);overflow:auto}
+#eqv2WizardHost{min-width:0}
+.eqv2-wizard-evidence,.eqv2-wizard-note,.eqv2-structure-evidence{margin:10px 0;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2);font-size:10.5px;line-height:1.8}
+.eqv2-wizard-evidence{display:grid;gap:3px;background:var(--blue-bg);border-color:color-mix(in srgb,var(--primary) 20%,var(--border))}
+.eqv2-wizard-evidence b,.eqv2-structure-evidence b{color:var(--primary)}
+.eqv2-wizard-evidence span,.eqv2-wizard-evidence small,.eqv2-structure-evidence span{color:var(--text-2)}
+.eqv2-conflict-panel{display:grid;gap:7px;margin-top:10px;padding:11px;border-radius:11px;border:1px solid color-mix(in srgb,var(--orange) 50%,var(--border));background:var(--orange-bg)}
+.eqv2-conflict-panel> b{font-size:11px;color:var(--orange)}
+.eqv2-conflict-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center;padding:7px;border-radius:8px;background:var(--surface)}
+.eqv2-conflict-row span{display:grid;gap:3px}.eqv2-conflict-row b{font-size:10px}.eqv2-conflict-row small,.eqv2-conflict-row em{font-size:9px;color:var(--text-2);font-style:normal}
+.eqv2-conflict-row input{width:17px;height:17px}
+.eqv2-structure-evidence{background:var(--surface-2)}
+.eqv2-structure-evidence p{margin:5px 0;color:var(--text-2);font-size:11px}
+.eqv2-wizard-maintenance{display:grid;gap:8px}
+.eqv2-wizard-pm-list{display:grid;gap:7px}
+.eqv2-wizard-pm-list article{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;padding:10px;border:1px solid var(--border);border-radius:9px;background:var(--surface-2)}
+.eqv2-wizard-pm-list article b{font-size:11px}.eqv2-wizard-pm-list article span{font-size:10px;color:var(--primary)}
+.eqv2-wizard-pm-list article small{grid-column:1/-1;font-size:9px;color:var(--text-3)}
+@media(max-width:780px){
+  .eqv2-compact-header{grid-template-columns:1fr auto;position:relative;top:0;margin:0 -10px;border-radius:0;gap:8px;padding:9px 10px}
+  .eqv2-compact-header .eqv2-back{position:static;grid-column:1/-1;justify-self:start}
+  .eqv2-header-primary h1{font-size:13px}
+  .eqv2-header-meta{font-size:9px;gap:4px 8px}
+  .eqv2-detail-actions{grid-column:1/-1;justify-content:flex-start}
+  .eqv2-detail-actions .btn{font-size:9px;padding:6px 8px}
+  .eqv2-detail-tabs{top:0;position:sticky;margin:0 -10px;padding:6px;z-index:13}
+  .eqv2-section-heading{display:grid}
+  .eqv2-conflict-row{grid-template-columns:minmax(0,1fr) auto}
+  .eqv2-conflict-row em{grid-column:1/-1}
+  .eqv2-detail-body{padding:10px}
+  .eqv2-wizard-modal{max-height:76vh}
+}
+
+/* Phase 2: internal equipment structure, dossier-scoped hierarchy and detail panel. */
+.eqv2-structure-crumbs{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin:0 0 10px;padding:8px 10px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2);font-size:10px}
+.eqv2-structure-crumbs button{border:0;background:transparent;color:var(--blue);font:600 10px inherit;cursor:pointer;padding:2px 4px;border-radius:6px}
+.eqv2-structure-crumbs button.current{color:var(--text);font-weight:800}
+.eqv2-structure-crumbs i{font-style:normal;color:var(--border-2)}
+.eqv2-structure-level{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:4px 0 8px;font-size:10.5px}
+.eqv2-structure-level b{font-size:11px}
+.eqv2-structure-rows{display:grid;gap:8px}
+.eqv2-structure-row{border:1px solid var(--border);background:var(--surface-2);border-radius:11px;padding:10px 12px;display:grid;gap:7px}
+.eqv2-structure-main{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.eqv2-structure-main b{font-size:11.5px}
+.eqv2-structure-meta{display:flex;gap:6px 14px;flex-wrap:wrap;color:var(--text-2);font-size:10px}
+.eqv2-structure-actions{display:flex;gap:5px;flex-wrap:wrap}
+.eqv2-structure-actions .btn{font-size:9.5px;padding:6px 9px}
+.eqv2-structure-panel{border:1px solid color-mix(in srgb,var(--primary) 30%,var(--border));background:var(--blue-bg);border-radius:12px;padding:12px;margin:0 0 12px}
+.eqv2-structure-panel-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:9px}
+.eqv2-structure-panel-head b{font-size:12px}
+.eqv2-structure-inventory{margin-top:10px;padding:9px 11px;border:1px dashed var(--border-2);border-radius:10px;background:var(--surface);display:grid;gap:4px;font-size:10px;color:var(--text-2)}
+.eqv2-structure-inventory b{font-size:10.5px;color:var(--text)}
+.eqv2-structure-suggestions{border-top:1px dashed var(--border-2);padding-top:10px}
+.eqv2-structure-suggestion{border:1px solid var(--border);border-radius:10px;background:var(--surface-2);padding:10px 12px;margin-top:8px;display:grid;gap:5px}
+.eqv2-structure-suggestion p{font-size:10px;color:var(--text-2);margin:0}
+/* Hierarchy table: تجهیز ← زیرسیستم ← قطعه اصلی ← زیرقطعه with expandable rows. */
+.eqv2-structure-table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:11px;background:var(--surface-2);-webkit-overflow-scrolling:touch}
+.eqv2-structure-table{width:100%;border-collapse:collapse;font-size:10.5px;min-width:1180px}
+.eqv2-structure-table th{position:sticky;top:0;background:var(--surface);color:var(--text-2);font-weight:700;font-size:9.5px;text-align:right;padding:8px 9px;border-bottom:1px solid var(--border);white-space:nowrap;z-index:1}
+.eqv2-structure-table td{padding:7px 9px;border-bottom:1px solid var(--border);vertical-align:middle;color:var(--text)}
+.eqv2-structure-table tbody tr:last-child td{border-bottom:0}
+.eqv2-structure-table tbody tr:hover td{background:color-mix(in srgb,var(--primary) 5%,transparent)}
+.eqv2-structure-tr.is-archived td{opacity:.62}
+.eqv2-structure-tr.is-invalid td{background:color-mix(in srgb,var(--orange) 7%,transparent)}
+.eqv2-structure-name{min-width:220px;white-space:normal}
+.eqv2-structure-name b{font-size:11px;margin-inline-end:6px}
+td.eqv2-structure-name{padding-inline-start:calc(9px + (var(--eqv2-level,0) * 18px))}
+.eqv2-structure-toggle{border:1px solid var(--border-2);background:var(--surface);color:var(--text-2);width:20px;height:20px;border-radius:6px;cursor:pointer;font:700 10px/1 inherit;margin-inline-end:6px}
+.eqv2-structure-toggle:hover{border-color:var(--primary);color:var(--primary)}
+.eqv2-structure-leaf{display:inline-block;width:20px;margin-inline-end:6px}
+.eqv2-structure-stock{white-space:nowrap;font-variant-numeric:tabular-nums}
+td.eqv2-structure-actions{min-width:250px}
+td.eqv2-structure-actions .eqv2-structure-actions,.eqv2-structure-table td .eqv2-structure-actions{display:flex;gap:5px;flex-wrap:wrap}
+.eqv2-structure-empty{gap:8px}
+.eqv2-structure-empty .btn{margin-top:6px}
+.eqv2-na{color:var(--text-2);font-size:9.5px}
+@media(max-width:780px){
+  .eqv2-structure-panel{position:fixed;inset:0;z-index:70;overflow:auto;border-radius:0;margin:0;background:var(--surface);padding:14px}
+  .eqv2-structure-row{padding:9px}
+  .eqv2-structure-meta{gap:4px 10px}
+  .eqv2-structure-table{min-width:940px;font-size:10px}
+  .eqv2-structure-name{min-width:170px}
+  td.eqv2-structure-actions{min-width:190px}
+  td.eqv2-structure-name{padding-inline-start:calc(7px + (var(--eqv2-level,0) * 13px))}
+}
