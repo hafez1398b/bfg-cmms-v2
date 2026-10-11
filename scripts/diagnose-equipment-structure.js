@@ -131,18 +131,26 @@ async function main() {
            )
            SELECT id, code, type, node_kind, depth FROM ancestry
            WHERE type='eq' AND node_kind NOT IN ('subsystem','main-component','sub-component','sub','sys','panel')
-           ORDER BY CASE WHEN node_kind IN ('equipment','sub-equipment') THEN 0 ELSE 1 END, depth DESC
+           ORDER BY CASE WHEN node_kind IN ('equipment','sub-equipment') THEN 0 ELSE 1 END, depth ASC
            LIMIT 1`,
           [row.id]
         );
         if (!chain.rows.length) {
-          console.log('resolver result: NONE → the API answers 404 ROOT_EQUIPMENT_NOT_FOUND');
+          console.log('resolver result: NONE → the API answers 404 ROOT_EQUIPMENT_NOT_FOUND for this row');
         } else {
           const resolved = chain.rows[0];
           console.log('resolver result: id=' + resolved.id, '| code=' + value(resolved, 'code'), '| kind=' + resolved.node_kind);
-          console.log(String(resolved.id) === String(row.id)
-            ? 'self-resolution OK → the API answers 200 with this row as the structure root'
-            : `MISMATCH → the API answers 404 PARENT_OUTSIDE_ROOT_EQUIPMENT because the real root is ${resolved.id}`);
+          if (String(resolved.id) === String(row.id)) {
+            console.log('self-resolution OK → the API answers 200 with this row as the structure root');
+          } else if (registryListsIt(row)) {
+            // A row listed by the registry is a structure root on its own: its parent is a
+            // location node (factory, site, area, line, unit or category) which is preserved
+            // as-is and never forced inside rootEquipmentId.
+            console.log('listed by the registry → the API answers 200 with THIS row as the structure root;');
+            console.log(`  its parent ${value(row, 'parent')} is a location/grouping node kept outside the internal structure`);
+          } else {
+            console.log(`internal node → it belongs to the structure of ${resolved.id}`);
+          }
         }
       }
       return;

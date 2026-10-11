@@ -483,7 +483,10 @@
       ${structureInventoryCard(focusNode)}
       ${Array.isArray(focusNode.diagnostics)&&focusNode.diagnostics.length?`<div class="eqv2-wizard-note">${focusNode.diagnostics.map(item=>escText(item.message)).join(' ')}</div>`:''}
     </section>`:'';
-    return`${heading}${structureCrumb()}${focusCard}
+    // The root's own location/category parent is reported as an explanatory note, never as an error.
+    const rootNotes=Array.isArray(st.diagnostics)&&st.diagnostics.length
+      ?`<div class="eqv2-wizard-note">${st.diagnostics.map(item=>escText(item.message||'')).filter(Boolean).join(' ')}</div>`:'';
+    return`${heading}${rootNotes}${structureCrumb()}${focusCard}
       <div class="eqv2-structure-level"><b>سطح جاری: ${escText(STRUCTURE_KIND_LABEL[levelNode.nodeKind]||levelNode.nodeKind||'')} — ${escText(levelNode.name||levelNode.code||'')}</b>
       <span class="muted">${faText((levelNode.children||[]).length)} جزء در این سطح</span></div>
       ${levelChildren.length?structureTable(levelChildren,caps):(E.structureArchived?empty('جزء بایگانی‌شده‌ای ثبت نشده است.'):structureEmptyState(caps))}

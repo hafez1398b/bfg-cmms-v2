@@ -236,3 +236,72 @@ node scripts/diagnose-equipment-structure.js B1P01
   ۱۶ تست جدید ۳۳–۴۸). تست ۳۶ برای رفتار جدید **قوی‌تر** شد و تست‌های ۴۵ تا ۴۸
   `nodeKind` غیرمنتظره، تفکیک `detailKey`/`detailId`، `rootAllowedChildren` و
   فقط‌خواندنی‌بودن اسکریپت تشخیص را پوشش می‌دهند.
+
+## Change 6 — اصلاح `PARENT_OUTSIDE_ROOT_EQUIPMENT` روی دادهٔ واقعی (والد مکانی تجهیز ریشه)
+
+### صورت مسئله در محیط واقعی
+
+پس از اعمال `d283aa8` روی PostgreSQL واقعی و اجرای موفق migrationهای ۰۰۲ تا ۰۱۶، خطای
+`ROOT_EQUIPMENT_NOT_FOUND` برطرف شد، اما بازکردن تب «ساختار» برای تجهیز واقعی `B1P01`
+سه بار این خطا را در Log ثبت می‌کرد:
+
+```
+PARENT_OUTSIDE_ROOT_EQUIPMENT
+```
+
+سه ورودی Log = سه بارخوانی ساختار در یک بار بازکردن تب (`structureSection`،
+`refreshStructure` و پنل پیشنهاد سلن).
+
+### علت دقیق
+
+دو تعریف متفاوت از «تجهیز ریشه» در کد وجود داشت:
+
+1. **رجیستری جامع** (`server/equipment-routes.js`) یک رکورد را تجهیز ریشه می‌داند اگر
+   `type='eq'` باشد و **والد بلافصل** آن یک ردیف `type='eq'` فعال نباشد:
+   `AND NOT EXISTS(SELECT 1 FROM assets structural_parent WHERE structural_parent.id=a.parent AND structural_parent.type='eq' ...)`.
+2. **resolver ساختار** (`resolveRootEquipment` در `server/equipment-structure.js`) با
+   `WITH RECURSIVE` **کل زنجیرهٔ والد** را بالا می‌رفت و با
+   `ORDER BY ... depth DESC` **بالاترین** جدّ تجهیز را برمی‌گرداند.
+
+سپس `rootEquipmentById` نتیجهٔ resolver را با شناسهٔ درخواست‌شده مقایسه می‌کرد:
+
+```js
+if (String(resolved.id) !== String(identifier)) throw coded(404, 'PARENT_OUTSIDE_ROOT_EQUIPMENT');
+```
+
+یعنی والد مکانی/سلسله‌مراتبی خودِ تجهیز ریشه مجبور بود داخل `rootEquipmentId` قرار بگیرد.
+نتیجه: هر تجهیز واقعی که در زنجیرهٔ والدش یک ردیف `type='eq'` زنده داشت (گروه تجهیز،
+کارگاه یا سلسله‌مراتب قدیمی) روی یک **GET ساده** خطای `PARENT_OUTSIDE_ROOT_EQUIPMENT`
+می‌گرفت؛ درحالی‌که مسیر نوشتن اصلاً اجرا نشده بود.
+
+### قاعدهٔ اصلاح‌شده
+
+- `resolveRootEquipment` اکنون با `ORDER BY ... depth ASC` **نزدیک‌ترین** ردیف تجهیز را
+  برمی‌گرداند؛ دقیقاً همان تعریفی که رجیستری از ریشه دارد (والد بلافصل).
+- `rootEquipmentById` دیگر ریشه را به سمت بالا بازمحاسبه نمی‌کند. فقط بررسی می‌کند رکورد
+  واقعی باشد (`assets.id` موجود)، حذف نرم نشده باشد (`deleted_at IS NULL`) و
+  `isRegistryEquipment(row)` برقرار باشد. والدِ خودِ ریشه **هرگز** اعتبارسنجی نمی‌شود.
+- تابع جدید `assertInsideRootBoundary(client, parentId, rootId, parentRow)` مرز را فقط برای
+  **گره‌های داخلی** و **عملیات جابه‌جایی** اعمال می‌کند: یا والد همان ریشه است، یا والد یک
+  نوع داخلی (`subsystem`/`main-component`/`sub-component`) و از نوادگان ریشه است؛
+  در غیر این صورت `422 PARENT_OUTSIDE_ROOT_EQUIPMENT`.
+- در `moveStructureNode` بررسی محدودهٔ دسترسی فقط وقتی با `rootForAsset` انجام می‌شود که
+  جابه‌جایی **بین‌تجهیزی نباشد**؛ زیرا در جابه‌جایی مجازِ بین‌تجهیزی، والد مقصد همان ریشهٔ
+  مقصد است و بازمحاسبهٔ رو‌به‌بالا، ریشهٔ مبدأ را برمی‌گرداند و حرکت را نادرست رد می‌کرد.
+- والد مکانی ریشه (کارخانه/سایت/ناحیه/خط/واحد/دسته) **حذف یا تغییر نمی‌کند**؛ هیچ
+  `UPDATE assets SET parent=` یا نوشتاری روی `asset_categories` برای آن انجام نمی‌شود.
+- به‌جای خطا، یک تشخیص غیرخطایی اضافه شد: `ROOT_PARENT_OUTSIDE_STRUCTURE` با پیام فارسی
+  «والد این تجهیز یک گره مکانی/دسته‌بندی است و خارج از ساختار داخلی حفظ شده است.» که در
+  `diagnostics` پاسخ و به‌صورت یادداشت فارسی در تب ساختار نمایش داده می‌شود.
+
+### Migration جدید
+
+هیچ migration جدیدی ساخته نشد؛ این خطا منطقی بود، نه کمبود ستون. همان ۰۰۲ تا ۰۱۶ کافی است.
+
+### نتایج تست پس از Change 6
+
+- `npm test`: **۱۶۶ تست موفق، ۰ ناموفق، ۰ Skip** (۱۵۸ تست پیشین بدون حذف یا ضعیف‌سازی +
+  ۸ تست جدید ۴۹–۵۶).
+- تست‌های ۴۹ تا ۵۲ **قبل از اصلاح کد اجرایی** با همان خطای واقعی
+  `404 PARENT_OUTSIDE_ROOT_EQUIPMENT` شکست می‌خورند و پس از اصلاح موفق می‌شوند؛ هارنس تست
+  جهت واقعی `ORDER BY` کوئری را رعایت می‌کند و نتیجه را hard-code نمی‌کند.

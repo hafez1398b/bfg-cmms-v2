@@ -297,6 +297,14 @@ function buildStructureTree(root, rows = []) {
     });
   }
 
+  const rootParent = root && root.parent ? String(root.parent) : null;
+  if (rootParent) {
+    // Kept exactly as it is: the location/category relation of the root is never changed and
+    // never treated as part of the internal structure.
+    diagnostics.push(diagnostic('ROOT_PARENT_OUTSIDE_STRUCTURE', null, { id: rootParent },
+      'والد مکانی یا دسته‌ای این تجهیز بخشی از ساختار داخلی نیست و بدون تغییر حفظ شده است؛ ساختار داخلی از خود تجهیز آغاز می‌شود.'));
+  }
+
   const duplicateCodes = new Map();
   for (const node of [rootNode, ...[...indexed.values()].filter(item => item !== rootNode)]) {
     if (!node.code) continue;
@@ -418,7 +426,7 @@ async function resolveRootEquipment(client, assetId) {
      )
      SELECT id,parent,type,node_kind,category_id,depth FROM ancestry
      WHERE type='eq' AND node_kind NOT IN ('subsystem','main-component','sub-component','sub','sys','panel')
-     ORDER BY CASE WHEN node_kind IN ('equipment','sub-equipment') THEN 0 ELSE 1 END,depth DESC LIMIT 1`,
+     ORDER BY CASE WHEN node_kind IN ('equipment','sub-equipment') THEN 0 ELSE 1 END,depth ASC LIMIT 1`,
     [assetId]
   );
   return rows[0] || null;
@@ -441,10 +449,12 @@ async function rootEquipmentById(client, rootId) {
   // same record the comprehensive registry lists, so it must open its dossier.
   const kind = effectiveKindOf(row);
   if (!isRegistryEquipment(row)) throw coded(404, 'ROOT_EQUIPMENT_NOT_FOUND');
-  const resolved = await resolveRootEquipment(client, identifier);
-  // An existing root equipment without any child is valid: it resolves to itself.
-  if (!resolved) throw coded(404, 'ROOT_EQUIPMENT_NOT_FOUND');
-  if (String(resolved.id) !== String(identifier)) throw coded(404, 'PARENT_OUTSIDE_ROOT_EQUIPMENT');
+  // The internal structure starts at this equipment row. Its own parent is a location node
+  // (factory/site/area/line/unit/category) or, in older data, another equipment grouping row.
+  // Neither belongs to the internal structure, so the root is never re-resolved upwards here:
+  // forcing the root's ancestry inside rootEquipmentId rejected real equipment whose parent
+  // chain contains an equipment row, answering PARENT_OUTSIDE_ROOT_EQUIPMENT on a plain read.
+  // The parent row is left completely untouched — it is never deleted, re-parented or rewritten.
   return { ...row, node_kind: kind, factory_id: await getFactoryId(client, identifier) };
 }
 
@@ -470,6 +480,15 @@ async function rootForAsset(client, user, assetId, { requireActive = true } = {}
   if (requireActive && root.deleted_at) throw coded(404, 'EQUIPMENT_NOT_FOUND');
   await assertEquipmentScope(client, user, root.id, root.factory_id);
   return root;
+}
+
+// The boundary of a dossier structure: only subsystem / main-component / sub-component nodes
+// have to live inside the root equipment. The root's own location or category parent never does.
+async function assertInsideRootBoundary(client, parentId, rootId, parentRow = null) {
+  if (String(parentId) === String(rootId)) return true;
+  if (parentRow && !isInternalKind(kindOf(parentRow))) throw coded(422, 'PARENT_OUTSIDE_ROOT_EQUIPMENT');
+  if (!(await isDescendant(client, parentId, rootId))) throw coded(422, 'PARENT_OUTSIDE_ROOT_EQUIPMENT');
+  return true;
 }
 
 async function lockAsset(client, id, { includeArchived = false } = {}) {
@@ -688,8 +707,11 @@ async function createStructureNode({ client, pool, security, user, rootEquipment
   const root = await rootEquipmentById(client, resolvedRootId);
   await assertEquipmentScope(client, user, root.id, root.factory_id);
   const parent = await parentForNode(client, parentId, kind);
-  const parentRoot = await rootForAsset(client, user, parent.row.id);
-  if (String(parentRoot.id) !== String(root.id)) throw coded(422, 'PARENT_OUTSIDE_ROOT_EQUIPMENT');
+  await assertInsideRootBoundary(client, parent.row.id, root.id, parent.row);
+  // The scope of the addressed equipment was already asserted above. Only when the new node hangs
+  // off an internal node do we also verify that node's own equipment, so that no write escapes the
+  // user's scope while a grouping row above the root can never veto the operation.
+  if (String(parent.row.id) !== String(root.id)) await rootForAsset(client, user, parent.row.id);
   if (Number(parent.row.row_version) !== parentVersion) throw coded(409, 'VERSION_CONFLICT');
   await assertUniqueCode(client, code);
   const nodeId = uuid();
@@ -800,6 +822,11 @@ async function moveStructureNode({ client, pool, security, user, id, input = {} 
   const parentRow = await lockAsset(client, parentId);
   if (await isDescendant(client, parentId, current.id)) throw coded(422, 'TREE_CYCLE');
   validateParentKind(kindOf(current), effectiveKindOf(parentRow), parentRow);
+  await assertInsideRootBoundary(client, parentRow.id, destinationRoot.id, parentRow);
+  // Inside the same equipment the parent's own root is verified; for an allowed cross-equipment
+  // move the destination parent is the destination root itself, so re-resolving it upwards would
+  // return the source root and wrongly reject the move.
+  if (!isCrossEquipment) await rootForAsset(client, user, parentRow.id);
   const parent = { row: parentRow, kind: effectiveKindOf(parentRow) };
   const code = current.code || null;
   await assertUniqueCode(client, code, current.id);
@@ -903,6 +930,7 @@ module.exports = {
   resolveRootEquipment,
   rootEquipmentById,
   assertEquipmentScope,
+  assertInsideRootBoundary,
   rootForAsset,
   getStructure,
   createStructureNode,

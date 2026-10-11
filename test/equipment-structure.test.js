@@ -59,22 +59,27 @@ function structurePool(options = {}) {
   // Mirrors the production SQL exactly: COALESCE(NULLIF(ext->>'nodeKind',''),'equipment').
   // Legacy real equipment rows carry no nodeKind at all and must still resolve to themselves,
   // which is the regression that produced ROOT_EQUIPMENT_NOT_FOUND on a live database.
-  const resolveRoot = id => {
+  const INTERNAL_TEST_KINDS = ['subsystem', 'main-component', 'sub-component', 'sub', 'sys', 'panel'];
+  // Every equipment candidate in the ancestry chain, with its real depth, so the harness obeys
+  // the ORDER BY direction of the SQL under test instead of hard-coding an outcome.
+  const rootCandidates = id => {
     let current = assets.get(id);
     const seen = new Set();
-    let best = null;
+    const found = [];
+    let depth = 0;
     while (current && !seen.has(current.id)) {
       seen.add(current.id);
       const raw = current.ext && current.ext.nodeKind;
       const kind = raw == null || raw === '' ? 'equipment' : raw;
-      const internal = ['subsystem', 'main-component', 'sub-component', 'sub', 'sys', 'panel'];
-      if (current.type === 'eq' && !internal.includes(kind)) {
-        if (!best || kind === 'equipment' || kind === 'sub-equipment') best = { row: current, kind };
-      }
+      if (current.type === 'eq' && !INTERNAL_TEST_KINDS.includes(kind)) found.push({ row: current, kind, depth });
       current = assets.get(current.parent);
+      depth += 1;
     }
-    return best ? best.row : null;
+    return found;
   };
+  // Nearest equipment row wins, exactly like ORDER BY depth ASC in the corrected SQL, because the
+  // comprehensive registry defines a root equipment by looking at its immediate parent only.
+  const resolveRoot = id => rootCandidates(id).sort((a, b) => a.depth - b.depth)[0]?.row || null;
 
   async function query(sql, values = []) {
     state.calls.push({ sql, values });
@@ -82,7 +87,12 @@ function structurePool(options = {}) {
     if (/FROM user_scopes WHERE user_id=\$1/.test(sql)) return { rows: state.scoped ? [{ 1: 1 }] : [] };
     if (/WITH RECURSIVE ancestry AS/.test(sql) && /node_kind NOT IN \('subsystem','main-component','sub-component','sub','sys','panel'\)/.test(sql)) {
       assert.match(sql, /COALESCE\(NULLIF\([ap]\.ext->>'nodeKind',''\),'equipment'\)/);
-      const resolved = resolveRoot(values[0]);
+      assert.match(sql, /ORDER BY CASE WHEN node_kind IN \('equipment','sub-equipment'\) THEN 0 ELSE 1 END,depth (ASC|DESC) LIMIT 1/);
+      // Honour the direction the code under test asks for: ASC = nearest equipment (correct),
+      // DESC = topmost ancestor (the bug that produced PARENT_OUTSIDE_ROOT_EQUIPMENT on a read).
+      const desc = /,depth DESC LIMIT 1/.test(sql);
+      const candidates = rootCandidates(values[0]).sort((a, b) => desc ? b.depth - a.depth : a.depth - b.depth);
+      const resolved = candidates[0]?.row || null;
       if (!resolved) return { rows: [] };
       const raw = resolved.ext && resolved.ext.nodeKind;
       return { rows: [{ id: resolved.id, parent: resolved.parent, type: resolved.type, node_kind: raw == null || raw === '' ? 'equipment' : raw, category_id: resolved.category_id, depth: 0 }] };
@@ -137,6 +147,33 @@ function structurePool(options = {}) {
       };
       assets.set(row.id, row);
       return { rows: [row] };
+    }
+    // The dossier detail endpoint: it must keep resolving the location and the category of a root
+    // equipment whose parent is a location node, exactly like the comprehensive registry list does.
+    if (/SELECT a\.\*,c\.name category_name/.test(sql)) {
+      const detailRow = assets.get(values[0])
+        || [...assets.values()].find(row => String(row.code || '').toLowerCase() === String(values[0] || '').toLowerCase());
+      if (!detailRow || detailRow.deleted_at) return { rows: [] };
+      const detailParent = detailRow.parent ? assets.get(detailRow.parent) : null;
+      return { rows: [{ ...detailRow, category_name: 'دسته تست', factory_id: 'factory-1', factory_name: 'کارخانه بسپار ۱',
+        parent_name: detailParent ? detailParent.name : null, location_name: detailParent ? detailParent.name : null,
+        pm_plans: [], work_orders: [], maintenance_history: [], requests: [], spare_parts: [], children: [],
+        calibration_instruments: [], failures: [], checklist_executions: [], documents: [], instructions: [], movements: [] }] };
+    }
+    // The dossier breadcrumb: walk the real parent chain upwards, location nodes included.
+    if (/FROM ancestry ORDER BY depth DESC/.test(sql)) {
+      const chain = [];
+      let walk = assets.get(values[0]);
+      const guard = new Set();
+      let walkDepth = 0;
+      while (walk && !guard.has(walk.id) && walkDepth < 64) {
+        guard.add(walk.id);
+        chain.push({ id: walk.id, parent: walk.parent, code: walk.code, name: walk.name, type: walk.type,
+          nodeKind: walk.ext && walk.ext.nodeKind ? walk.ext.nodeKind : null, depth: walkDepth });
+        walk = walk.parent ? assets.get(walk.parent) : null;
+        walkDepth += 1;
+      }
+      return { rows: chain };
     }
     if (/FROM asset_spare_parts/.test(sql)) return { rows: [] };
     if (/jsonb_array_elements/.test(sql)) return { rows: [] };
@@ -1306,9 +1343,14 @@ test('47 the read-only diagnosis script exists and cannot change any data', () =
   assert.doesNotMatch(script, /\b(INSERT\s+INTO|UPDATE\s+assets|DELETE\s+FROM|DROP|TRUNCATE|ALTER\s+TABLE)\b/i);
   // It reports the exact causes instead of guessing: identifier, kind, resolver outcome.
   assert.match(script, /ROOT_EQUIPMENT_NOT_FOUND/);
-  assert.match(script, /PARENT_OUTSIDE_ROOT_EQUIPMENT/);
   assert.match(script, /EQUIPMENT_NOT_FOUND/);
   assert.match(script, /COALESCE\(NULLIF\(a\.ext->>'nodeKind',''\),'equipment'\)/);
+  // Its resolver query must stay identical to the runtime one (nearest equipment row).
+  assert.match(script, /ORDER BY CASE WHEN node_kind IN \('equipment','sub-equipment'\) THEN 0 ELSE 1 END, depth ASC/);
+  assert.match(script, /registryListsIt\(row\)/);
+  // A registry-listed root is answered 200; the location parent stays outside the structure.
+  assert.match(script, /the API answers 200 with THIS row as the structure root/);
+  assert.match(script, /location\/grouping node kept outside the internal structure/);
   assert.match(script, /npm run update:apply/);
   assert.match(script, /DATABASE_URL is not configured/);
 });
@@ -1360,4 +1402,293 @@ test('48 the backend publishes the valid root levels and the UI offers them', as
   assert.match(body, /زیرسیستم سازگار/);
   assert.match(body, /افزودن فرزند/);
   assert.match(body, /eqv2-structure-table/);
+});
+
+/* ---------- Real parent model: factory -> line -> equipment (B1P01) -> internal levels ---------- */
+
+function realParentAssets() {
+  const make = (id, parent, extra = {}) => ({
+    id, parent, code: extra.code || id.toUpperCase(), name: extra.name || id,
+    type: extra.type || 'eq', cls: null, status: 'active', crit: extra.crit || 'B',
+    maker: extra.maker || null, model: extra.model || null, serial: null,
+    ext: extra.ext === undefined ? {} : extra.ext, row_version: extra.rowVersion || 1,
+    deleted_at: extra.deletedAt || null, delete_reason: null, is_active: !extra.deletedAt,
+    sort_order: 0, category_id: extra.categoryId === undefined ? null : extra.categoryId
+  });
+  return new Map(Object.entries({
+    // Location hierarchy: a real equipment root always sits inside it.
+    'factory-1': make('factory-1', null, { type: 'site', name: 'کارخانه بسپار ۱', ext: { nodeKind: 'factory' } }),
+    'line-1': make('line-1', 'factory-1', { type: 'unit', name: 'خط یک', ext: { nodeKind: 'line' } }),
+    // Older data may also contain an equipment grouping row above the real equipment.
+    'eq-group-1': make('eq-group-1', 'line-1', { code: 'EQG-1', name: 'گروه تجهیز قدیمی', ext: { nodeKind: 'equipment' } }),
+    // The real equipment: B1P01, parent is a location/equipment grouping row, not an internal node.
+    'eq-real': make('eq-real', 'eq-group-1', { code: 'B1P01', name: 'پمپ ورودی', maker: 'Grundfos', model: 'NK-80', crit: 'A', ext: { nodeKind: 'equipment' }, categoryId: 'cat-1' }),
+    'eq-real-other': make('eq-real-other', 'line-1', { code: 'B1P02', name: 'پمپ ذخیره', ext: { nodeKind: 'equipment' } })
+  }));
+}
+
+// The live rule the user stated: location or category -> root equipment -> internal structure.
+function realLocationAssets() {
+  const assets = realParentAssets();
+  assets.get('eq-real').parent = 'line-1';
+  return assets;
+}
+
+function realParentPool(extra = {}) {
+  return structurePool({
+    assets: realParentAssets(),
+    users: [
+      { id: 'u-mgr', role: 'mgr', permissions: ['equipment.structure.view'], scopes: [{ scope_type: 'company' }] },
+      { id: 'u-out', role: 'tech', permissions: ['equipment.structure.view'], scopes: [] }
+    ],
+    ...extra
+  });
+}
+
+test('49 a real equipment root with a location parent opens its structure without PARENT_OUTSIDE_ROOT_EQUIPMENT', async () => {
+  const pool = realParentPool();
+  await withApi(pool, 'mgr', async base => {
+    const response = await fetch(`${base}/eq-real/structure`);
+    assert.equal(response.status, 200);
+    const data = (await response.json()).data;
+    assert.equal(data.rootEquipmentId, 'eq-real');
+    assert.equal(data.root.code, 'B1P01');
+    assert.deepEqual(data.nodes, []);
+    assert.equal(JSON.stringify(data).includes('PARENT_OUTSIDE_ROOT_EQUIPMENT'), false);
+  });
+  // The root must never be re-resolved upwards into its own parent chain.
+  const service = read('server/equipment-structure.js');
+  assert.doesNotMatch(service, /if \(String\(resolved\.id\) !== String\(identifier\)\) throw coded\(404, 'PARENT_OUTSIDE_ROOT_EQUIPMENT'\)/);
+  assert.match(service, /async function assertInsideRootBoundary\(client, parentId, rootId, parentRow = null\)/);
+});
+
+test('50 the same equipment root with an active equipment ancestor above it still answers 200', async () => {
+  // This is the exact live regression: the registry lists a root by looking at its immediate
+  // parent only, while the resolver walked the whole chain and returned the ancestor instead.
+  const assets = realParentAssets();
+  assert.equal(assets.get('eq-real').parent, 'eq-group-1');
+  assert.equal(assets.get('eq-group-1').type, 'eq');
+  const pool = structurePool({
+    assets,
+    users: [{ id: 'u-mgr', role: 'mgr', permissions: ['equipment.structure.view'], scopes: [{ scope_type: 'company' }] }]
+  });
+  await withApi(pool, 'mgr', async base => {
+    const response = await fetch(`${base}/eq-real/structure`);
+    assert.equal(response.status, 200);
+    const data = (await response.json()).data;
+    assert.equal(data.rootEquipmentId, 'eq-real');
+    assert.equal(data.root.code, 'B1P01');
+    // Transparent reporting instead of rejection.
+    assert.equal(data.diagnostics.some(item => item.code === 'ROOT_PARENT_OUTSIDE_STRUCTURE'), true);
+  });
+  const structureService = require('../server/equipment-structure');
+  const built = structureService.buildStructureTree(
+    { id: 'eq-real', code: 'B1P01', name: 'پمپ ورودی', parent: 'eq-group-1', row_version: 1, ext: {} },
+    []
+  );
+  const diagnostic = built.diagnostics.find(item => item.code === 'ROOT_PARENT_OUTSIDE_STRUCTURE');
+  assert.ok(diagnostic, 'the location parent of the root must be reported, not silently dropped');
+  assert.equal(diagnostic.parentId, 'eq-group-1');
+  assert.match(diagnostic.message, /حفظ شده است/);
+});
+
+test('51 subsystems under a real equipment root render and adding a subsystem directly under it is valid', async () => {
+  const assets = realParentAssets();
+  assets.set('sub-real', { ...assets.get('eq-real'), id: 'sub-real', parent: 'eq-real', code: 'B1P01-SUB', name: 'زیرسیستم هیدرولیک', ext: { nodeKind: 'subsystem' }, row_version: 2 });
+  const pool = structurePool({
+    assets,
+    users: [{ id: 'u-mgr', role: 'mgr', permissions: ['equipment.structure.view'], scopes: [{ scope_type: 'company' }] }]
+  });
+  await withApi(pool, 'mgr', async base => {
+    const view = await fetch(`${base}/eq-real/structure`);
+    assert.equal(view.status, 200);
+    const data = (await view.json()).data;
+    assert.deepEqual(data.nodes.map(node => node.code), ['B1P01-SUB']);
+    assert.equal(data.nodes[0].level, 1);
+    assert.deepEqual(data.rootAllowedChildren, ['subsystem']);
+
+    const created = await fetch(`${base}/`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ nodeKind: 'subsystem', name: 'زیرسیستم برق', code: 'B1P01-EL', parentId: 'eq-real', parentRowVersion: 1 })
+    });
+    assert.equal(created.status, 201);
+    const body = await created.json();
+    assert.equal(body.committed, true);
+    assert.equal(body.data.parent, 'eq-real');
+    assert.equal(body.data.rootEquipmentId, 'eq-real');
+    assert.equal(body.data.ext.nodeKind, 'subsystem');
+  });
+});
+
+test('52 an internal node whose parent is outside the root equipment is still rejected', async () => {
+  const pool = realParentPool();
+  await withApi(pool, 'mgr', async base => {
+    const outside = await fetch(`${base}/`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ nodeKind: 'subsystem', name: 'خارج از مرز', code: 'OUT-1', parentId: 'eq-real-other', parentRowVersion: 1, rootEquipmentId: 'eq-real' })
+    });
+    assert.equal(outside.status, 422);
+    assert.equal((await outside.json()).error, 'PARENT_OUTSIDE_ROOT_EQUIPMENT');
+    assert.equal(pool.state.calls.some(call => /INSERT INTO assets/.test(call.sql)), false);
+
+    // A location node can never be the parent of an internal component either.
+    const location = await fetch(`${base}/`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ nodeKind: 'subsystem', name: 'زیر خط تولید', code: 'OUT-2', parentId: 'line-1', parentRowVersion: 1, rootEquipmentId: 'eq-real' })
+    });
+    assert.equal(location.status, 422);
+    assert.equal((await location.json()).error, 'STRUCTURE_PARENT_KIND_INVALID');
+  });
+});
+
+test('53 moving an internal node to another equipment needs no cycle but does need confirmation, and the root relation is preserved', async () => {
+  const assets = realParentAssets();
+  assets.set('sub-real', { ...assets.get('eq-real'), id: 'sub-real', parent: 'eq-real', code: 'B1P01-SUB', name: 'زیرسیستم هیدرولیک', ext: { nodeKind: 'subsystem' }, row_version: 2 });
+  const pool = structurePool({
+    assets,
+    users: [{ id: 'u-mgr', role: 'mgr', permissions: ['equipment.structure.view'], scopes: [{ scope_type: 'company' }] }]
+  });
+  const rootBefore = { parent: pool.assets.get('eq-real').parent, categoryId: pool.assets.get('eq-real').category_id };
+  await withApi(pool, 'mgr', async base => {
+    const unconfirmed = await fetch(`${base}/sub-real/move`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ parentId: 'eq-real-other', rowVersion: 2, reason: 'انتقال' })
+    });
+    assert.equal(unconfirmed.status, 422);
+    assert.equal((await unconfirmed.json()).error, 'CROSS_EQUIPMENT_CONFIRMATION_REQUIRED');
+
+    const confirmed = await fetch(`${base}/sub-real/move`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ parentId: 'eq-real-other', rowVersion: 2, reason: 'انتقال بین تجهیزات', confirmCrossEquipment: true })
+    });
+    assert.equal(confirmed.status, 200);
+    assert.equal((await confirmed.json()).committed, true);
+    assert.equal(pool.assets.get('sub-real').parent, 'eq-real-other');
+    assert.equal(pool.state.audit.some(row => row.action === 'structure-cross-equipment-move'), true);
+  });
+  // The location/category relation of the equipment root is never touched by structure writes.
+  assert.equal(pool.assets.get('eq-real').parent, rootBefore.parent);
+  assert.equal(pool.assets.get('eq-real').category_id, rootBefore.categoryId);
+  assert.equal(pool.assets.get('eq-real').ext.nodeKind, 'equipment');
+  // The registry still resolves the location and the category of the root.
+  assert.match(read('server/equipment-routes.js'), /COALESCE\(c\.factory_asset_id,ancestry_factory\.id\) factory_id,f\.name factory_name/);
+  assert.match(read('server/equipment-routes.js'), /COALESCE\(NULLIF\(a\.ext->>'locationDescription',''\),p\.name\) location_name/);
+});
+
+test('54 the structure tab of a real equipment with a location parent shows the empty state, not an error', async () => {
+  // Full real scenario in the UI: the registry opens the dossier by code, the location parent
+  // (factory -> line -> category) stays outside the internal structure, and the tab must render
+  // the Persian empty state instead of PARENT_OUTSIDE_ROOT_EQUIPMENT.
+  const sent = [];
+  const requestedKeys = [];
+  const repository = {
+    source: 'postgresql',
+    feature: async () => ({ enabled: true }),
+    filters: async () => ({ factories: [], categories: [], locations: [], responsibleUsers: [] }),
+    list: async () => ({ data: [], pagination: { page: 1, pages: 1, total: 0, limit: 50 } }),
+    get: async key => {
+      requestedKeys.push(String(key));
+      return { data: { id: 'eq-real', code: 'B1P01', name: 'پمپ ورودی', row_version: 1, maker: 'Grundfos', model: 'NK-80', crit: 'A', status: 'active', parent: 'eq-group-1', category_id: 'cat-1', factory_id: 'factory-1', path: [], children: [], pm_plans: [], ext: { nodeKind: 'equipment' } } };
+    },
+    structure: async id => {
+      sent.push(String(id));
+      return { data: {
+        rootEquipmentId: 'eq-real', root: { id: 'eq-real', code: 'B1P01', name: 'پمپ ورودی', nodeKind: 'equipment', rowVersion: 1 },
+        rootAllowedChildren: ['subsystem'],
+        nodes: [], orphaned: [],
+        diagnostics: [{ code: 'ROOT_PARENT_OUTSIDE_STRUCTURE', parentId: 'line-1', message: 'والد این تجهیز یک گره مکانی/دسته‌بندی است و خارج از ساختار داخلی حفظ شده است.' }],
+        nodeCount: 0, includeArchived: false,
+        capabilities: { create: true, update: true, move: true, archive: true, suggest: true, approveAi: true }, suggestions: []
+      } };
+    },
+    inventoryItems: async () => ({ data: [] })
+  };
+  const harness = structureUiHarness(repository, { id: 'eq-real' });
+  harness.context.location.pathname = '/equipment/B1P01';
+  await harness.context.eqv2OpenDetail('B1P01');
+  assert.equal(harness.context.EQV2.detailKey, 'B1P01');
+  assert.equal(harness.context.EQV2.detailId, 'eq-real');
+  await harness.context.eqv2DetailTab('structure');
+  await harness.context.eqv2DetailTab('structure');
+  const body = harness.bodies.eqv2DetailBody.innerHTML;
+  assert.doesNotMatch(body, /در حال دریافت ساختار تجهیز/);
+  assert.doesNotMatch(body, /eqv2-structure-table/);
+  // Persian empty state with the add-subsystem action.
+  assert.match(body, /هنوز زیرسیستم، قطعه اصلی یا زیرقطعه‌ای ثبت نشده/);
+  assert.match(body, /افزودن زیرسیستم/);
+  // The preserved location parent is explained in Persian; no raw backend code ever reaches the UI.
+  assert.match(body, /خارج از ساختار داخلی حفظ شده است/);
+  assert.doesNotMatch(body, /ROOT_PARENT_OUTSIDE_STRUCTURE/);
+  assert.doesNotMatch(body, /PARENT_OUTSIDE_ROOT_EQUIPMENT/);
+  // The structure request is sent with the real assets.id, never with the code.
+  assert.ok(sent.length > 0, 'the structure API was never called');
+  assert.deepEqual([...new Set(sent)], ['eq-real']);
+  assert.equal(requestedKeys[0], 'B1P01');
+});
+
+test('55 the registry keeps showing the location and the category of a root equipment that has a location parent', async () => {
+  const assets = realLocationAssets();
+  assets.set('sub-real', { ...assets.get('eq-real'), id: 'sub-real', parent: 'eq-real', code: 'B1P01-SUB', name: 'زیرسیستم هیدرولیک', ext: { nodeKind: 'subsystem' }, row_version: 2 });
+  const pool = structurePool({
+    assets,
+    users: [{ id: 'u-mgr', role: 'mgr', permissions: ['equipment.view', 'equipment.structure.view'], scopes: [{ scope_type: 'company' }] }]
+  });
+  await withApi(pool, 'mgr', async base => {
+    // The structure tab of the same equipment answers 200 with its real subsystem.
+    const view = await fetch(`${base}/eq-real/structure`);
+    assert.equal(view.status, 200);
+    const data = (await view.json()).data;
+    assert.deepEqual(data.nodes.map(node => node.code), ['B1P01-SUB']);
+
+    // The dossier endpoint still resolves and returns the location and the category of the root.
+    const detail = await fetch(`${base}/eq-real`, { headers: { accept: 'application/json' } });
+    assert.equal(detail.status, 200);
+    const body = (await detail.json()).data;
+    assert.equal(body.parent, 'line-1');
+    assert.equal(body.parent_name, 'خط یک');
+    assert.equal(body.location_name, 'خط یک');
+    assert.equal(body.category_id, 'cat-1');
+    assert.equal(body.category_name, 'دسته تست');
+    assert.equal(body.factory_id, 'factory-1');
+    assert.equal(body.factory_name, 'کارخانه بسپار ۱');
+  });
+  // Nothing about the location relation of the root was changed by the structure operations.
+  const rootRow = pool.assets.get('eq-real');
+  assert.equal(rootRow.parent, 'line-1');
+  assert.equal(rootRow.category_id, 'cat-1');
+  assert.equal(rootRow.ext.nodeKind, 'equipment');
+  assert.equal(rootRow.deleted_at, null);
+  assert.equal(pool.state.calls.some(call => /UPDATE assets SET parent=/.test(call.sql) && call.values.includes('eq-real')), false);
+  assert.equal(pool.state.calls.some(call => /UPDATE asset_categories/.test(call.sql)), false);
+  // The registry list and the dossier endpoint both keep their immediate-parent rule untouched.
+  const routes = read('server/equipment-routes.js');
+  assert.match(routes, /NOT EXISTS\(SELECT 1 FROM assets structural_parent WHERE structural_parent\.id=a\.parent/);
+  assert.equal((routes.match(/NOT EXISTS\(SELECT 1 FROM assets structural_parent/g) || []).length, 2);
+});
+
+test('56 internal descendants still answer ROOT_EQUIPMENT_NOT_FOUND and never PARENT_OUTSIDE_ROOT_EQUIPMENT on a read', async () => {
+  const assets = realParentAssets();
+  assets.set('sub-real', { ...assets.get('eq-real'), id: 'sub-real', parent: 'eq-real', code: 'B1P01-SUB', name: 'زیرسیستم هیدرولیک', ext: { nodeKind: 'subsystem' }, row_version: 2 });
+  const pool = structurePool({
+    assets,
+    users: [{ id: 'u-mgr', role: 'mgr', permissions: ['equipment.structure.view'], scopes: [{ scope_type: 'company' }] }]
+  });
+  await withApi(pool, 'mgr', async base => {
+    const internal = await fetch(`${base}/sub-real/structure`);
+    assert.equal(internal.status, 404);
+    assert.equal((await internal.json()).error, 'ROOT_EQUIPMENT_NOT_FOUND');
+    const missing = await fetch(`${base}/no-such-equipment/structure`);
+    assert.equal(missing.status, 404);
+    assert.equal((await missing.json()).error, 'EQUIPMENT_NOT_FOUND');
+    const locationRoot = await fetch(`${base}/line-1/structure`);
+    assert.equal(locationRoot.status, 404);
+    assert.equal((await locationRoot.json()).error, 'ROOT_EQUIPMENT_NOT_FOUND');
+  });
+  // A plain read must never answer the write-side boundary error again.
+  const bodies = pool.state.calls.map(call => call.sql).join('\n');
+  assert.ok(bodies.length > 0);
+  const service = read('server/equipment-structure.js');
+  assert.equal((service.match(/PARENT_OUTSIDE_ROOT_EQUIPMENT/g) || []).length >= 2, true);
+  assert.match(service, /async function assertInsideRootBoundary\(client, parentId, rootId, parentRow = null\)/);
+  assert.doesNotMatch(service, /resolved\.id\) !== String\(identifier\)/);
 });
