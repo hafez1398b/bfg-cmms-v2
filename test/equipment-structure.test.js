@@ -1121,3 +1121,101 @@ test('43 the structure tab renders the real hierarchy with every column and the 
   assert.match(failBody, /این رکورد تجهیز ریشه‌ای نیست/);
   assert.doesNotMatch(failBody, />ROOT_EQUIPMENT_NOT_FOUND</);
 });
+
+test('44 the whole subsystem / main-component / sub-component chain is operational on real legacy equipment', async () => {
+  // The exact local acceptance scenario: an existing equipment row with no nodeKind and no
+  // child, then adding all three levels through the existing equipment endpoints.
+  const pool = legacyPool();
+  await withApi(pool, 'mgr', async base => {
+    const before = await fetch(`${base}/b1p01/structure`);
+    assert.equal(before.status, 200);
+    assert.deepEqual((await before.json()).data.nodes, []);
+
+    // 13 — افزودن زیرسیستم زیر تجهیز واقعی
+    const subsystem = await fetch(`${base}/`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ nodeKind: 'subsystem', name: 'زیرسیستم هیدرولیک', code: 'B1P01-SUB', parentId: 'b1p01', parentRowVersion: 4, requiredQuantity: 1 })
+    });
+    assert.equal(subsystem.status, 201);
+    const subBody = await subsystem.json();
+    assert.equal(subBody.committed, true);
+    const subId = subBody.data.id;
+    assert.equal(subBody.data.parent, 'b1p01');
+    assert.equal(subBody.data.ext.nodeKind, 'subsystem');
+    assert.equal(subBody.data.rootEquipmentId, 'b1p01');
+
+    // 14 — افزودن قطعه اصلی زیر زیرسیستم
+    const component = await fetch(`${base}/`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ nodeKind: 'main-component', name: 'مکانیکال سیل', code: 'B1P01-CMP', parentId: subId, parentRowVersion: subBody.data.row_version, partNumber: 'MS-40', brand: 'SKF', model: 'MS-40', requiredQuantity: 2 })
+    });
+    assert.equal(component.status, 201);
+    const compBody = await component.json();
+    const compId = compBody.data.id;
+    assert.equal(compBody.data.ext.nodeKind, 'main-component');
+    assert.equal(compBody.data.ext.partNumber, 'MS-40');
+    assert.equal(compBody.data.ext.brand, 'SKF');
+
+    // 15 — افزودن زیرقطعه زیر قطعه اصلی
+    const subComponent = await fetch(`${base}/`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ nodeKind: 'sub-component', name: 'اورینگ', code: 'B1P01-ORT', parentId: compId, parentRowVersion: compBody.data.row_version, requiredQuantity: 4 })
+    });
+    assert.equal(subComponent.status, 201);
+    assert.equal((await subComponent.json()).data.ext.nodeKind, 'sub-component');
+
+    // A rejected level: a sub-component may not sit directly under the equipment root.
+    const invalid = await fetch(`${base}/`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ nodeKind: 'sub-component', name: 'غلط', code: 'B1P01-BAD', parentId: 'b1p01', parentRowVersion: 99 })
+    });
+    assert.equal(invalid.status, 422);
+    assert.equal((await invalid.json()).error, 'STRUCTURE_PARENT_KIND_INVALID');
+
+    // 7 — the real hierarchy now reads back as تجهیز ← زیرسیستم ← قطعه اصلی ← زیرقطعه
+    const after = await fetch(`${base}/b1p01/structure`);
+    assert.equal(after.status, 200);
+    const data = (await after.json()).data;
+    assert.equal(data.rootEquipmentId, 'b1p01');
+    assert.equal(data.root.code, 'B1P01');
+    assert.equal(data.nodeCount, 3);
+    assert.deepEqual(data.nodes.map(node => node.code), ['B1P01-SUB']);
+    assert.equal(data.nodes[0].level, 1);
+    assert.equal(data.nodes[0].children[0].code, 'B1P01-CMP');
+    assert.equal(data.nodes[0].children[0].level, 2);
+    assert.equal(data.nodes[0].children[0].children[0].code, 'B1P01-ORT');
+    assert.equal(data.nodes[0].children[0].children[0].level, 3);
+    assert.equal(data.nodes[0].children[0].partNumber, 'MS-40');
+    assert.equal(data.nodes[0].children[0].brand, 'SKF');
+
+    // 21 — every write is recorded in audit_x
+    const actions = pool.state.audit.map(row => row.action);
+    assert.equal(actions.filter(action => action === 'structure-create').length, 3);
+
+    // 20 — row_version is mandatory and a stale version is rejected
+    const stale = await fetch(`${base}/${subId}`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'ویرایش با نسخهٔ قدیمی', rowVersion: 1 })
+    });
+    assert.equal(stale.status, 409);
+    assert.equal((await stale.json()).error, 'VERSION_CONFLICT');
+    const missingVersion = await fetch(`${base}/${subId}`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'بدون نسخه' })
+    });
+    assert.equal(missingVersion.status, 422);
+    assert.equal((await missingVersion.json()).error, 'ROW_VERSION_REQUIRED');
+
+    // 16 — editing with the current version works
+    const current = (await (await fetch(`${base}/b1p01/structure`)).json()).data.nodes[0];
+    const edited = await fetch(`${base}/${subId}`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'زیرسیستم هیدرولیک اصلاح‌شده', rowVersion: current.rowVersion })
+    });
+    assert.equal(edited.status, 200);
+    assert.equal((await edited.json()).committed, true);
+
+    // 3 — the internal components never appear in the flat comprehensive registry
+    assert.match(read('server/equipment-routes.js'), /NOT IN \('sub-equipment','subsystem','main-component','sub-component','sub','sys','panel'\)/);
+  });
+});
