@@ -18,7 +18,7 @@
     status:saved.status||'',criticality:saved.criticality||'',sort:saved.sort||'sortOrder',direction:saved.direction||'asc',
     selected:saved.selected||null,columns:Array.isArray(saved.columns)&&saved.columns.length?saved.columns:DEFAULT_COLUMNS,
     scroll:{list:saved.listScroll||0,window:saved.windowScroll||0},
-    tab:'technical',detail:false,detailKey:null,rows:[],pagination:null,
+    tab:'technical',detail:false,detailKey:null,detailId:null,rows:[],pagination:null,
     options:{factories:[],categories:[],locations:[],responsibleUsers:[]},routeBusy:false,
     intakeReturn:null,wizard:null,
     structure:null,structurePanel:[],structureFocus:null,structureArchived:false,structureLoading:false,
@@ -73,7 +73,7 @@
 
   function equipmentModuleAllowed(){return !window.BFGModules||typeof window.BFGModules.allows!=='function'||window.BFGModules.allows('equipment');}
   function page(){
-    E.detail=false;E.detailKey=null;
+    E.detail=false;E.detailKey=null;E.detailId=null;
     if(!equipmentModuleAllowed())return head('فهرست تجهیزات','ماژول غیرفعال')+'<div class="card empty">ماژول تجهیزات غیرفعال است.</div>';
     if(location.pathname.startsWith('/equipment/'))history.replaceState({equipmentExplorer:true},'','/');
     if(typeof can==='function'&&!can('equipment','view'))return head('فهرست تجهیزات','دسترسی محدود')+'<div class="card empty">اجازه مشاهده تجهیزات را ندارید.</div>';
@@ -271,7 +271,15 @@
     DUPLICATE_REQUEST:'این عملیات قبلاً با همین شناسه انجام شده است.'
   };
   const structureSay=error=>{const code=error&&(error.payload&&error.payload.error||error.message);toast(STRUCTURE_MESSAGES[code]||('عملیات ساختار انجام نشد: '+(code||'REQUEST_FAILED')),1);};
-  function structureAllowedChildren(kind){return STRUCTURE_CHILD_KINDS[kind]||[];}
+  function structureAllowedChildren(kind,node){
+    if(STRUCTURE_CHILD_KINDS[kind])return STRUCTURE_CHILD_KINDS[kind];
+    // The equipment root level comes from the Backend, which knows the real record: a legacy
+    // equipment row with an unexpected nodeKind value still accepts a subsystem.
+    const st=E.structure;
+    const isRoot=node?String(node.id)===String(st&&st.rootId):kind==='equipment';
+    if(isRoot&&st&&Array.isArray(st.rootAllowedChildren)&&st.rootAllowedChildren.length)return st.rootAllowedChildren;
+    return[];
+  }
   function flattenStructure(nodes,out=[]){for(const node of nodes||[]){out.push(node);flattenStructure(node.children,out);}return out;}
   function structureNodeById(id){const st=E.structure;if(!st)return null;if(String(st.root&&st.root.id)===String(id))return {id:st.root.id,code:st.root.code,name:st.root.name,nodeKind:'equipment',rowVersion:st.root.rowVersion,children:st.nodes,path:[]};return flattenStructure(st.nodes).find(node=>String(node.id)===String(id))||null;}
   function structureRowVersion(id){const node=structureNodeById(id);return node?Number(node.rowVersion)||null:null;}
@@ -364,7 +372,7 @@
   }
   function structureRowCells(node,caps,level){
     const children=node.children||[];
-    const canChild=caps.create&&structureAllowedChildren(node.nodeKind).length>0;
+    const canChild=caps.create&&structureAllowedChildren(node.nodeKind,node).length>0;
     const expanded=E.structureExpanded[node.id]!==false;
     const brand=node.brand||node.manufacturer||node.inventoryItem&&node.inventoryItem.manufacturer||node.maker||null;
     const partNumber=node.partNumber||(node.inventoryItem&&node.inventoryItem.partNumber)||null;
@@ -438,8 +446,9 @@
   }
   function structureSection(a){
     const st=E.structure;
-    if(!st||String(st.rootId)!==String(a.id)){
-      queueStructureLoad(a.id);
+    const structureId=E.detailId||a.id;
+    if(!st||String(st.rootId)!==String(structureId)){
+      queueStructureLoad(structureId);
       return`<section class="eqv2-section-heading"><div><span>ساختار داخلی پرونده همین تجهیز</span><h2>ساختار</h2><p>زیرسیستم‌ها، قطعات اصلی و زیرقطعات فقط داخل پرونده همین تجهیز مدیریت می‌شوند؛ رجیستری اصلی فهرست جامع و مسطح باقی می‌ماند.</p></div></section><div class="eqv2-loading">در حال دریافت ساختار تجهیز…</div>`;
     }
     if(st.error){
@@ -481,7 +490,7 @@
       ${structureSuggestionPanel()}`;
   }
   async function refreshStructure(options={}){
-    const rootId=E.structure&&E.structure.rootId;
+    const rootId=(E.structure&&E.structure.rootId)||E.detailId;
     if(rootId)await loadStructure(rootId,{keepPanel:true,...options});
   }
   async function structureAdd(parentId){
@@ -498,7 +507,7 @@
   }
   function structureWizardSteps(ctx){
     const kindOptions=ctx.mode==='create'
-      ?structureAllowedChildren(ctx.parent.nodeKind).map(kind=>({value:kind,label:STRUCTURE_KIND_LABEL[kind]}))
+      ?structureAllowedChildren(ctx.parent.nodeKind,ctx.parent).map(kind=>({value:kind,label:STRUCTURE_KIND_LABEL[kind]||kind}))
       :[{value:ctx.node.nodeKind,label:STRUCTURE_KIND_LABEL[ctx.node.nodeKind]}];
     const statusOptions=Object.entries(typeof AS_ST==='undefined'?{}:AS_ST).map(([value,row])=>({value,label:row[0]}));
     let wizardApi=null;
@@ -553,7 +562,7 @@
       inventoryItemId:node.inventoryItemId||'',inventoryQuery:''
     };
     return{
-      nodeKind:structureAllowedChildren(parent.nodeKind).includes(source.nodeKind)?source.nodeKind:(structureAllowedChildren(parent.nodeKind)[0]||''),
+      nodeKind:structureAllowedChildren(parent.nodeKind,parent).includes(source.nodeKind)?source.nodeKind:(structureAllowedChildren(parent.nodeKind,parent)[0]||''),
       name:source.name||'',code:source.code||'',componentType:source.componentType||'',brand:source.brand||'',
       manufacturer:source.manufacturer||'',model:source.model||'',partNumber:source.partNumber||'',
       requiredQuantity:source.requiredQuantity==null?'':source.requiredQuantity,unit:source.unit||'',
@@ -698,7 +707,7 @@
     const st=E.structure;if(!st)return;
     E.structureSuggestNotice=null;
     try{
-      const result=await R().structureSuggestions(st.rootId);
+      const result=await R().structureSuggestions(st.rootId||E.detailId);
       if(result.data&&result.data.notice)E.structureSuggestNotice=result.data.notice;
       await refreshStructure({keepPanel:true});
       if(!result.data.notice)toast('پیشنهادها فقط به‌صورت پیش‌نویس ثبت شدند؛ بدون تأیید شما چیزی اعمال نمی‌شود.');
@@ -758,7 +767,10 @@
       if(!E.detail)captureExplorerState();
       E.detail=true;E.tab='technical';
       const content=document.getElementById('content');if(content)content.innerHTML='<div class="eqv2-loading">در حال بازکردن پرونده تجهیز…</div>';
-      const {data:a}=await R().get(idOrCode);E.selected=a.id;E.detailKey=a.code||a.id;saveState();
+      const {data:a}=await R().get(idOrCode);E.selected=a.id;
+      // detailKey stays the routing/URL key (code when present); detailId is always the real
+      // PostgreSQL assets.id that every structure call must use.
+      E.detailId=a.id;E.detailKey=a.code||a.id;saveState();
       const target='/equipment/'+encodeURIComponent(E.detailKey);
       if(push&&location.pathname!==target)history.pushState({equipment:true,key:E.detailKey},'',target);
       else if(fromRoute&&location.pathname!==target)history.replaceState({equipment:true,key:E.detailKey},'',target);
@@ -775,6 +787,7 @@
   async function renderCurrentDetail(){
     if(!E.detailKey)return;
     const {data:a}=await R().get(E.detailKey),body=document.getElementById('eqv2DetailBody');
+    if(a&&a.id&&E.detailId!==a.id)E.detailId=a.id;
     if(body)body.innerHTML=detailBody(a);
     const header=document.querySelector('.eqv2-detail-header');if(header)header.outerHTML=detailHeader(a);
     document.querySelectorAll('.eqv2-detail-tabs button').forEach((button,index)=>{
@@ -782,7 +795,7 @@
     });
   }
   async function backToEquipment({historyMode='push'}={}){
-    E.detail=false;E.detailKey=null;E.view='list';if(historyMode==='push')history.pushState({equipmentExplorer:true},'','/');
+    E.detail=false;E.detailKey=null;E.detailId=null;E.view='list';if(historyMode==='push')history.pushState({equipmentExplorer:true},'','/');
     const content=document.getElementById('content');if(!content)return;content.innerHTML=shell();await initExplorer(true);restoreExplorerScroll();
   }
   async function restoreRoute(){if(!equipmentModuleAllowed())return false;const key=routeKey();if(!key||!ME)return false;CUR='equipment';buildMenu();document.getElementById('sidebar')?.classList.remove('open');await openDetail(key,{push:false,fromRoute:true});return true;}
@@ -1231,7 +1244,7 @@
   window.addEventListener('bfg:domain-event',event=>{
     const payload=event&&event.detail;
     if(!payload||payload.type!=='equipment.structure.changed')return;
-    if(!E.detail||E.structure?.rootId!==payload.aggregateId)return;
+    if(!E.detail||String(E.structure?.rootId)!==String(payload.aggregateId))return;
     refreshStructure({keepPanel:true}).catch(()=>{});
   });
 

@@ -174,3 +174,65 @@ Empty State فارسی با دکمهٔ «افزودن زیرسیستم» وقت�
   `COALESCE(NULLIF(ext->>'nodeKind',''),'equipment')` را پیاده می‌کند و موجودی/خرید را از
   دادهٔ واقعی `item_balances` و `inventory_ledger` می‌خواند.
 - `node --check` برای همهٔ فایل‌های JS تغییرکرده پاک و `git diff --check` بدون خطا.
+
+## Change 5 — اصلاح دور دوم پس از تکرار گزارش `ROOT_EQUIPMENT_NOT_FOUND`
+
+گزارش تست محلی بدون تغییر تکرار شد، بنابراین علاوه بر علت‌های Change 4 سه شکاف دیگر هم بسته شد.
+
+### شکاف ۱ — پرونده دیجیتال با «کد» کلید می‌خورد
+
+`openDetail` مقدار `E.detailKey = a.code || a.id` را نگه می‌داشت و URL پرونده
+`/equipment/B1P01` ساخته می‌شد، در حالی که `GET /api/equipment/:id` با
+`(a.id=$1 OR lower(a.code)=lower($1))` کار می‌کند اما `GET /api/equipment/:id/structure`
+فقط `WHERE id=$1` را می‌پذیرد. اکنون:
+
+- `E.detailId` همیشه شناسهٔ واقعی رکورد PostgreSQL (`assets.id`) است و در `openDetail` و
+  `renderCurrentDetail` (مسیر deep-link با کد) مقداردهی می‌شود.
+- `E.detailKey` فقط کلید مسیریابی/URL باقی مانده است.
+- همهٔ فراخوانی‌های ساختار (`structureSection`, `refreshStructure`, `structureSuggest`) از
+  `E.detailId` استفاده می‌کنند، و رویداد Realtime با `String(...)` مقایسه می‌شود.
+- هیچ fallback محلی اضافه نشد؛ ارسال کد به‌جای شناسه همان `404` را می‌گیرد.
+
+### شکاف ۲ — `nodeKind` غیرمنتظره روی رکورد واقعی
+
+اگر رکورد تجهیز مقدار `nodeKind` غیر از `equipment`/`sub-equipment` و غیر تهی داشت
+(مثلاً مقدار legacy واردشده از فایل)، بررسی قبلی هنوز `ROOT_EQUIPMENT_NOT_FOUND` می‌داد.
+اکنون قاعدهٔ ریشه **دقیقاً همان تعریف رجیستری جامع** است:
+
+```
+type='eq' AND COALESCE(ext->>'nodeKind','equipment') NOT IN
+  ('sub-equipment','subsystem','main-component','sub-component','sub','sys','panel')
+```
+
+تابع `isRegistryEquipment` این قاعده را یک‌جا پیاده می‌کند و `resolveRootEquipment`،
+`rootEquipmentById`، `parentForNode` و مسیر جابه‌جایی همه از آن استفاده می‌کنند.
+انواع داخلی همچنان نمی‌توانند ریشهٔ پرونده باشند (`404 ROOT_EQUIPMENT_NOT_FOUND`) و
+رکورد مکان (`type<>'eq'`) هم رد می‌شود.
+
+### شکاف ۳ — دکمهٔ «افزودن فرزند» برای همان رکورد غیرفعال می‌ماند
+
+نقشهٔ سمت کلاینت `STRUCTURE_CHILD_KINDS` برای یک `nodeKind` ناشناخته آرایهٔ خالی
+برمی‌گرداند، پس حتی پس از رفع Backend دکمهٔ ایجاد جزء نمایش داده نمی‌شد. اکنون
+`GET /api/equipment/:id/structure` فیلد `rootAllowedChildren` را از **ردیف واقعی ریشه**
+مشتق می‌کند و رابط سطح‌های مجاز ریشه را از Backend می‌گیرد، نه از حدس سمت کلاینت.
+
+### ابزار تشخیص فقط‌خواندنی
+
+`scripts/diagnose-equipment-structure.js` اضافه شد تا علت خطا روی محیط واقعی بدون هیچ
+حدس‌ مشخص شود. این اسکریپت **هیچ داده‌ای را تغییر نمی‌دهد** (بدون `INSERT/UPDATE/DELETE/DROP/TRUNCATE/ALTER`؛
+تست ۴۷ این را قفل کرده) و این‌ها را چاپ می‌کند: وضعیت schema، migrationهای اعمال‌شده
+(۰۱۴/۰۱۵/۰۱۶)، گرنت‌های `equipment.structure.*`، برای رکورد مورد نظر `id`/`code`/`type`/`parent`/
+مقدار خام و مؤثر `nodeKind`/`deleted_at`/`row_version`/تعداد فرزندان، اینکه آیا رجیستری آن را
+فهرست می‌کند، نتیجهٔ واقعی resolver و اینکه پاسخ API چه خواهد بود، و در حالت بدون آرگومان
+خلاصهٔ دادهٔ تجهیزات و مقادیر متمایز `nodeKind`.
+
+```
+node scripts/diagnose-equipment-structure.js B1P01
+```
+
+### نتایج تست پس از Change 5
+
+- `npm test`: **۱۵۸ تست موفق، ۰ ناموفق، ۰ Skip** (۱۴۲ تست پیشین بدون حذف یا ضعیف‌سازی +
+  ۱۶ تست جدید ۳۳–۴۸). تست ۳۶ برای رفتار جدید **قوی‌تر** شد و تست‌های ۴۵ تا ۴۸
+  `nodeKind` غیرمنتظره، تفکیک `detailKey`/`detailId`، `rootAllowedChildren` و
+  فقط‌خواندنی‌بودن اسکریپت تشخیص را پوشش می‌دهند.

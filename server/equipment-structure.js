@@ -7,9 +7,15 @@ const { coded } = require('./equipment-service');
 
 const STRUCTURE_KINDS = new Set(['subsystem', 'main-component', 'sub-component']);
 const INTERNAL_KINDS = new Set([...STRUCTURE_KINDS, 'sub-equipment']);
-// Kinds that may own a dossier structure. Legacy rows may carry an explicit 'equipment',
-// the old 'sub-equipment', or nothing at all (resolved to 'equipment' above).
-const STRUCTURE_ROOT_KINDS = new Set(['equipment', 'sub-equipment']);
+// Kinds that the comprehensive registry hides because they are internal components. The
+// registry defines an equipment row exactly as: type='eq' AND the effective nodeKind is not
+// one of these. The structure root check must use the same definition, otherwise a real
+// equipment record that carries an unexpected legacy nodeKind value is rejected with
+// ROOT_EQUIPMENT_NOT_FOUND even though the registry lists it.
+const REGISTRY_INTERNAL_KINDS = Object.freeze([
+  'sub-equipment', 'subsystem', 'main-component', 'sub-component', 'sub', 'sys', 'panel'
+]);
+const LOCATION_KINDS = new Set(['factory', 'site', 'area', 'line', 'unit', 'category', 'location']);
 const CHILD_KINDS = Object.freeze({
   equipment: new Set(['subsystem']),
   subsystem: new Set(['main-component']),
@@ -18,6 +24,9 @@ const CHILD_KINDS = Object.freeze({
   // Existing sub-equipment rows remain readable; new nodes still use the three kinds above.
   'sub-equipment': new Set(['subsystem'])
 });
+// A legacy equipment row may carry an unexpected nodeKind value. It is still the equipment root
+// of its own dossier, so it accepts the same first level as 'equipment'.
+const STRUCTURE_CHILD_FALLBACK = Object.freeze(new Set(['subsystem']));
 const LEVEL_LABELS = Object.freeze({
   equipment: 'تجهیز',
   'sub-equipment': 'زیرتجهیز قدیمی',
@@ -68,8 +77,22 @@ function effectiveKindOf(row) {
   return row.type === 'eq' ? 'equipment' : 'location';
 }
 
-function allowedChildKinds(parentKind) {
-  return [...(CHILD_KINDS[parentKind] || [])];
+// True when the row is one of the equipment records the comprehensive registry lists, which is
+// exactly the set of rows allowed to own a dossier structure.
+function isRegistryEquipment(row) {
+  if (!row || row.type !== 'eq') return false;
+  const kind = effectiveKindOf(row);
+  // A location kind on an eq row is contradictory legacy data; the registry would still list it,
+  // so it stays readable and is reported through diagnostics instead of being rejected.
+  if (LOCATION_KINDS.has(kind)) return true;
+  return !REGISTRY_INTERNAL_KINDS.includes(kind);
+}
+
+function allowedChildKinds(parentKind, parentRow = null) {
+  if (CHILD_KINDS[parentKind]) return [...CHILD_KINDS[parentKind]];
+  // Tolerant path for a real legacy equipment root with an unexpected nodeKind value.
+  if (parentRow ? isRegistryEquipment(parentRow) : false) return [...STRUCTURE_CHILD_FALLBACK];
+  return [];
 }
 
 // Normalizes the single newest real inventory_ledger receipt for an item.
@@ -97,10 +120,11 @@ function relationStatus(parentKind, childKind) {
   return 'invalid';
 }
 
-function validateParentKind(childKind, parentKind) {
+function validateParentKind(childKind, parentKind, parentRow = null) {
   if (!STRUCTURE_KINDS.has(String(childKind || ''))) throw coded(422, 'STRUCTURE_NODE_KIND_INVALID');
-  if (!CHILD_KINDS[parentKind]?.has(childKind)) throw coded(422, 'STRUCTURE_PARENT_KIND_INVALID');
-  return true;
+  if (CHILD_KINDS[parentKind]?.has(childKind)) return true;
+  if (parentRow && isRegistryEquipment(parentRow) && STRUCTURE_CHILD_FALLBACK.has(childKind)) return true;
+  throw coded(422, 'STRUCTURE_PARENT_KIND_INVALID');
 }
 
 function versionOf(value) {
@@ -393,8 +417,8 @@ async function resolveRootEquipment(client, assetId) {
        WHERE ancestry.depth<64 AND NOT p.id=ANY(ancestry.path)
      )
      SELECT id,parent,type,node_kind,category_id,depth FROM ancestry
-     WHERE node_kind IN ('equipment','sub-equipment')
-     ORDER BY CASE WHEN node_kind='equipment' THEN 0 ELSE 1 END,depth DESC LIMIT 1`,
+     WHERE type='eq' AND node_kind NOT IN ('subsystem','main-component','sub-component','sub','sys','panel')
+     ORDER BY CASE WHEN node_kind IN ('equipment','sub-equipment') THEN 0 ELSE 1 END,depth DESC LIMIT 1`,
     [assetId]
   );
   return rows[0] || null;
@@ -413,9 +437,10 @@ async function rootEquipmentById(client, rootId) {
   const row = rows[0];
   if (!row) throw coded(404, 'EQUIPMENT_NOT_FOUND');
   if (row.deleted_at) throw coded(404, 'EQUIPMENT_NOT_FOUND');
-  // type='eq' with no explicit nodeKind is a real equipment record: keep it working.
+  // type='eq' with no explicit nodeKind — or with an unexpected legacy value — is still the
+  // same record the comprehensive registry lists, so it must open its dossier.
   const kind = effectiveKindOf(row);
-  if (row.type !== 'eq' || !STRUCTURE_ROOT_KINDS.has(kind)) throw coded(404, 'ROOT_EQUIPMENT_NOT_FOUND');
+  if (!isRegistryEquipment(row)) throw coded(404, 'ROOT_EQUIPMENT_NOT_FOUND');
   const resolved = await resolveRootEquipment(client, identifier);
   // An existing root equipment without any child is valid: it resolves to itself.
   if (!resolved) throw coded(404, 'ROOT_EQUIPMENT_NOT_FOUND');
@@ -519,7 +544,7 @@ async function publishStructureEvent(client, user, roots, action, node) {
 async function parentForNode(client, parentId, childKind) {
   const parent = await lockAsset(client, parentId);
   const parentKind = effectiveKindOf(parent);
-  validateParentKind(childKind, parentKind);
+  validateParentKind(childKind, parentKind, parent);
   return { row: parent, kind: parentKind };
 }
 
@@ -632,6 +657,9 @@ async function getStructure({ pool, security, user, rootEquipmentId, includeArch
   return {
     rootEquipmentId: root.id,
     root: { id: root.id, code: root.code, name: root.name, nodeKind: 'equipment', rowVersion: Number(root.row_version) || 1 },
+    // Derived from the real root row, so a legacy equipment record with an unexpected nodeKind
+    // value still offers its valid first level instead of a disabled "add child" button.
+    rootAllowedChildren: allowedChildKinds('equipment', root),
     nodes: built.nodes,
     orphaned: built.orphaned,
     diagnostics: built.diagnostics,
@@ -771,7 +799,7 @@ async function moveStructureNode({ client, pool, security, user, id, input = {} 
   }
   const parentRow = await lockAsset(client, parentId);
   if (await isDescendant(client, parentId, current.id)) throw coded(422, 'TREE_CYCLE');
-  validateParentKind(kindOf(current), effectiveKindOf(parentRow));
+  validateParentKind(kindOf(current), effectiveKindOf(parentRow), parentRow);
   const parent = { row: parentRow, kind: effectiveKindOf(parentRow) };
   const code = current.code || null;
   await assertUniqueCode(client, code, current.id);
@@ -854,7 +882,8 @@ async function assertDraftScope(pool, user, draft) {
 module.exports = {
   STRUCTURE_KINDS,
   INTERNAL_KINDS,
-  STRUCTURE_ROOT_KINDS,
+  REGISTRY_INTERNAL_KINDS,
+  isRegistryEquipment,
   CHILD_KINDS,
   LEVEL_LABELS,
   isStructureKind,

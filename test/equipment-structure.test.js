@@ -67,8 +67,9 @@ function structurePool(options = {}) {
       seen.add(current.id);
       const raw = current.ext && current.ext.nodeKind;
       const kind = raw == null || raw === '' ? 'equipment' : raw;
-      if (kind === 'equipment' || kind === 'sub-equipment') {
-        if (!best || kind === 'equipment') best = { row: current, kind };
+      const internal = ['subsystem', 'main-component', 'sub-component', 'sub', 'sys', 'panel'];
+      if (current.type === 'eq' && !internal.includes(kind)) {
+        if (!best || kind === 'equipment' || kind === 'sub-equipment') best = { row: current, kind };
       }
       current = assets.get(current.parent);
     }
@@ -79,7 +80,7 @@ function structurePool(options = {}) {
     state.calls.push({ sql, values });
     if (/^(BEGIN|COMMIT|ROLLBACK)/i.test(sql.trim())) return { rows: [] };
     if (/FROM user_scopes WHERE user_id=\$1/.test(sql)) return { rows: state.scoped ? [{ 1: 1 }] : [] };
-    if (/WITH RECURSIVE ancestry AS/.test(sql) && /node_kind IN \('equipment','sub-equipment'\)/.test(sql)) {
+    if (/WITH RECURSIVE ancestry AS/.test(sql) && /node_kind NOT IN \('subsystem','main-component','sub-component','sub','sys','panel'\)/.test(sql)) {
       assert.match(sql, /COALESCE\(NULLIF\([ap]\.ext->>'nodeKind',''\),'equipment'\)/);
       const resolved = resolveRoot(values[0]);
       if (!resolved) return { rows: [] };
@@ -840,8 +841,13 @@ test('36 the dossier always sends the real PostgreSQL id, never the equipment co
   // Row click, hero button and structure queue all use the record id from the list payload.
   assert.match(ui, /data-equipment-detail="\$\{escText\(a\.id\)\}"/);
   assert.match(ui, /eqv2OpenDetail\('\$\{escText\(a\.id\)\}'\)/);
-  assert.match(ui, /queueStructureLoad\(a\.id\)/);
+  // The dossier routing key may be the code, but the structure call must use the real record id.
+  assert.match(ui, /E\.detailId=a\.id/);
+  assert.match(ui, /const structureId=E\.detailId\|\|a\.id;/);
+  assert.match(ui, /queueStructureLoad\(structureId\)/);
   assert.doesNotMatch(ui, /queueStructureLoad\(\s*a\.code/);
+  assert.doesNotMatch(ui, /queueStructureLoad\(\s*E\.detailKey/);
+  assert.doesNotMatch(ui, /R\(\)\.structure\(E\.detailKey/);
   assert.doesNotMatch(ui, /eqv2OpenDetail\('\$\{escText\(a\.code\)\}'\)/);
   const adapter = read('public/equipment-v2/equipment-adapter.js');
   assert.match(adapter, /structure:\(id,options\)=>api\('\/'\+encodeURIComponent\(id\)\+'\/structure'/);
@@ -1218,4 +1224,140 @@ test('44 the whole subsystem / main-component / sub-component chain is operation
     // 3 — the internal components never appear in the flat comprehensive registry
     assert.match(read('server/equipment-routes.js'), /NOT IN \('sub-equipment','subsystem','main-component','sub-component','sub','sys','panel'\)/);
   });
+});
+
+test('45 an equipment row with an unexpected legacy nodeKind still opens its dossier', async () => {
+  // The registry defines an equipment row as type='eq' whose effective nodeKind is not an
+  // internal component kind. A real record carrying a stray legacy value must therefore open
+  // its dossier and accept a first-level child, instead of answering ROOT_EQUIPMENT_NOT_FOUND.
+  const assets = legacyAssets();
+  assets.get('b1p01').ext = { nodeKind: 'machine' };
+  const pool = structurePool({
+    assets,
+    users: [{ id: 'u-mgr', role: 'mgr', permissions: ['equipment.structure.view'], scopes: [{ scope_type: 'company' }] }]
+  });
+  await withApi(pool, 'mgr', async base => {
+    const view = await fetch(`${base}/b1p01/structure`);
+    assert.equal(view.status, 200);
+    const data = (await view.json()).data;
+    assert.equal(data.rootEquipmentId, 'b1p01');
+    assert.equal(data.root.code, 'B1P01');
+    assert.deepEqual(data.nodes, []);
+
+    const created = await fetch(`${base}/`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ nodeKind: 'subsystem', name: 'زیرسیستم سازگار', code: 'B1P01-SUB2', parentId: 'b1p01', parentRowVersion: 4 })
+    });
+    assert.equal(created.status, 201);
+
+    // An internal component kind can never own a dossier.
+    assets.set('comp-root', {
+      id: 'comp-root', parent: 'line-1', code: 'CMP-ROOT', name: 'قطعه داخلی', type: 'eq',
+      cls: null, status: 'active', crit: 'B', maker: null, model: null, serial: null,
+      ext: { nodeKind: 'main-component' }, row_version: 1, deleted_at: null, delete_reason: null,
+      is_active: true, sort_order: 0, category_id: null
+    });
+    const internal = await fetch(`${base}/comp-root/structure`);
+    assert.equal(internal.status, 404);
+    assert.equal((await internal.json()).error, 'ROOT_EQUIPMENT_NOT_FOUND');
+  });
+  // The tolerant rule must be the registry rule, not an invented whitelist.
+  assert.match(read('server/equipment-structure.js'), /function isRegistryEquipment\(row\)/);
+  assert.match(read('server/equipment-structure.js'), /REGISTRY_INTERNAL_KINDS = Object\.freeze\(\[\s*'sub-equipment', 'subsystem', 'main-component', 'sub-component', 'sub', 'sys', 'panel'/);
+});
+
+test('46 the dossier keeps the code as its routing key and the real id for the structure API', async () => {
+  // Deep links use /equipment/<code>, so openDetail is entered with a code and the detail
+  // endpoint resolves it. The structure tab must still send the real PostgreSQL id.
+  const sent = [];
+  const repository = {
+    source: 'postgresql',
+    feature: async () => ({ enabled: true }),
+    filters: async () => ({ factories: [], categories: [], locations: [], responsibleUsers: [] }),
+    list: async () => ({ data: [], pagination: { page: 1, pages: 1, total: 0, limit: 50 } }),
+    get: async key => {
+      assert.equal(String(key), 'B1P01', 'the dossier is keyed by its code for routing');
+      return { data: { id: 'b1p01', code: 'B1P01', name: 'پمپ ورودی', row_version: 4, path: [], children: [], pm_plans: [], ext: {} } };
+    },
+    structure: async (id) => {
+      sent.push(String(id));
+      return { data: { rootEquipmentId: id, root: { id, code: 'B1P01', name: 'پمپ ورودی', nodeKind: 'equipment', rowVersion: 4 }, nodes: [], capabilities: { create: true }, suggestions: [] } };
+    },
+    inventoryItems: async () => ({ data: [] })
+  };
+  const harness = structureUiHarness(repository, { id: 'b1p01' });
+  harness.context.location.pathname = '/equipment/B1P01';
+  await harness.context.eqv2OpenDetail('B1P01');
+  assert.equal(harness.context.EQV2.detailKey, 'B1P01');
+  assert.equal(harness.context.EQV2.detailId, 'b1p01');
+  await harness.context.eqv2DetailTab('structure');
+  await harness.context.eqv2DetailTab('structure');
+  assert.ok(sent.length > 0, 'the structure API was never called');
+  assert.deepEqual([...new Set(sent)], ['b1p01'], 'the structure API must receive the real assets.id, never the code');
+  assert.ok(!sent.some(value => value === 'B1P01'), 'the equipment code was sent to the structure API');
+  assert.doesNotMatch(harness.bodies.eqv2DetailBody.innerHTML, /در حال دریافت ساختار تجهیز/);
+});
+
+test('47 the read-only diagnosis script exists and cannot change any data', () => {
+  const script = read('scripts/diagnose-equipment-structure.js');
+  assert.match(script, /Read-only diagnosis of the equipment dossier structure/);
+  assert.match(script, /GET \/api\/equipment\/:id\/structure expects/);
+  // It must never be able to mutate the live database.
+  assert.doesNotMatch(script, /\b(INSERT\s+INTO|UPDATE\s+assets|DELETE\s+FROM|DROP|TRUNCATE|ALTER\s+TABLE)\b/i);
+  // It reports the exact causes instead of guessing: identifier, kind, resolver outcome.
+  assert.match(script, /ROOT_EQUIPMENT_NOT_FOUND/);
+  assert.match(script, /PARENT_OUTSIDE_ROOT_EQUIPMENT/);
+  assert.match(script, /EQUIPMENT_NOT_FOUND/);
+  assert.match(script, /COALESCE\(NULLIF\(a\.ext->>'nodeKind',''\),'equipment'\)/);
+  assert.match(script, /npm run update:apply/);
+  assert.match(script, /DATABASE_URL is not configured/);
+});
+
+test('48 the backend publishes the valid root levels and the UI offers them', async () => {
+  const structureService = require('../server/equipment-structure');
+  // Backend: a legacy equipment row with an unexpected nodeKind still accepts a subsystem.
+  const assets = legacyAssets();
+  assets.get('b1p01').ext = { nodeKind: 'machine' };
+  const pool = structurePool({
+    assets,
+    users: [{ id: 'u-mgr', role: 'mgr', permissions: ['equipment.structure.view'], scopes: [{ scope_type: 'company' }] }]
+  });
+  const data = await structureService.getStructure({
+    pool,
+    security: { hasPermission: async () => true },
+    user: { id: 'u-mgr', role: 'mgr' },
+    rootEquipmentId: 'b1p01'
+  });
+  assert.equal(data.rootEquipmentId, 'b1p01');
+  assert.deepEqual(data.rootAllowedChildren, ['subsystem']);
+  assert.match(read('server/equipment-structure.js'), /rootAllowedChildren: allowedChildKinds\('equipment', root\)/);
+
+  // UI: the row action and the wizard must not be disabled by the client-side kind map.
+  const ui = read('public/equipment-v2/equipment-v2.js');
+  assert.match(ui, /Array\.isArray\(st\.rootAllowedChildren\)/);
+  assert.match(ui, /structureAllowedChildren\(node\.nodeKind,node\)/);
+  assert.match(ui, /structureAllowedChildren\(ctx\.parent\.nodeKind,ctx\.parent\)/);
+
+  const repository = legacyStructureRepository({
+    rootEquipmentId: 'b1p01',
+    root: { id: 'b1p01', code: 'B1P01', name: 'پمپ ورودی', nodeKind: 'equipment', rowVersion: 4 },
+    rootAllowedChildren: ['subsystem'],
+    nodes: [{
+      id: 'sub-legacy', code: 'B1P01-SUB', name: 'زیرسیستم سازگار', nodeKind: 'subsystem', level: 1,
+      rowVersion: 1, status: 'active', crit: 'B', validRelation: true, archived: false,
+      path: [{ id: 'sub-legacy' }], children: []
+    }],
+    orphaned: [], diagnostics: [], nodeCount: 1, includeArchived: false,
+    capabilities: { create: true, update: true, move: true, archive: true, suggest: true, approveAi: true }, suggestions: []
+  });
+  const harness = structureUiHarness(repository, { id: 'b1p01' });
+  harness.context.EQV2.detailId = 'b1p01';
+  harness.context.EQV2.detailKey = 'B1P01';
+  await harness.context.eqv2DetailTab('structure');
+  await harness.context.eqv2DetailTab('structure');
+  const body = harness.bodies.eqv2DetailBody.innerHTML;
+  assert.doesNotMatch(body, /در حال دریافت ساختار تجهیز/);
+  assert.match(body, /زیرسیستم سازگار/);
+  assert.match(body, /افزودن فرزند/);
+  assert.match(body, /eqv2-structure-table/);
 });
