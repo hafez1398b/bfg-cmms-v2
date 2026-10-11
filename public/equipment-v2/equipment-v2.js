@@ -412,6 +412,7 @@
     return `<div class="eqv2-empty eqv2-structure-empty"><div><i>—</i>
       <div>این تجهیز هنوز زیرسیستم، قطعه اصلی یا زیرقطعه‌ای ثبت نشده دارد.</div>
       <div class="muted">هیچ ساختاری خودکار یا آزمایشی ساخته نمی‌شود؛ اولین سطح را خودتان ثبت کنید.</div>
+      <div class="muted">قطعات یدکی مرتبط با این تجهیز در بخش «قطعات یدکی حیاتی» همین پرونده دیده می‌شوند و خودکار به ساختار داخلی تبدیل نمی‌شوند.</div>
       ${caps.create?`<button type="button" class="btn btn-primary" onclick="eqv2StructureAddRoot()">افزودن زیرسیستم</button>`:''}</div></div>`;
   }
   function structureAddRoot(){

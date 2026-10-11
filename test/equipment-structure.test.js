@@ -62,7 +62,9 @@ function structurePool(options = {}) {
   const INTERNAL_TEST_KINDS = ['subsystem', 'main-component', 'sub-component', 'sub', 'sys', 'panel'];
   // Every equipment candidate in the ancestry chain, with its real depth, so the harness obeys
   // the ORDER BY direction of the SQL under test instead of hard-coding an outcome.
-  const rootCandidates = id => {
+  // registryRule mirrors the NOT internal_child predicate of the SQL under test: a row is a root
+  // equipment only when its immediate parent is not a live type='eq' row (the registry definition).
+  const rootCandidates = (id, { registryRule = false } = {}) => {
     let current = assets.get(id);
     const seen = new Set();
     const found = [];
@@ -71,7 +73,9 @@ function structurePool(options = {}) {
       seen.add(current.id);
       const raw = current.ext && current.ext.nodeKind;
       const kind = raw == null || raw === '' ? 'equipment' : raw;
-      if (current.type === 'eq' && !INTERNAL_TEST_KINDS.includes(kind)) found.push({ row: current, kind, depth });
+      const parentRow = current.parent ? assets.get(current.parent) : null;
+      const internalChild = !registryRule ? false : !!(parentRow && parentRow.type === 'eq' && !parentRow.deleted_at);
+      if (current.type === 'eq' && !internalChild && !INTERNAL_TEST_KINDS.includes(kind)) found.push({ row: current, kind, depth });
       current = assets.get(current.parent);
       depth += 1;
     }
@@ -79,7 +83,7 @@ function structurePool(options = {}) {
   };
   // Nearest equipment row wins, exactly like ORDER BY depth ASC in the corrected SQL, because the
   // comprehensive registry defines a root equipment by looking at its immediate parent only.
-  const resolveRoot = id => rootCandidates(id).sort((a, b) => a.depth - b.depth)[0]?.row || null;
+  const resolveRoot = id => rootCandidates(id, { registryRule: true }).sort((a, b) => a.depth - b.depth)[0]?.row || null;
 
   async function query(sql, values = []) {
     state.calls.push({ sql, values });
@@ -87,11 +91,15 @@ function structurePool(options = {}) {
     if (/FROM user_scopes WHERE user_id=\$1/.test(sql)) return { rows: state.scoped ? [{ 1: 1 }] : [] };
     if (/WITH RECURSIVE ancestry AS/.test(sql) && /node_kind NOT IN \('subsystem','main-component','sub-component','sub','sys','panel'\)/.test(sql)) {
       assert.match(sql, /COALESCE\(NULLIF\([ap]\.ext->>'nodeKind',''\),'equipment'\)/);
-      assert.match(sql, /ORDER BY CASE WHEN node_kind IN \('equipment','sub-equipment'\) THEN 0 ELSE 1 END,depth (ASC|DESC) LIMIT 1/);
-      // Honour the direction the code under test asks for: ASC = nearest equipment (correct),
-      // DESC = topmost ancestor (the bug that produced PARENT_OUTSIDE_ROOT_EQUIPMENT on a read).
-      const desc = /,depth DESC LIMIT 1/.test(sql);
-      const candidates = rootCandidates(values[0]).sort((a, b) => desc ? b.depth - a.depth : a.depth - b.depth);
+      assert.match(sql, /ORDER BY depth (ASC|DESC) LIMIT 1/);
+      // The harness obeys the SQL under test: the registry rule (NOT internal_child) and the
+      // direction. ASC = nearest root equipment (correct); DESC = topmost ancestor (the bug that
+      // produced PARENT_OUTSIDE_ROOT_EQUIPMENT on a plain read).
+      const registryRule = /NOT internal_child/.test(sql);
+      assert.equal(registryRule, true, 'the resolver must use the registry immediate-parent rule');
+      const desc = /ORDER BY depth DESC LIMIT 1/.test(sql);
+      const candidates = rootCandidates(values[0], { registryRule })
+        .sort((a, b) => desc ? b.depth - a.depth : a.depth - b.depth);
       const resolved = candidates[0]?.row || null;
       if (!resolved) return { rows: [] };
       const raw = resolved.ext && resolved.ext.nodeKind;
@@ -1346,11 +1354,18 @@ test('47 the read-only diagnosis script exists and cannot change any data', () =
   assert.match(script, /EQUIPMENT_NOT_FOUND/);
   assert.match(script, /COALESCE\(NULLIF\(a\.ext->>'nodeKind',''\),'equipment'\)/);
   // Its resolver query must stay identical to the runtime one (nearest equipment row).
-  assert.match(script, /ORDER BY CASE WHEN node_kind IN \('equipment','sub-equipment'\) THEN 0 ELSE 1 END, depth ASC/);
+  assert.match(script, /ORDER BY depth ASC/);
+  assert.match(script, /NOT internal_child/);
   assert.match(script, /registryListsIt\(row\)/);
   // A registry-listed root is answered 200; the location parent stays outside the structure.
   assert.match(script, /the API answers 200 with THIS row as the structure root/);
   assert.match(script, /location\/grouping node kept outside the internal structure/);
+  // It must also separate "the database really has no structure rows" from "a query lost them".
+  assert.match(script, /children breakdown -> active type=eq:/);
+  assert.match(script, /linked spare parts \(asset_spare_parts\):/);
+  assert.match(script, /CONCLUSION: this equipment has no child assets row/);
+  assert.match(script, /the Persian empty state/);
+  assert.match(script, /FROM asset_spare_parts rel WHERE rel\.asset_id=\$1/);
   assert.match(script, /npm run update:apply/);
   assert.match(script, /DATABASE_URL is not configured/);
 });
@@ -1509,7 +1524,9 @@ test('51 subsystems under a real equipment root render and adding a subsystem di
 
     const created = await fetch(`${base}/`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ nodeKind: 'subsystem', name: 'زیرسیستم برق', code: 'B1P01-EL', parentId: 'eq-real', parentRowVersion: 1 })
+      // The dossier UI always sends the root it is displaying (equipment-v2.js: rootEquipmentId),
+      // so the boundary is checked against that root and never re-derived from the ancestry.
+      body: JSON.stringify({ nodeKind: 'subsystem', name: 'زیرسیستم برق', code: 'B1P01-EL', parentId: 'eq-real', parentRowVersion: 1, rootEquipmentId: 'eq-real' })
     });
     assert.equal(created.status, 201);
     const body = await created.json();
@@ -1616,6 +1633,10 @@ test('54 the structure tab of a real equipment with a location parent shows the 
   // Persian empty state with the add-subsystem action.
   assert.match(body, /هنوز زیرسیستم، قطعه اصلی یا زیرقطعه‌ای ثبت نشده/);
   assert.match(body, /افزودن زیرسیستم/);
+  // An empty structure must not look like missing data: the equipment's real spare parts live in
+  // their own section and are never turned into structure rows automatically.
+  assert.match(body, /قطعات یدکی حیاتی/);
+  assert.match(body, /خودکار به ساختار داخلی تبدیل نمی‌شوند/);
   // The preserved location parent is explained in Persian; no raw backend code ever reaches the UI.
   assert.match(body, /خارج از ساختار داخلی حفظ شده است/);
   assert.doesNotMatch(body, /ROOT_PARENT_OUTSIDE_STRUCTURE/);
@@ -1691,4 +1712,212 @@ test('56 internal descendants still answer ROOT_EQUIPMENT_NOT_FOUND and never PA
   assert.equal((service.match(/PARENT_OUTSIDE_ROOT_EQUIPMENT/g) || []).length >= 2, true);
   assert.match(service, /async function assertInsideRootBoundary\(client, parentId, rootId, parentRow = null\)/);
   assert.doesNotMatch(service, /resolved\.id\) !== String\(identifier\)/);
+});
+
+/* ---------- The canonical Bespar 1 dataset, exactly as scripts/seed-besepar1.js writes it ---------- */
+
+// Real shape: the factory row is type='site'; every category tree node is type='unit' with
+// ext.nodeKind='category'; every equipment row is type='eq' with NO ext.nodeKind at all; a
+// sub-equipment row differs only by cls='زیرتجهیز' and by pointing at another equipment parent.
+function seedShape() {
+  const dataset = JSON.parse(read('public/data/besepar1.seed.json'));
+  const make = (id, parent, extra = {}) => ({
+    id, parent, code: extra.code == null ? null : extra.code, name: extra.name || id,
+    type: extra.type || 'eq', cls: extra.cls === undefined ? null : extra.cls, status: 'active',
+    crit: extra.crit === undefined ? null : extra.crit, maker: extra.maker || null,
+    model: extra.model || null, serial: null, ext: extra.ext === undefined ? {} : extra.ext,
+    row_version: extra.rowVersion || 1, deleted_at: null, delete_reason: null, is_active: true,
+    sort_order: 0, category_id: extra.categoryId === undefined ? null : extra.categoryId
+  });
+  const category = dataset.categories[0];
+  const b1p01 = dataset.equipment.find(item => item.code === 'B1P01');
+  const bt = dataset.equipment.find(item => item.id === 'b1-eq-bt');
+  const btChildren = dataset.equipment.filter(item => item.parentEquipment === bt.id);
+  const assets = new Map();
+  assets.set(dataset.factory.id, make(dataset.factory.id, 'bfg-plants',
+    { type: 'site', code: dataset.factory.code, name: dataset.factory.name, cls: 'کارخانه' }));
+  assets.set(category.id, make(category.id, dataset.factory.id,
+    { type: 'unit', code: category.code, name: category.name, cls: category.name, ext: { nodeKind: 'category' } }));
+  assets.set(b1p01.id, make(b1p01.id, category.id, { code: b1p01.code, name: b1p01.name, cls: b1p01.category,
+    crit: b1p01.criticality, maker: b1p01.maker, model: b1p01.model, categoryId: category.id,
+    ext: { factory: 'بسپار ۱', keyParts: b1p01.keyParts || [], locationDescription: b1p01.location || '' } }));
+  assets.set(bt.id, make(bt.id, category.id, { code: bt.code, name: bt.name, cls: bt.category,
+    categoryId: category.id, ext: { factory: 'بسپار ۱' } }));
+  for (const child of btChildren) {
+    assets.set(child.id, make(child.id, bt.id, { code: child.code, name: child.name, cls: 'زیرتجهیز',
+      categoryId: category.id, ext: { factory: 'بسپار ۱' } }));
+  }
+  return { dataset, assets, category, b1p01, bt, btChildren };
+}
+
+function seedShapePool(seed) {
+  return structurePool({
+    assets: seed.assets,
+    users: [{ id: 'u-mgr', role: 'mgr', permissions: ['equipment.view', 'equipment.structure.view'], scopes: [{ scope_type: 'company' }] }]
+  });
+}
+
+test('57 B1P01 from the canonical dataset has a category parent and genuinely no structure rows', async () => {
+  const seed = seedShape();
+  // The dataset itself is the evidence: no equipment row points at B1P01 as its parent.
+  assert.equal(seed.b1p01.id, 'b1-eq-p01');
+  assert.equal(seed.b1p01.parentEquipment, undefined);
+  assert.deepEqual(seed.dataset.equipment.filter(item => item.parentEquipment === seed.b1p01.id), []);
+  assert.equal(seed.assets.get(seed.b1p01.id).parent, seed.category.id);
+  assert.equal(seed.assets.get(seed.category.id).type, 'unit');
+  assert.equal(seed.assets.get(seed.category.id).ext.nodeKind, 'category');
+  // Real data carries no nodeKind anywhere, so the effective kind decides.
+  assert.equal(seed.dataset.equipment.some(item => 'nodeKind' in item), false);
+
+  const pool = seedShapePool(seed);
+  await withApi(pool, 'mgr', async base => {
+    const response = await fetch(`${base}/${seed.b1p01.id}/structure`);
+    assert.equal(response.status, 200);
+    const data = (await response.json()).data;
+    assert.equal(data.rootEquipmentId, seed.b1p01.id);
+    assert.equal(data.root.code, 'B1P01');
+    // Empty because the database is empty — nothing is invented to fill the tab.
+    assert.deepEqual(data.nodes, []);
+    assert.equal(data.nodeCount, 0);
+    assert.deepEqual(data.orphaned, []);
+    assert.equal(data.nodes.length, 0);
+    assert.equal(JSON.stringify(data.nodes).includes(seed.b1p01.keyParts ? seed.b1p01.keyParts[0] : '—'), false);
+    // The category parent is reported, preserved and outside the internal structure.
+    const note = data.diagnostics.find(item => item.code === 'ROOT_PARENT_OUTSIDE_STRUCTURE');
+    assert.ok(note, 'the preserved category parent must be reported');
+    assert.equal(note.parentId, seed.category.id);
+    assert.equal(data.diagnostics.some(item => item.code === 'PARENT_OUTSIDE_ROOT_EQUIPMENT'), false);
+    // The first level is still offered, so the tab is usable instead of a dead end.
+    assert.deepEqual(data.rootAllowedChildren, ['subsystem']);
+    assert.equal(data.capabilities.create, true);
+  });
+  // Reading the structure never writes anything at all.
+  assert.equal(pool.state.calls.some(call => /^(INSERT|UPDATE|DELETE)/i.test(call.sql.trim())), false);
+  assert.equal(pool.assets.get(seed.b1p01.id).parent, seed.category.id);
+  assert.equal(pool.assets.get(seed.b1p01.id).category_id, seed.category.id);
+});
+
+test('58 the real legacy sub-equipment rows of B1BT are shown and preserved, never dropped', async () => {
+  const seed = seedShape();
+  assert.equal(seed.btChildren.length, 2);
+  const pool = seedShapePool(seed);
+  await withApi(pool, 'mgr', async base => {
+    const response = await fetch(`${base}/${seed.bt.id}/structure`);
+    assert.equal(response.status, 200);
+    const data = (await response.json()).data;
+    assert.equal(data.rootEquipmentId, seed.bt.id);
+    assert.equal(data.nodeCount, 2);
+    assert.deepEqual(data.nodes.map(node => node.code).sort(), ['B1BT catali', 'B1BT9955'].sort());
+    for (const node of data.nodes) {
+      // Real rows carry no nodeKind: they are readable legacy sub-equipment, not invalid records.
+      assert.equal(node.nodeKind, 'sub-equipment');
+      assert.equal(node.level, 1);
+      assert.equal(node.legacy, true);
+      assert.equal(node.archived, false);
+      assert.equal(node.parentId, seed.bt.id);
+      assert.equal(node.rootEquipmentId, seed.bt.id);
+    }
+    assert.equal(data.diagnostics.filter(item => item.code === 'LEGACY_SUB_EQUIPMENT').length, 2);
+    assert.equal(data.diagnostics.some(item => item.code === 'STRUCTURE_PARENT_KIND_INVALID'), false);
+    assert.equal(data.orphaned.length, 0);
+    // The legacy rows keep offering their real first level.
+    assert.deepEqual(data.rootAllowedChildren, ['subsystem']);
+  });
+  // Nothing was rewritten, re-parented or archived to make the rows fit the new model.
+  assert.equal(pool.state.calls.some(call => /^(INSERT|UPDATE|DELETE)/i.test(call.sql.trim())), false);
+  for (const child of seed.btChildren) {
+    const row = pool.assets.get(child.id);
+    assert.equal(row.parent, seed.bt.id);
+    assert.equal(row.cls, 'زیرتجهیز');
+    assert.equal(row.type, 'eq');
+    assert.equal(row.deleted_at, null);
+    assert.equal(row.ext.nodeKind, undefined);
+  }
+});
+
+test('59 a subsystem can be added under B1P01 and under a real legacy sub-equipment row', async () => {
+  const seed = seedShape();
+  const pool = seedShapePool(seed);
+  const legacyChild = seed.btChildren[0].id;
+  await withApi(pool, 'mgr', async base => {
+    const underRoot = await fetch(`${base}/`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ rootEquipmentId: seed.b1p01.id, nodeKind: 'subsystem', name: 'زیرسیستم هیدرولیک',
+        code: 'B1P01-HYD', parentId: seed.b1p01.id, parentRowVersion: 1 })
+    });
+    assert.equal(underRoot.status, 201);
+    const createdRoot = (await underRoot.json()).data;
+    assert.equal(createdRoot.parent, seed.b1p01.id);
+    assert.equal(createdRoot.rootEquipmentId, seed.b1p01.id);
+    assert.equal(createdRoot.ext.nodeKind, 'subsystem');
+
+    // The boundary question is only "self or descendant": a legacy sub-equipment row is inside
+    // B1BT's boundary, so it stays usable as a parent instead of answering a boundary error.
+    const underLegacy = await fetch(`${base}/`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ rootEquipmentId: seed.bt.id, nodeKind: 'subsystem', name: 'زیرسیستم کاتالیست',
+        code: 'B1BT-CAT-SUB', parentId: legacyChild, parentRowVersion: 1 })
+    });
+    assert.equal(underLegacy.status, 201);
+    assert.equal((await underLegacy.json()).data.parent, legacyChild);
+
+    // A category or factory node can still never be the parent of an internal component.
+    const underCategory = await fetch(`${base}/`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ rootEquipmentId: seed.b1p01.id, nodeKind: 'subsystem', name: 'زیر دسته',
+        code: 'B1-CAT-SUB', parentId: seed.category.id, parentRowVersion: 1 })
+    });
+    assert.equal(underCategory.status, 422);
+    assert.equal((await underCategory.json()).error, 'STRUCTURE_PARENT_KIND_INVALID');
+
+    // Another equipment's node is outside the boundary and is still rejected.
+    const outside = await fetch(`${base}/`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ rootEquipmentId: seed.b1p01.id, nodeKind: 'subsystem', name: 'خارج از مرز',
+        code: 'B1P01-OUT', parentId: legacyChild, parentRowVersion: 1 })
+    });
+    assert.equal(outside.status, 422);
+    assert.equal((await outside.json()).error, 'PARENT_OUTSIDE_ROOT_EQUIPMENT');
+  });
+  // The category relation of the root is untouched by every write above.
+  assert.equal(pool.assets.get(seed.b1p01.id).parent, seed.category.id);
+  assert.equal(pool.assets.get(seed.b1p01.id).category_id, seed.category.id);
+});
+
+test('60 the resolver attributes every real row to the same root equipment the registry lists', async () => {
+  const seed = seedShape();
+  const pool = seedShapePool(seed);
+  const service = require('../server/equipment-structure');
+  const legacyChild = seed.btChildren[0].id;
+
+  // A root equipment resolves to itself even though its parent is a category node.
+  assert.equal((await service.resolveRootEquipment(pool, seed.b1p01.id)).id, seed.b1p01.id);
+  assert.equal((await service.resolveRootEquipment(pool, seed.bt.id)).id, seed.bt.id);
+
+  // A legacy sub-equipment row carries no nodeKind, so only the registry's immediate-parent rule
+  // can tell it apart from a root. Nearest-by-depth alone returned the row itself and detached it
+  // from its real equipment; the topmost-ancestor rule returned the wrong equipment for deeper
+  // chains. Both are wrong, the registry rule is not.
+  assert.equal((await service.resolveRootEquipment(pool, legacyChild)).id, seed.bt.id);
+
+  // A category node is never a root equipment.
+  assert.equal(await service.resolveRootEquipment(pool, seed.category.id), null);
+
+  // The same holds for nodes created through the API.
+  await withApi(pool, 'mgr', async base => {
+    const created = await fetch(`${base}/`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ rootEquipmentId: seed.bt.id, nodeKind: 'subsystem', name: 'زیرسیستم بلندینگ',
+        code: 'B1BT-SUB', parentId: legacyChild, parentRowVersion: 1 })
+    });
+    assert.equal(created.status, 201);
+    const nodeId = (await created.json()).data.id;
+    assert.equal((await service.resolveRootEquipment(pool, nodeId)).id, seed.bt.id);
+  });
+
+  // The resolver query and the registry list use the very same predicate.
+  const resolverSql = pool.state.calls.map(call => call.sql).find(sql => /WITH RECURSIVE ancestry AS/.test(sql) && /NOT internal_child/.test(sql));
+  assert.ok(resolverSql, 'the resolver must apply the registry immediate-parent rule');
+  assert.match(resolverSql, /structural_parent\.type='eq' AND structural_parent\.deleted_at IS NULL/);
+  assert.match(read('server/equipment-routes.js'), /structural_parent\.id=a\.parent\s*\n?\s*AND structural_parent\.type='eq' AND structural_parent\.deleted_at IS NULL/);
 });

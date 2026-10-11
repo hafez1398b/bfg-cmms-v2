@@ -327,7 +327,15 @@ function buildStructureTree(root, rows = []) {
       diagnostics.push(diagnostic('STRUCTURE_PARENT_OUTSIDE_SCOPE', row, null, 'والد این رکورد در Scope تجهیز جاری پیدا نشد؛ رکورد حذف نشده است.'));
       continue;
     }
-    const relation = relationStatus(parent.nodeKind, node.nodeKind);
+    // Real legacy data stores sub-equipment as type='eq' with cls='زیرتجهیز' and no nodeKind.
+    // Such a row under a registry equipment parent is readable legacy sub-equipment, not an
+    // invalid relation; the record itself is never rewritten.
+    const childKind = node.nodeKind || (parent.nodeKind === 'equipment' ? 'sub-equipment' : '');
+    const relation = relationStatus(parent.nodeKind, childKind);
+    if (!node.nodeKind && childKind) {
+      node.nodeKind = childKind;
+      node.levelLabel = LEVEL_LABELS[childKind] || node.levelLabel;
+    }
     node.validRelation = relation === 'valid';
     node.legacy = relation === 'legacy';
     if (relation === 'invalid') {
@@ -414,19 +422,30 @@ async function getFactoryId(client, rootId) {
 // dossier answered ROOT_EQUIPMENT_NOT_FOUND even though the row exists and is visible in the list.
 async function resolveRootEquipment(client, assetId) {
   const { rows } = await client.query(
+    // The decisive rule is the comprehensive registry's own definition of a root equipment: a
+    // type='eq' row whose immediate parent is not a live type='eq' row. Walking the ancestry and
+    // returning the nearest such row keeps this resolver identical to the registry for every data
+    // shape, including legacy sub-equipment rows that carry no nodeKind at all (real seed data
+    // stores them as type='eq' with cls='زیرتجهیز' and an empty ext.nodeKind, so a kind-based rule
+    // cannot tell them apart from a root).
     `WITH RECURSIVE ancestry AS (
        SELECT a.id,a.parent,a.type,COALESCE(NULLIF(a.ext->>'nodeKind',''),'equipment') AS node_kind,
-         a.category_id,0 AS depth,ARRAY[a.id]::text[] AS path
+         a.category_id,0 AS depth,ARRAY[a.id]::text[] AS path,
+         EXISTS(SELECT 1 FROM assets structural_parent WHERE structural_parent.id=a.parent
+           AND structural_parent.type='eq' AND structural_parent.deleted_at IS NULL) AS internal_child
        FROM assets a WHERE a.id=$1
        UNION ALL
        SELECT p.id,p.parent,p.type,COALESCE(NULLIF(p.ext->>'nodeKind',''),'equipment'),p.category_id,
-         ancestry.depth+1,ancestry.path||p.id
+         ancestry.depth+1,ancestry.path||p.id,
+         EXISTS(SELECT 1 FROM assets structural_parent WHERE structural_parent.id=p.parent
+           AND structural_parent.type='eq' AND structural_parent.deleted_at IS NULL)
        FROM assets p JOIN ancestry ON ancestry.parent=p.id
        WHERE ancestry.depth<64 AND NOT p.id=ANY(ancestry.path)
      )
      SELECT id,parent,type,node_kind,category_id,depth FROM ancestry
-     WHERE type='eq' AND node_kind NOT IN ('subsystem','main-component','sub-component','sub','sys','panel')
-     ORDER BY CASE WHEN node_kind IN ('equipment','sub-equipment') THEN 0 ELSE 1 END,depth ASC LIMIT 1`,
+     WHERE type='eq' AND NOT internal_child
+       AND node_kind NOT IN ('subsystem','main-component','sub-component','sub','sys','panel')
+     ORDER BY depth ASC LIMIT 1`,
     [assetId]
   );
   return rows[0] || null;
@@ -482,11 +501,21 @@ async function rootForAsset(client, user, assetId, { requireActive = true } = {}
   return root;
 }
 
-// The boundary of a dossier structure: only subsystem / main-component / sub-component nodes
-// have to live inside the root equipment. The root's own location or category parent never does.
+// The boundary of a dossier structure. It answers exactly one question: is the target parent the
+// root equipment itself, or a descendant of it? Only internal nodes (subsystem / main-component /
+// sub-component) and move operations are ever checked against it — never the root's own location
+// or category parent, which is not part of the internal structure at all.
+//
+// Parent *kind* is deliberately not decided here: createStructureNode runs parentForNode first and
+// moveStructureNode runs validateParentKind first, so a location parent already answers
+// STRUCTURE_PARENT_KIND_INVALID and a legacy sub-equipment row (real seed data stores them as
+// type='eq' with cls='زیرتجهیز' and no nodeKind) stays usable as a parent instead of receiving a
+// misleading boundary error.
 async function assertInsideRootBoundary(client, parentId, rootId, parentRow = null) {
   if (String(parentId) === String(rootId)) return true;
-  if (parentRow && !isInternalKind(kindOf(parentRow))) throw coded(422, 'PARENT_OUTSIDE_ROOT_EQUIPMENT');
+  // The caller usually already locked the parent row: when that row hangs directly off the root the
+  // answer is known without another recursive walk.
+  if (parentRow && String(parentRow.parent || parentRow.parent_id || '') === String(rootId)) return true;
   if (!(await isDescendant(client, parentId, rootId))) throw coded(422, 'PARENT_OUTSIDE_ROOT_EQUIPMENT');
   return true;
 }

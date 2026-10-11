@@ -117,21 +117,78 @@ async function main() {
         );
         console.log('children (all / active):', children.rows[0].total, '/', children.rows[0].active);
 
+        // Why the structure is empty: the tab reads only assets rows that are type='eq' children of
+        // this equipment, so this breakdown separates "no data exists" from "data exists but lives
+        // where the internal structure does not read it".
+        const breakdown = await pool.query(
+          `SELECT count(*)::int total,
+             count(*) FILTER (WHERE type='eq' AND deleted_at IS NULL)::int active_equipment,
+             count(*) FILTER (WHERE type<>'eq')::int other_type,
+             count(*) FILTER (WHERE type='eq'
+               AND COALESCE(NULLIF(ext->>'nodeKind',''),'equipment')
+                   IN ('subsystem','main-component','sub-component'))::int internal_kinded,
+             count(*) FILTER (WHERE type='eq' AND ext->>'nodeKind' IS NULL)::int without_node_kind
+           FROM assets WHERE parent=$1`,
+          [row.id]
+        );
+        const counts = breakdown.rows[0] || {};
+        console.log('children breakdown -> active type=eq:', counts.active_equipment,
+          '| other type:', counts.other_type,
+          '| with an internal nodeKind:', counts.internal_kinded,
+          '| without nodeKind:', counts.without_node_kind);
+
+        const parentRow = row.parent
+          ? await pool.query(
+            `SELECT id,code,name,type,COALESCE(NULLIF(ext->>'nodeKind',''),'') AS node_kind
+             FROM assets WHERE id=$1`, [row.parent])
+          : { rows: [] };
+        if (parentRow.rows[0]) {
+          console.log('parent row:', parentRow.rows[0].id, '| type=' + parentRow.rows[0].type,
+            '| nodeKind=' + (parentRow.rows[0].node_kind || 'NULL/absent'), '|', parentRow.rows[0].name);
+          console.log(parentRow.rows[0].type === 'eq'
+            ? '  -> the parent is an equipment row, so the registry treats THIS row as an internal node'
+            : '  -> the parent is a location/category node: preserved as-is, outside the internal structure');
+        } else {
+          console.log('parent row: none (this equipment has no parent)');
+        }
+
+        const spares = await pool.query(
+          `SELECT count(*)::int total FROM asset_spare_parts rel WHERE rel.asset_id=$1`,
+          [row.id]
+        );
+        const keyParts = Array.isArray(row.ext && row.ext.keyParts) ? row.ext.keyParts.length : 0;
+        console.log('linked spare parts (asset_spare_parts):', spares.rows[0] ? spares.rows[0].total : 0,
+          '| ext.keyParts entries:', keyParts);
+        console.log('  -> both belong to the critical spare parts section of the dossier;');
+        console.log('     they are never converted into structure rows automatically.');
+
+        if (!Number(counts.active_equipment)) {
+          console.log('CONCLUSION: this equipment has no child assets row, so');
+          console.log('  GET /api/equipment/:id/structure answers 200 with nodes: [] and the UI shows');
+          console.log('  the Persian empty state. That is the truthful content of the database, not a');
+          console.log('  query defect - nothing is invented to fill the tab.');
+        }
+
         const chain = await pool.query(
           `WITH RECURSIVE ancestry AS (
              SELECT a.id, a.parent, a.code, a.type,
                COALESCE(NULLIF(a.ext->>'nodeKind',''),'equipment') AS node_kind, 0 AS depth,
-               ARRAY[a.id]::text[] AS path
+               ARRAY[a.id]::text[] AS path,
+               EXISTS(SELECT 1 FROM assets structural_parent WHERE structural_parent.id=a.parent
+                 AND structural_parent.type='eq' AND structural_parent.deleted_at IS NULL) AS internal_child
              FROM assets a WHERE a.id=$1
              UNION ALL
              SELECT p.id, p.parent, p.code, p.type,
-               COALESCE(NULLIF(p.ext->>'nodeKind',''),'equipment'), ancestry.depth+1, ancestry.path||p.id
+               COALESCE(NULLIF(p.ext->>'nodeKind',''),'equipment'), ancestry.depth+1, ancestry.path||p.id,
+               EXISTS(SELECT 1 FROM assets structural_parent WHERE structural_parent.id=p.parent
+                 AND structural_parent.type='eq' AND structural_parent.deleted_at IS NULL)
              FROM assets p JOIN ancestry ON ancestry.parent=p.id
              WHERE ancestry.depth<64 AND NOT p.id=ANY(ancestry.path)
            )
-           SELECT id, code, type, node_kind, depth FROM ancestry
-           WHERE type='eq' AND node_kind NOT IN ('subsystem','main-component','sub-component','sub','sys','panel')
-           ORDER BY CASE WHEN node_kind IN ('equipment','sub-equipment') THEN 0 ELSE 1 END, depth ASC
+           SELECT id, code, type, node_kind, depth, internal_child FROM ancestry
+           WHERE type='eq' AND NOT internal_child
+             AND node_kind NOT IN ('subsystem','main-component','sub-component','sub','sys','panel')
+           ORDER BY depth ASC
            LIMIT 1`,
           [row.id]
         );
