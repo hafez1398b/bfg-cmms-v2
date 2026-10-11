@@ -70,18 +70,19 @@ test('detail route derives passport sections and an ancestry breadcrumb', async 
   });
 });
 
-test('filter endpoint returns factories and normalized category ownership', async () => {
-  let call = 0;
-  const pool = { query: async () => ++call === 1
+test('filter endpoint returns factories, normalized category ownership and legacy location rows', async () => {
+  let call = 0;const queries=[];
+  const pool = { query: async sql => {queries.push(sql);return ++call === 1
     ? { rows: [{ id: 'factory-1', code: 'B1', name: 'بسپار ۱' }] }
-    : { rows: [{ id: 'cat-1', code: 'PROD', name: 'تولید', factory_asset_id: 'factory-1' }] }
-  };
+    : { rows: [{ id: 'cat-1', code: 'PROD', name: 'تولید', factory_asset_id: 'factory-1' }] };
+  }};
   await withApi(pool, 'planner', async base => {
     const response = await fetch(`${base}/filters`);
     assert.equal(response.status, 200);
     const body = await response.json();
     assert.equal(body.factories[0].id, 'factory-1');
     assert.equal(body.categories[0].factory_id, 'factory-1');
+    assert.match(queries[2], /COALESCE\(location\.ext->>'nodeKind','location'\)/);
   });
 });
 
@@ -93,7 +94,7 @@ test('list route uses bounded pagination parameters and reports PostgreSQL sourc
     return { rows: [{ id: 'eq-1', code: 'EQ-1', name: 'Pump' }] };
   }};
   await withApi(pool, 'planner', async base => {
-    const response = await fetch(`${base}?limit=9999&page=2&sort=unsafe&direction=desc&q=pump`);
+    const response = await fetch(`${base}?limit=9999&page=2&sort=unsafe&direction=desc&q=pump&factoryId=factory-1`);
     assert.equal(response.status, 200);
     const body = await response.json();
     assert.equal(body.source, 'postgresql');
@@ -101,5 +102,6 @@ test('list route uses bounded pagination parameters and reports PostgreSQL sourc
     assert.equal(body.pagination.page, 2);
     assert.deepEqual(calls[1].values.slice(-2), [200, 200]);
     assert.match(calls[1].sql, /ORDER BY a\.sort_order DESC/);
+    assert.match(calls[0].sql, /COALESCE\(c\.factory_asset_id,ancestry_factory\.id\)=\$2/);
   });
 });

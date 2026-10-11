@@ -7,10 +7,16 @@ const root=path.join(__dirname,'..'),read=file=>fs.readFileSync(path.join(root,f
 
 test('equipment dossier exposes cross-module creation, edit and archive actions',()=>{
   const equipment=read('public/equipment-v2/equipment-v2.js');
-  for(const token of ["eqv2Related('wo'","eqv2Related('request'","eqv2Related('pm'",'eqv2Edit(','eqv2Delete('])assert.ok(equipment.includes(token),token);
+  for(const token of ["eqv2Related('wo'","eqv2Related('request'","eqv2Related('pm'",'window.eqv2Edit=edit','eqv2OpenWizard(','eqv2Delete('])assert.ok(equipment.includes(token),token);
   assert.match(equipment,/typeof openWO==='function'&&openWO/);
   assert.match(equipment,/typeof openReq==='function'&&openReq/);
-  assert.match(equipment,/typeof openPM==='function'&&openPM/);
+  assert.match(equipment,/pm:\['openPMForm','pmAsset'\]/);
+  assert.match(read('public/platform-v2/maintenance-client.js'),/\/api\/pm-plans/);
+  assert.match(equipment,/BFGMaintenanceWizards\.openRequest/);
+  assert.match(equipment,/BFGMaintenanceWizards\.openWorkOrder/);
+  const wizards=read('public/platform-v2/maintenance-wizards.js');
+  assert.match(wizards,/async function startWizard\(type,title,rt,selected,initialAnswers=\{\}\)/);
+  assert.match(wizards,/prepareExisting\(rt,answers\)/);
 });
 
 test('operational records provide permission-controlled edit and recoverable archive actions',()=>{

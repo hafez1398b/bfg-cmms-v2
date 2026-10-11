@@ -412,6 +412,22 @@ ALTER TABLE assets ADD COLUMN IF NOT EXISTS delete_reason TEXT;
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS row_version BIGINT NOT NULL DEFAULT 1;
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS health_score NUMERIC(5,2) CHECK (health_score IS NULL OR (health_score >= 0 AND health_score <= 100));
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS activity_type TEXT;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS manufacturer_country TEXT;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS install_date DATE;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS operational_status TEXT;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS responsible_user_id TEXT REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS general_notes TEXT;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS record_status TEXT NOT NULL DEFAULT 'complete';
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS updated_by TEXT REFERENCES users(id) ON DELETE SET NULL;
+DO $$ BEGIN
+  ALTER TABLE assets ADD CONSTRAINT assets_record_status_check
+    CHECK (record_status IN ('draft','complete'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+CREATE INDEX IF NOT EXISTS idx_assets_record_status_active
+  ON assets(record_status, updated_at DESC)
+  WHERE deleted_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS feature_flags (
   key TEXT PRIMARY KEY,
@@ -1249,5 +1265,96 @@ CREATE INDEX IF NOT EXISTS idx_request_files_request
 CREATE UNIQUE INDEX IF NOT EXISTS idx_request_files_upload_token
   ON request_files(request_id, upload_token)
   WHERE upload_token IS NOT NULL;
+
+COMMIT;
+
+-- Equipment V2 Phase 2: internal equipment structure permissions and indexes.
+-- Mirrors migrations/015_digital_equipment_structure.sql. Additive and idempotent:
+-- structure nodes reuse assets rows (type='eq') with ext->>'nodeKind' in
+-- ('subsystem','main-component','sub-component'); structural profile fields live
+-- in assets.ext (componentType, partNumber, brand, manufacturer,
+-- technicalSpecification, structureNotes, requiredQuantity, inventoryItemId).
+
+BEGIN;
+
+INSERT INTO role_permissions(role, permission) VALUES
+  ('mgr','equipment.structure.view'),
+  ('mgr','equipment.structure.create'),
+  ('mgr','equipment.structure.update'),
+  ('mgr','equipment.structure.move'),
+  ('mgr','equipment.structure.move_cross_equipment'),
+  ('mgr','equipment.structure.archive'),
+  ('mgr','equipment.structure.suggest'),
+  ('mgr','equipment.structure.approve_ai'),
+  ('planner','equipment.structure.view'),
+  ('planner','equipment.structure.create'),
+  ('planner','equipment.structure.update'),
+  ('planner','equipment.structure.move'),
+  ('planner','equipment.structure.suggest'),
+  ('store','equipment.structure.view'),
+  ('op','equipment.structure.view'),
+  ('hse','equipment.structure.view'),
+  ('cal','equipment.structure.view')
+ON CONFLICT (role, permission) DO NOTHING;
+
+CREATE INDEX IF NOT EXISTS idx_assets_structure_parent
+  ON assets(parent, sort_order, name)
+  WHERE deleted_at IS NULL AND type='eq';
+
+CREATE INDEX IF NOT EXISTS idx_assets_structure_kind
+  ON assets((COALESCE(ext->>'nodeKind','equipment')), parent)
+  WHERE deleted_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_assets_structure_inventory_item
+  ON assets((ext->>'inventoryItemId'))
+  WHERE deleted_at IS NULL AND ext->>'inventoryItemId' IS NOT NULL;
+
+COMMIT;
+
+-- Equipment V2 Phase 2 correction: backfill ext->>'nodeKind' for legacy equipment records.
+-- Mirrors migrations/016_structure_root_equipment_backfill.sql. Additive, re-runnable and
+-- non-destructive: only a missing/empty nodeKind key is filled on real assets rows with
+-- type='eq' that have no equipment ancestor; existing values, parents and history are preserved.
+
+BEGIN;
+
+WITH RECURSIVE equipment_ancestry AS (
+  SELECT a.id,
+         a.parent,
+         NULLIF(a.ext->>'nodeKind','') AS node_kind,
+         0 AS depth,
+         ARRAY[a.id]::text[] AS path,
+         false AS has_equipment_ancestor
+  FROM assets a
+  WHERE a.type='eq' AND a.deleted_at IS NULL AND NULLIF(a.ext->>'nodeKind','') IS NULL
+  UNION ALL
+  SELECT p.id,
+         p.parent,
+         NULLIF(p.ext->>'nodeKind',''),
+         equipment_ancestry.depth+1,
+         equipment_ancestry.path||p.id,
+         equipment_ancestry.has_equipment_ancestor
+           OR (p.type='eq' AND NOT p.id=ANY(equipment_ancestry.path))
+  FROM assets p
+  JOIN equipment_ancestry ON equipment_ancestry.parent=p.id
+  WHERE equipment_ancestry.depth<64 AND NOT p.id=ANY(equipment_ancestry.path)
+), root_equipment AS (
+  SELECT DISTINCT equipment_ancestry.id
+  FROM equipment_ancestry
+  WHERE equipment_ancestry.node_kind IS NULL
+    AND equipment_ancestry.has_equipment_ancestor=false
+)
+UPDATE assets
+SET ext=COALESCE(assets.ext,'{}'::jsonb) || jsonb_build_object('nodeKind','equipment'),
+    updated_at=now()
+FROM root_equipment
+WHERE assets.id=root_equipment.id
+  AND assets.type='eq'
+  AND assets.deleted_at IS NULL
+  AND NULLIF(assets.ext->>'nodeKind','') IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_assets_structure_root_equipment
+  ON assets((COALESCE(NULLIF(ext->>'nodeKind',''),'equipment')), parent)
+  WHERE deleted_at IS NULL AND type='eq';
 
 COMMIT;

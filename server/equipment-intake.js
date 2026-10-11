@@ -6,26 +6,34 @@ const { extractImport } = require('./import-extract');
 
 const NODE_KINDS = new Set(['equipment', 'sub-equipment', 'subsystem', 'main-component', 'sub-component']);
 const STATUSES = new Set(['active', 'standby', 'repair', 'stopped', 'scrap']);
+const OPERATIONAL_STATUSES = new Set(['in_service', 'standby', 'out_of_service', 'reserved', 'decommissioned']);
 const CRITS = new Set(['A', 'B', 'C']);
-const TEXT_FIELDS = ['name', 'code', 'maker', 'model', 'serial', 'year', 'install', 'power', 'cls', 'location', 'notes', 'technicalSpecification', 'capacity', 'panelCode', 'refrigerant'];
+const TEXT_FIELDS = [
+  'name', 'code', 'activityType', 'maker', 'manufacturerCountry', 'model', 'serial', 'year',
+  'install', 'installDate', 'power', 'cls', 'location', 'notes', 'technicalSpecification',
+  'capacity', 'panelCode', 'refrigerant'
+];
 const FIELD_CATALOG = [
   { key: 'name', label: 'نام تجهیز', required: true, group: 'ثبت' },
   { key: 'code', label: 'کد تجهیز', required: true, group: 'ثبت' },
   { key: 'nodeKind', label: 'نوع گره', required: true, group: 'ثبت' },
+  { key: 'activityType', label: 'نوع فعالیت', group: 'شناسنامه' },
   { key: 'maker', label: 'سازنده', group: 'شناسنامه' },
+  { key: 'manufacturerCountry', label: 'کشور سازنده', group: 'شناسنامه' },
   { key: 'model', label: 'مدل', group: 'شناسنامه' },
   { key: 'serial', label: 'سریال', group: 'شناسنامه' },
   { key: 'year', label: 'سال ساخت', group: 'شناسنامه' },
-  { key: 'install', label: 'تاریخ نصب', group: 'شناسنامه' },
+  { key: 'installDate', label: 'تاریخ نصب', group: 'شناسنامه' },
   { key: 'power', label: 'توان', group: 'شناسنامه' },
   { key: 'capacity', label: 'ظرفیت', group: 'شناسنامه' },
   { key: 'location', label: 'محل استقرار', group: 'شناسنامه' },
   { key: 'cls', label: 'کلاس', group: 'شناسنامه' },
-  { key: 'status', label: 'وضعیت', group: 'شناسنامه' },
+  { key: 'status', label: 'وضعیت فنی', group: 'شناسنامه' },
+  { key: 'operationalStatus', label: 'وضعیت بهره‌برداری', group: 'شناسنامه' },
   { key: 'crit', label: 'بحرانیت', group: 'شناسنامه' },
-  { key: 'hours', label: 'کارکرد', group: 'شناسنامه' },
+  { key: 'hours', label: 'کارکرد تجمعی', group: 'شناسنامه' },
   { key: 'technicalSpecification', label: 'مشخصات فنی', group: 'تکمیل' },
-  { key: 'notes', label: 'شرح', group: 'تکمیل' },
+  { key: 'notes', label: 'شرح عملکرد', group: 'تکمیل' },
   { key: 'panelCode', label: 'تابلو برق', group: 'تکمیل' },
   { key: 'refrigerant', label: 'نوع مبرد', group: 'تکمیل' },
   { key: 'dailyOperatingHours', label: 'کارکرد روزانه', group: 'تکمیل' },
@@ -68,6 +76,7 @@ function normalizeRecord(input, index) {
   else record.nodeKind = 'equipment';
   record.nodeKindSource = NODE_KINDS.has(source.nodeKind) ? 'found' : 'default';
   if (STATUSES.has(source.status)) record.status = source.status;
+  if (OPERATIONAL_STATUSES.has(source.operationalStatus)) record.operationalStatus = source.operationalStatus;
   if (CRITS.has(String(source.crit || '').toUpperCase())) record.crit = String(source.crit).toUpperCase();
   const hours = Number(source.hours);
   if (Number.isFinite(hours) && hours >= 0 && hours < 100000000) record.hours = hours;
@@ -161,7 +170,7 @@ function buildPrompt({ caption, extracted, equipment, history }) {
     'مثل یک گفتگوی تحلیل عمل کن: فایل یا متن را بخوان، به همان درخواست کاربر جواب بده، و اگر داده تجهیز در آن هست جدا کن.',
     'در reply تحلیل، جمع‌بندی، فهرست کمبود، یا متن تولیدشده را کامل و فارسی بنویس. تولید فقط از حقایق همین ورودی مجاز است.',
     'فقط حقایقی را در records بگذار که در متن آمده‌اند. کد، سریال، توان، سال، سازنده، محل یا هزینه را اختراع نکن.',
-    'پاسخ فقط JSON باشد: {"reply":"تحلیل فارسی","intent":"analyze","records":[{"action":"create","name":"","code":"","nodeKind":"equipment","maker":"","model":"","serial":"","year":"","install":"","power":"","capacity":"","status":"active","crit":"C","cls":"","location":"","notes":"","technicalSpecification":"","panelCode":"","refrigerant":"","dailyOperatingHours":null,"criticalityScore":null,"keyParts":[],"confidence":0.8}]}',
+    'پاسخ فقط JSON باشد: {"reply":"تحلیل فارسی","intent":"analyze","records":[{"action":"create","name":"","code":"","nodeKind":"","activityType":"","maker":"","manufacturerCountry":"","model":"","serial":"","year":"","installDate":"","power":"","capacity":"","status":"","operationalStatus":"","crit":"","cls":"","location":"","notes":"","technicalSpecification":"","panelCode":"","refrigerant":"","dailyOperatingHours":null,"criticalityScore":null,"keyParts":[],"confidence":null}]}',
     'intent یکی از analyze، create، complete یا generate باشد. اگر کاربر فقط تحلیل یا تولید متن خواست، records را خالی بگذار مگر اینکه داده تجهیز واقعاً در متن باشد.',
     'فیلدهای ناموجود را حذف کن. اگر نام یا کد نیست، در reply دقیقاً همان را بخواه.',
     `داده لازم برای ساخت تجهیز: نام، کد، نوع گره. داده شناسنامه و تکمیل: ${catalogText()}`,
@@ -304,7 +313,9 @@ async function equipmentSnapshot(pool, equipmentId) {
   if (!equipmentId) return null;
   try {
     const { rows } = await pool.query(
-      'SELECT id, code, name, cls, status, crit, maker, model, serial, year, install, power, hours, ext FROM assets WHERE id=$1',
+      `SELECT id,code,name,cls,status,crit,maker,model,serial,year,install,install_date,power,hours,ext,
+        category_id,activity_type,manufacturer_country,operational_status,responsible_user_id,general_notes,record_status,row_version
+       FROM assets WHERE id=$1 AND deleted_at IS NULL`,
       [equipmentId]
     );
     const row = rows[0];
@@ -320,18 +331,26 @@ async function equipmentSnapshot(pool, equipmentId) {
       year: row.year || null,
       install: row.install || null,
       power: row.power || null,
-      hours: row.hours || null,
+      hours: row.hours == null ? null : Number(row.hours),
       cls: row.cls || null,
       status: row.status || null,
       crit: row.crit || null,
+      installDate: row.install_date || null,
+      activityType: row.activity_type || null,
+      manufacturerCountry: row.manufacturer_country || null,
+      operationalStatus: row.operational_status || null,
+      responsibleUserId: row.responsible_user_id || null,
+      generalNotes: row.general_notes || null,
+      recordStatus: row.record_status || 'complete',
+      rowVersion: Number(row.row_version) || 1,
       location: ext.locationDescription || null,
       notes: ext.description || null,
       technicalSpecification: ext.technicalSpecification || null,
       capacity: ext.capacity || null,
       panelCode: ext.panelCode || null,
       refrigerant: ext.refrigerant || null,
-      dailyOperatingHours: ext.dailyOperatingHours || null,
-      criticalityScore: ext.criticalityScore || null,
+      dailyOperatingHours: ext.dailyOperatingHours == null ? null : Number(ext.dailyOperatingHours),
+      criticalityScore: ext.criticalityScore == null ? null : Number(ext.criticalityScore),
       keyParts: Array.isArray(ext.keyParts) ? ext.keyParts : [],
       nodeKind: ext.nodeKind || 'equipment',
       nodeKindSource: ext.nodeKind ? 'found' : 'default'
