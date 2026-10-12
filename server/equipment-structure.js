@@ -139,7 +139,7 @@ function requiredText(value, code, max = 500) {
   return result;
 }
 
-function structureExt(input = {}, { nodeKind, allowNullInventory = false } = {}) {
+function structureExt(input = {}, { nodeKind, allowNullInventory = false, allowNullFields = false } = {}) {
   const nested = jsonObject(input.ext);
   const source = { ...nested };
   for (const key of [...EXT_TEXT_FIELDS, 'requiredQuantity', 'inventoryItemId']) {
@@ -151,6 +151,7 @@ function structureExt(input = {}, { nodeKind, allowNullInventory = false } = {})
     if (!Object.prototype.hasOwnProperty.call(source, key)) continue;
     const value = text(source[key], key === 'technicalSpecification' || key === 'structureNotes' ? 4000 : 240);
     if (value) result[key] = value;
+    else if (allowNullFields) result[key] = null;
   }
   if (Object.prototype.hasOwnProperty.call(source, 'requiredQuantity')) {
     const raw = source.requiredQuantity;
@@ -718,6 +719,37 @@ async function getStructure({ pool, security, user, rootEquipmentId, includeArch
   };
 }
 
+function canonicalJson(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value && typeof value === 'object') return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`;
+  return JSON.stringify(value);
+}
+
+async function reserveStructureRequest(client, userId, requestId, requestHash) {
+  await client.query(
+    `DELETE FROM idempotency_keys WHERE user_id=$1 AND idempotency_key=$2 AND expires_at<=now()`,
+    [userId, requestId]
+  );
+  const inserted = await client.query(
+    `INSERT INTO idempotency_keys(user_id,idempotency_key,request_hash,expires_at)
+     VALUES($1,$2,$3,now()+interval '24 hours')
+     ON CONFLICT(user_id,idempotency_key) DO NOTHING RETURNING idempotency_key`,
+    [userId, requestId, requestHash]
+  );
+  if (inserted.rows[0]) return null;
+  const existing = await client.query(
+    `SELECT request_hash,response_status,response_body FROM idempotency_keys
+     WHERE user_id=$1 AND idempotency_key=$2 FOR UPDATE`, [userId, requestId]
+  );
+  const row = existing.rows[0];
+  if (!row) throw coded(409, 'DUPLICATE_REQUEST_PENDING');
+  if (row.request_hash !== requestHash) throw coded(409, 'IDEMPOTENCY_KEY_REUSED');
+  if (Number(row.response_status) !== 201 || !row.response_body) throw coded(409, 'DUPLICATE_REQUEST_PENDING');
+  const body = typeof row.response_body === 'string' ? JSON.parse(row.response_body) : row.response_body;
+  if (!body || !body.data || !body.data.id) throw coded(409, 'DUPLICATE_REQUEST_PENDING');
+  return body;
+}
+
 async function createStructureNode({ client, pool, security, user, rootEquipmentId, input = {}, permission = 'equipment.structure.create' }) {
   await assertPermission({ pool, security, user }, permission);
   const errors = validateStructureInput(input, { requireParentVersion: true });
@@ -727,14 +759,26 @@ async function createStructureNode({ client, pool, security, user, rootEquipment
   const code = text(input.code, 120);
   const parentId = requiredText(input.parentId, 'PARENT_NOT_FOUND', 120);
   const parentVersion = versionOf(input.parentRowVersion ?? input.parent_row_version);
-  const extPatch = structureExt(input, { nodeKind: kind });
-  const item = await assertInventoryItem(client, extPatch.inventoryItemId);
-  const resolvedRootId = rootEquipmentId
-    || (await resolveRootEquipment(client, parentId) || {}).id
-    || null;
+  const requestId = text(input.requestId || input.idempotencyKey, 120);
+  const resolvedRootId = rootEquipmentId || input.rootEquipmentId || input.equipmentId
+    || (await resolveRootEquipment(client, parentId) || {}).id || null;
   if (!resolvedRootId) throw coded(422, 'ROOT_EQUIPMENT_NOT_FOUND');
   const root = await rootEquipmentById(client, resolvedRootId);
   await assertEquipmentScope(client, user, root.id, root.factory_id);
+  let idempotencyHash = null;
+  if (requestId) {
+    const hashInput = { ...input };
+    delete hashInput.requestId;
+    delete hashInput.idempotencyKey;
+    idempotencyHash = crypto.createHash('sha256').update(canonicalJson({
+      rootEquipmentId: String(resolvedRootId),
+      input: hashInput
+    })).digest('hex');
+    const replay = await reserveStructureRequest(client, user.id, requestId, idempotencyHash);
+    if (replay) return { ...replay.data, idempotentReplay: true };
+  }
+  const extPatch = structureExt(input, { nodeKind: kind });
+  await assertInventoryItem(client, extPatch.inventoryItemId);
   const parent = await parentForNode(client, parentId, kind);
   await assertInsideRootBoundary(client, parent.row.id, root.id, parent.row);
   // The scope of the addressed equipment was already asserted above. Only when the new node hangs
@@ -747,15 +791,22 @@ async function createStructureNode({ client, pool, security, user, rootEquipment
   const { rows } = await client.query(
     `INSERT INTO assets(id,parent,code,name,type,cls,status,crit,maker,model,serial,ext,category_id,sort_order,
        is_active,record_status,updated_by,updated_at)
-     VALUES($1,$2,$3,$4,'eq',$5,'active',$6,$7,$8,$9,$10::jsonb,$11,$12,true,'complete',$13,now()) RETURNING *`,
-    [nodeId, parent.row.id, code, name, text(input.cls, 180), text(input.crit, 20), text(input.maker || input.manufacturer, 180),
-      text(input.model, 180), text(input.serial, 180), JSON.stringify(extPatch), root.category_id || null,
-      Number(input.sortOrder) || 0, user.id]
+     VALUES($1,$2,$3,$4,'eq',$5,$6,$7,$8,$9,$10,$11::jsonb,$12,$13,true,'complete',$14,now()) RETURNING *`,
+    [nodeId, parent.row.id, code, name, text(input.cls, 180), text(input.status, 80) || 'active', text(input.crit, 20),
+      text(input.maker || input.manufacturer, 180), text(input.model, 180), text(input.serial, 180), JSON.stringify(extPatch),
+      root.category_id || null, Number(input.sortOrder) || 0, user.id]
   );
   const parentRowVersion = await bumpParentVersion(client, parent.row, user);
   const data = { ...rows[0], rootEquipmentId: root.id, parentRowVersion };
   await writeAudit(client, user, 'structure-create', nodeId, 'ایجاد جزء ساختاری در پرونده تجهیز', null, data);
   await publishStructureEvent(client, user, [root.id], 'create', rows[0]);
+  if (requestId) {
+    await client.query(
+      `UPDATE idempotency_keys SET response_status=201,response_body=$3::jsonb,expires_at=now()+interval '24 hours'
+       WHERE user_id=$1 AND idempotency_key=$2 AND request_hash=$4`,
+      [user.id, requestId, JSON.stringify({ data, committed: true }), idempotencyHash]
+    );
+  }
   return data;
 }
 
@@ -770,7 +821,7 @@ async function updateStructureNode({ client, pool, security, user, id, input = {
   if (Number(current.row_version) !== rowVersion) throw coded(409, 'VERSION_CONFLICT');
   const root = await rootForAsset(client, user, current.id);
   if (input.rootEquipmentId && String(input.rootEquipmentId) !== String(root.id)) throw coded(422, 'ROOT_EQUIPMENT_MISMATCH');
-  const extPatch = structureExt(input, { nodeKind: currentKind, allowNullInventory: true });
+  const extPatch = structureExt(input, { nodeKind: currentKind, allowNullInventory: true, allowNullFields: true });
   if (Object.prototype.hasOwnProperty.call(input, 'inventoryItemId') || Object.prototype.hasOwnProperty.call(jsonObject(input.ext), 'inventoryItemId')) {
     await assertInventoryItem(client, extPatch.inventoryItemId);
   }
@@ -785,9 +836,9 @@ async function updateStructureNode({ client, pool, security, user, id, input = {
     if (!Object.prototype.hasOwnProperty.call(input, key) || seenColumns.has(column)) continue;
     seenColumns.add(column);
     const clean = text(input[key], max);
-    if (clean == null) continue;
+    if (clean == null && !Object.prototype.hasOwnProperty.call(input, key)) continue;
     if (column === 'name' && !clean) throw coded(422, 'NAME_REQUIRED');
-    if (column === 'code') await assertUniqueCode(client, clean, current.id);
+    if (column === 'code' && clean) await assertUniqueCode(client, clean, current.id);
     values.push(clean);
     sets.push(`${column}=$${values.length}`);
   }

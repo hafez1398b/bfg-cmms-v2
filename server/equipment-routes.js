@@ -412,9 +412,11 @@ function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry, securi
           input: body
         })
         : await createEquipment(client, req.user, body);
+      const idempotentReplay=internalNode&&row&&row.idempotentReplay===true;
+      const responseData=idempotentReplay?Object.fromEntries(Object.entries(row).filter(([key])=>key!=='idempotentReplay')):row;
       await client.query('COMMIT');
       if (!internalNode) emit({ action: 'create', id: row.id });
-      res.status(201).json({ data: row, committed: true });
+      res.status(201).json({ data: responseData, committed: true, ...(idempotentReplay?{idempotentReplay:true}:{}) });
     } catch (error) {
       await client.query('ROLLBACK').catch(() => {});
       next(error);

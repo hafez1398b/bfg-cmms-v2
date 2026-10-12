@@ -135,12 +135,14 @@ test('risk section maps recorded work-order root-cause analysis without inventin
   assert.match(detailBody.innerHTML, /اقدام ثبت‌شده/);
 });
 
-test('equipment editor uses the shared three-step wizard and starts section edits on the requested step', async () => {
+test('equipment editor keeps requested wizard navigation for metadata but no longer owns structure CRUD', async () => {
   const { context, host } = harness({ wizard: true });
   await context.eqv2OpenWizard('eq-1', 'structure', 'structure');
   assert.equal(context.EQV2.wizard.instance.getCurrentStep().id, 'structure');
-  assert.match(host.innerHTML, /ساختار ثبت‌شده/);
-  assert.match(host.innerHTML, /مسیر و اجزای موجود را بررسی کنید/);
+  assert.match(host.innerHTML, /موقعیت و دسته‌بندی/);
+  assert.match(host.innerHTML, /مسیر و محل فیزیکی تجهیز را انتخاب کنید/);
+  assert.match(host.innerHTML, /data-sw-field="locationId"/);
+  assert.doesNotMatch(host.innerHTML, /newChildParent|newChildKind|newChildName/);
 
   context.EQV2.wizard.allowClose = true;
   context.closeModal();

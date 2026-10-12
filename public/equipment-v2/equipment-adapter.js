@@ -7,18 +7,18 @@
   async function api(path,options={}){
     if(!hasSession())throw Object.assign(new Error('SERVER_REQUIRED'),{status:503});
     if(typeof window.bfgApi==='function')return window.bfgApi('/api/equipment'+path,options);
-    const headers={'Content-Type':'application/json',...(options.headers||{})};
-    const method=String(options.method||'GET').toUpperCase();
+    const expectedStatus=Number(options.expectedStatus)||null,requestOptions={...options};delete requestOptions.expectedStatus;
+    const headers={'Content-Type':'application/json',...(requestOptions.headers||{})};
+    const method=String(requestOptions.method||'GET').toUpperCase();
     if(!['GET','HEAD','OPTIONS'].includes(method)){
       const csrf=String(document.cookie||'').split(';').map(part=>part.trim()).find(part=>part.startsWith('bfg_csrf='));
       if(csrf)headers['x-csrf-token']=decodeURIComponent(csrf.slice('bfg_csrf='.length));
     }
-    const response=await fetch('/api/equipment'+path,{...options,headers,credentials:'same-origin'});
-    if(!response.ok){
-      const payload=await response.json().catch(()=>({}));
-      throw Object.assign(new Error(payload.error||`HTTP ${response.status}`),{status:response.status,payload});
-    }
-    return response.json();
+    const response=await fetch('/api/equipment'+path,{...requestOptions,headers,credentials:'same-origin'});
+    const payload=await response.json().catch(()=>({}));
+    if(!response.ok){throw Object.assign(new Error(payload.error||`HTTP ${response.status}`),{status:response.status,payload});}
+    if(expectedStatus&&response.status!==expectedStatus)throw Object.assign(new Error('UNEXPECTED_RESPONSE_STATUS'),{status:response.status,payload:{...payload,error:'UNEXPECTED_RESPONSE_STATUS'}});
+    return expectedStatus?{...payload,httpStatus:response.status}:payload;
   }
 
   const remote={
@@ -35,8 +35,8 @@
       method:'DELETE',body:JSON.stringify({reason,rowVersion})
     }),
     structure:(id,options)=>api('/'+encodeURIComponent(id)+'/structure'+(options&&options.includeArchived?'?includeArchived=true':'')),
-    structureCreate:data=>api('/',{method:'POST',body:JSON.stringify(data)}),
-    structureUpdate:(id,data)=>api('/'+encodeURIComponent(id),{method:'PATCH',body:JSON.stringify(data)}),
+    structureCreate:data=>api('/',{method:'POST',body:JSON.stringify(data),expectedStatus:201}),
+    structureUpdate:(id,data)=>api('/'+encodeURIComponent(id),{method:'PATCH',body:JSON.stringify(data),expectedStatus:200}),
     structureMove:(id,data)=>api('/'+encodeURIComponent(id)+'/move',{method:'POST',body:JSON.stringify(data)}),
     structureArchive:(id,reason,rowVersion)=>api('/'+encodeURIComponent(id),{
       method:'DELETE',body:JSON.stringify({reason,rowVersion})

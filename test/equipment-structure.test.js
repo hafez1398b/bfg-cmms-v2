@@ -51,7 +51,7 @@ function structurePool(options = {}) {
   // so the tests prove nothing is invented when the ledger has no data.
   const balances = options.balances || new Map();
   const purchases = options.purchases || new Map();
-  const state = { calls: [], audit: [], outbox: [], scoped: options.scoped !== false, users: options.users || [
+  const state = { calls: [], audit: [], outbox: [], idempotency: new Map(), scoped: options.scoped !== false, users: options.users || [
     { id: 'u-mgr', role: 'mgr', permissions: ['equipment.structure.view'], scopes: [{ scope_type: 'equipment', scope_id: 'eq-root' }] },
     { id: 'u-out', role: 'tech', permissions: ['equipment.structure.view'], scopes: [] }
   ] };
@@ -88,6 +88,22 @@ function structurePool(options = {}) {
   async function query(sql, values = []) {
     state.calls.push({ sql, values });
     if (/^(BEGIN|COMMIT|ROLLBACK)/i.test(sql.trim())) return { rows: [] };
+    if (/DELETE FROM idempotency_keys/.test(sql)) return { rows: [] };
+    if (/INSERT INTO idempotency_keys/.test(sql)) {
+      const key=`${values[0]}:${values[1]}`;
+      if(state.idempotency.has(key))return{rows:[]};
+      state.idempotency.set(key,{user_id:values[0],idempotency_key:values[1],request_hash:values[2],response_status:null,response_body:null});
+      return{rows:[{idempotency_key:values[1]}]};
+    }
+    if (/SELECT request_hash,response_status,response_body FROM idempotency_keys/.test(sql)) {
+      const row=state.idempotency.get(`${values[0]}:${values[1]}`);
+      return{rows:row?[{...row}]:[]};
+    }
+    if (/UPDATE idempotency_keys SET response_status=201/.test(sql)) {
+      const row=state.idempotency.get(`${values[0]}:${values[1]}`);
+      if(row&&row.request_hash===values[3]){row.response_status=201;row.response_body=JSON.parse(values[2]);}
+      return{rows:[]};
+    }
     if (/FROM user_scopes WHERE user_id=\$1/.test(sql)) return { rows: state.scoped ? [{ 1: 1 }] : [] };
     if (/WITH RECURSIVE ancestry AS/.test(sql) && /node_kind NOT IN \('subsystem','main-component','sub-component','sub','sys','panel'\)/.test(sql)) {
       assert.match(sql, /COALESCE\(NULLIF\([ap]\.ext->>'nodeKind',''\),'equipment'\)/);
@@ -149,8 +165,8 @@ function structurePool(options = {}) {
     if (/INSERT INTO assets/.test(sql)) {
       const row = {
         id: values[0], parent: values[1], code: values[2], name: values[3], type: 'eq', cls: values[4],
-        status: 'active', crit: values[5], maker: values[6], model: values[7], serial: values[8],
-        ext: JSON.parse(values[9] || '{}'), category_id: values[10], sort_order: values[11],
+        status: values[5], crit: values[6], maker: values[7], model: values[8], serial: values[9],
+        ext: JSON.parse(values[10] || '{}'), category_id: values[11], sort_order: values[12],
         is_active: true, record_status: 'complete', row_version: 1, deleted_at: null, delete_reason: null
       };
       assets.set(row.id, row);
@@ -362,13 +378,21 @@ test('3 internal components stay filtered out of the comprehensive registry list
 test('4-6 subsystem, main component and sub component chain is created through the equipment endpoints', async () => {
   const pool = structurePool();
   await withApi(pool, 'mgr', async base => {
+    const subsystemInput={nodeKind:'subsystem',name:'زیرسیستم دو',code:'SUB-2',parentId:'eq-root',parentRowVersion:3,requestId:'create-subsystem-once'};
     const subsystem = await fetch(`${base}/`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ nodeKind: 'subsystem', name: 'زیرسیستم دو', code: 'SUB-2', parentId: 'eq-root', parentRowVersion: 3 })
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(subsystemInput)
     });
     assert.equal(subsystem.status, 201);
     const created = (await subsystem.json()).data;
     assert.equal(created.parent, 'eq-root');
+    const replay=await fetch(`${base}/`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(subsystemInput)});
+    assert.equal(replay.status,201,'a retry of a committed structure create keeps the create status');
+    const replayBody=await replay.json();
+    assert.equal(replayBody.idempotentReplay,true);
+    assert.equal(replayBody.data.id,created.id);
+    const reused=await fetch(`${base}/`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({...subsystemInput,name:'متن متفاوت'})});
+    assert.equal(reused.status,409);
+    assert.equal((await reused.json()).error,'IDEMPOTENCY_KEY_REUSED');
     assert.equal(created.ext.nodeKind, 'subsystem');
     const componentResponse = await fetch(`${base}/`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
@@ -636,14 +660,42 @@ test('23-25 inventory master data links real items and stock is read from the ba
   });
 });
 
-test('26-27 the shared step wizard creates structure nodes and returns to the structure tab', async () => {
+test('26-27 an independent structure drawer creates a subsystem and returns to the structure tab', async () => {
   const calls = [];
-  const host = {
-    innerHTML: '', ownerDocument: null, listeners: {},
-    addEventListener(name, fn) { this.listeners[name] = fn; },
-    removeEventListener(name) { delete this.listeners[name]; },
-    querySelector() { return null; }, contains() { return true; }, replaceChildren() { this.innerHTML = ''; }
-  };
+  class DrawerRoot {
+    constructor(html) {
+      this.innerHTML = html;
+      this.listeners = {};
+      this.fields = [...html.matchAll(/data-structure-field="([^"]+)"/g)].map((match) => ({
+        dataset: { structureField: match[1] }, value: match[1] === 'status' ? 'active' : '',
+        focus() {}, isConnected: true
+      }));
+      this.saveButton = { dataset: { structureAction: 'save' }, disabled: false, textContent: 'ذخیره' };
+      this.errorNode = { hidden: true, textContent: '' };
+    }
+    addEventListener(name, fn) { this.listeners[name] = fn; }
+    removeEventListener(name) { delete this.listeners[name]; }
+    querySelector(selector) {
+      if (selector === '[data-structure-error]') return this.errorNode;
+      if (selector === '[data-structure-action="save"]') return this.saveButton;
+      if (selector === '[data-autofocus]') return null;
+      if (selector.includes('.eqv2-structure-form input')) return this.fields[0] || null;
+      return null;
+    }
+    querySelectorAll(selector) {
+      if (selector === '[data-structure-field]') return this.fields;
+      return [];
+    }
+    contains() { return true; }
+    remove() { this.removed = true; }
+    clickSave() {
+      const target = {
+        dataset: { structureAction: 'save' },
+        closest: selector => selector === '[data-structure-action]' ? this.saveButton : null
+      };
+      this.listeners.click({ target, preventDefault() {} });
+    }
+  }
   const repository = {
     source: 'postgresql',
     feature: async () => ({ enabled: true }),
@@ -655,26 +707,27 @@ test('26-27 the shared step wizard creates structure nodes and returns to the st
       nodes: [{ id: 'sub-1', code: 'SUB-1', name: 'زیرسیستم یک', nodeKind: 'subsystem', rowVersion: 2, children: [], path: [{ id: 'sub-1' }] }],
       capabilities: { create: true, update: true, move: true, archive: true, suggest: true, approveAi: true }, suggestions: []
     } }),
-    structureCreate: async payload => { calls.push(['create', payload]); return { data: { id: 'sub-new', ...payload }, committed: true }; },
+    structureCreate: async payload => { calls.push(['create', payload]); return { httpStatus: 201, data: { id: 'sub-new', ...payload }, committed: true }; },
     inventoryItems: async () => ({ data: [{ id: 'item-1', code: 'SP-1', name: 'یاتاقان', unit: 'عدد', available: 7 }] })
   };
   const document = {
-    getElementById: id => id === 'eqv2StructureWizardHost' ? host : id === 'content' ? { innerHTML: '' } : null,
-    querySelector: () => null, querySelectorAll: () => [], addEventListener() {}
+    body: { insertAdjacentHTML(_where, html) { document.drawerRoot = new DrawerRoot(html); } },
+    activeElement: { isConnected: true, focus() {} },
+    getElementById: id => id === 'eqv2StructureDrawer' ? document.drawerRoot : id === 'content' ? { innerHTML: '' } : null,
+    querySelector: () => null, querySelectorAll: () => [], addEventListener() {}, removeEventListener() {}
   };
-  host.ownerDocument = document;
   const context = {
     MENU: [{ g: 'دارایی‌ها' }, { id: 'equipment', ic: '⚙️', t: 'فهرست جامع تجهیزات' }],
     pgTree: () => '<div>فهرست جامع تجهیزات</div>', doLogin() {}, ME: null, CUR: 'equipment', buildMenu() {},
     EquipmentRepository: { current: () => repository },
     sessionStorage: { getItem: () => null, setItem() {} }, localStorage: { getItem: () => null, setItem() {} },
-    setTimeout: (fn) => { fn(); return 0; }, clearTimeout() {}, requestAnimationFrame: fn => fn(),
+    setTimeout: fn => { fn(); return 0; }, clearTimeout() {}, requestAnimationFrame: fn => fn(),
     can: () => true, esc: value => String(value ?? ''), fa: value => String(value ?? ''), money: value => String(value ?? ''),
     jDate: value => String(value ?? ''), jDateTime: value => String(value ?? ''), AS_ST: { active: ['فعال', 'b-green'] },
     document, location: { pathname: '/equipment/EQ-ROOT', search: '', hash: '' },
     history: { pushState() {}, replaceState() {} }, CSS: { escape: value => String(value) },
-    scrollY: 0, scrollTo() {}, addEventListener() {}, modal(html) { context.modalHtml = html; },
-    mhead: title => `<div class="modal-title">${title}</div>`, closeModal() { context.EQV2.wizard = null; },
+    scrollY: 0, scrollTo() {}, addEventListener() {}, modal() { throw new Error('structure CRUD must not use the shared modal'); },
+    mhead: title => `<div class="modal-title">${title}</div>`, closeModal() {},
     confirm: () => true, toast: message => { context.toasts = (context.toasts || []).concat(message); },
     prompt: () => 'دلیل', console, crypto: { randomUUID: () => 'req-1' }
   };
@@ -682,32 +735,35 @@ test('26-27 the shared step wizard creates structure nodes and returns to the st
   vm.createContext(context);
   vm.runInContext(read('public/platform-v2/step-wizard.js'), context);
   vm.runInContext(read('public/platform-v2/equipment-wizard-adapter.js'), context);
+  vm.runInContext(read('public/equipment-v2/structure-drawer-controller.js'), context);
   vm.runInContext(read('public/equipment-v2/equipment-v2.js'), context);
   context.EQV2.structure = {
-    rootEquipmentId: 'eq-root', root: { id: 'eq-root', code: 'EQ-ROOT', name: 'ریشه', rowVersion: 3 },
-    nodes: [], capabilities: { create: true, update: true, move: true, archive: true, suggest: true, approveAi: true }, suggestions: []
+    rootEquipmentId: 'eq-root', rootId: 'eq-root', root: { id: 'eq-root', code: 'EQ-ROOT', name: 'ریشه', rowVersion: 3 },
+    nodes: [], rootAllowedChildren: ['subsystem'],
+    capabilities: { create: true, update: true, move: true, archive: true, suggest: true, approveAi: true }, suggestions: []
   };
-  assert.equal(context.EQV2.structure.rootEquipmentId, 'eq-root');
   context.EQV2.tab = 'structure';
   await context.eqv2StructureAdd('eq-root');
-  const wizard = context.EQV2.wizard.instance;
-  assert.equal(wizard.getCurrentStep().id, 'structureNode');
-  assert.match(host.innerHTML, /ساختار داخلی/);
-  assert.match(host.innerHTML, /زیرسیستم/);
-  assert.doesNotMatch(host.innerHTML, /value="main-component"/);
-  await wizard.setAnswer('name', 'زیرسیستم ویزاردی');
-  await wizard.setAnswer('code', 'SUB-W');
-  wizard.state.reviewConfirmed = true;
-  await host.listeners.click({ target: { closest: selector => (selector === '[data-sw-action]' ? { dataset: { swAction: 'submit' } } : null), matches: () => false } });
-  for (let tick = 0; tick < 40 && (!calls.length || !(context.toasts || []).length); tick++) {
-    await new Promise(resolve => setImmediate(resolve));
-  }
-  assert.deepEqual(calls[0][0], 'create');
+  assert.equal(context.EQV2.structureDrawerView.kind, 'subsystem');
+  assert.match(document.drawerRoot.innerHTML, /پرونده تجهیز · ساختار/);
+  assert.match(document.drawerRoot.innerHTML, /والد از پیش انتخاب‌شده/);
+  assert.match(document.drawerRoot.innerHTML, /ریشه/);
+  assert.doesNotMatch(document.drawerRoot.innerHTML, /data-sw-action/);
+  const name = document.drawerRoot.fields.find(field => field.dataset.structureField === 'name');
+  const code = document.drawerRoot.fields.find(field => field.dataset.structureField === 'code');
+  name.value = 'زیرسیستم مستقل';
+  code.value = 'SUB-DRAWER';
+  document.drawerRoot.clickSave();
+  for (let tick = 0; tick < 40 && (!calls.length || !(context.toasts || []).length); tick++) await new Promise(resolve => setImmediate(resolve));
+  assert.equal(calls[0][0], 'create');
   assert.equal(calls[0][1].parentId, 'eq-root');
   assert.equal(calls[0][1].parentRowVersion, 3);
+  assert.equal(calls[0][1].rootEquipmentId, 'eq-root');
   assert.equal(calls[0][1].nodeKind, 'subsystem');
-  assert.ok((context.toasts || []).some(message => String(message).includes('پس از commit')));
+  assert.equal(calls[0][1].requestId, 'req-1');
+  assert.ok((context.toasts || []).some(message => String(message).includes('پس از پاسخ 201')));
   assert.equal(context.EQV2.tab, 'structure');
+  assert.equal(context.EQV2.structureDrawerView, null);
 });
 
 test('28-30 Selene structure suggestions remain drafts until a human confirms them', async () => {
@@ -1393,7 +1449,8 @@ test('48 the backend publishes the valid root levels and the UI offers them', as
   const ui = read('public/equipment-v2/equipment-v2.js');
   assert.match(ui, /Array\.isArray\(st\.rootAllowedChildren\)/);
   assert.match(ui, /structureAllowedChildren\(node\.nodeKind,node\)/);
-  assert.match(ui, /structureAllowedChildren\(ctx\.parent\.nodeKind,ctx\.parent\)/);
+  assert.match(ui, /structureAllowedChildren\(parent\.nodeKind,parent\)/);
+  assert.match(ui, /openStructureForm\(\{mode:'create',kind:childKind,parent\}\)/);
 
   const repository = legacyStructureRepository({
     rootEquipmentId: 'b1p01',
