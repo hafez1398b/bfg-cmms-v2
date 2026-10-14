@@ -34,14 +34,20 @@
     remove:(id,reason,rowVersion)=>api('/'+encodeURIComponent(id),{
       method:'DELETE',body:JSON.stringify({reason,rowVersion})
     }),
-    structure:(id,options)=>api('/'+encodeURIComponent(id)+'/structure'+(options&&options.includeArchived?'?includeArchived=true':'')),
+    structure:(id,options={})=>{
+      const query=new URLSearchParams();
+      if(options.includeArchived)query.set('includeArchived','true');
+      if(options.depth!=null)query.set('depth',String(options.depth));
+      const params=query.toString();
+      return api('/'+encodeURIComponent(id)+'/structure'+(params?'?'+params:''));
+    },
     structureCreate:data=>api('/',{method:'POST',body:JSON.stringify(data),expectedStatus:201}),
     structureUpdate:(id,data)=>api('/'+encodeURIComponent(id),{method:'PATCH',body:JSON.stringify(data),expectedStatus:200}),
     structureMove:(id,data)=>api('/'+encodeURIComponent(id)+'/move',{method:'POST',body:JSON.stringify(data)}),
     structureArchive:(id,reason,rowVersion)=>api('/'+encodeURIComponent(id),{
-      method:'DELETE',body:JSON.stringify({reason,rowVersion})
+      method:'DELETE',body:JSON.stringify({reason,rowVersion}),expectedStatus:200
     }),
-    structureRestore:(id,data)=>api('/'+encodeURIComponent(id)+'/restore',{method:'POST',body:JSON.stringify(data)}),
+    structureRestore:(id,data)=>api('/'+encodeURIComponent(id)+'/restore',{method:'POST',body:JSON.stringify(data),expectedStatus:200}),
     structureSuggestions:id=>api('/'+encodeURIComponent(id)+'/structure/suggestions',{method:'POST',body:'{}'}),
     inventoryItems:q=>api('/inventory-items?'+new URLSearchParams(q?{q}:{})),
     actionConfirm:id=>api('/actions/drafts/'+encodeURIComponent(id)+'/confirm',{method:'POST',body:'{}'}),

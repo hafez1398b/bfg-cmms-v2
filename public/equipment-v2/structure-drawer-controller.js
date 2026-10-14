@@ -19,7 +19,7 @@
       {id:'technicalSpecification',label:'مشخصات فنی',kind:'textarea',maxLength:4000}
     ],
     'main-component':[
-      {id:'name',label:'نام قطعه',kind:'text',required:true,maxLength:240},
+      {id:'name',label:'نام قطعه اصلی زیرسیستم',kind:'text',required:true,maxLength:240},
       {id:'code',label:'کد یکتا',kind:'text',required:true,maxLength:120},
       {id:'componentType',label:'نوع قطعه',kind:'text',maxLength:240},
       {id:'brand',label:'برند',kind:'text',maxLength:180},
@@ -35,7 +35,7 @@
       {id:'inventoryItemId',label:'قلم انبار موجود',kind:'inventory'}
     ],
     'sub-component':[
-      {id:'name',label:'نام زیرقطعه',kind:'text',required:true,maxLength:240},
+      {id:'name',label:'نام زیرقطعه قطعه اصلی',kind:'text',required:true,maxLength:240},
       {id:'code',label:'کد',kind:'text',maxLength:120},
       {id:'partNumber',label:'شماره فنی',kind:'text',maxLength:180},
       {id:'requiredQuantity',label:'تعداد',kind:'number',min:0,step:0.001},
@@ -114,12 +114,14 @@
   }
 
   function create(options={}){
-    const state={open:false,mode:null,kind:null,parent:null,node:null,values:{},initialValues:{},dirty:false,saving:false,error:null,saved:null,requestId:null,requestFingerprint:null,closeReason:null};
+    const state={open:false,mode:null,kind:null,parent:null,selectedParentId:null,rootEquipmentId:null,node:null,values:{},initialValues:{},dirty:false,saving:false,error:null,saved:null,requestId:null,requestFingerprint:null,closeReason:null};
     const changed=()=>{if(typeof options.onStateChange==='function')options.onStateChange(state);};
     function open(config={}){
       if(state.saving||state.open)return false;
-      const values=clone(config.values||{});
-      Object.assign(state,{open:true,mode:config.mode||'create',kind:config.kind||null,parent:config.parent||null,node:config.node||null,
+      const values=clone(config.values||{}),parent=clone(config.parent||null);
+      const selectedParentId=config.selectedParentId==null?(parent&&parent.id!=null?String(parent.id):null):String(config.selectedParentId);
+      const rootEquipmentId=config.rootEquipmentId==null?null:String(config.rootEquipmentId);
+      Object.assign(state,{open:true,mode:config.mode||'create',kind:config.kind||null,parent,selectedParentId,rootEquipmentId,node:clone(config.node||null),
         values,initialValues:clone(values),dirty:false,saving:false,error:null,saved:null,requestId:null,requestFingerprint:null,closeReason:null});
       changed();return true;
     }

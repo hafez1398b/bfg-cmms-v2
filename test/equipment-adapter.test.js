@@ -40,6 +40,16 @@ test('equipment adapter fails closed without an authenticated server session', a
   ]) await assert.rejects(operation, error => error.message === 'SERVER_REQUIRED');
 });
 
+test('structure adapter sends includeArchived and bounded lazy-load depth through the Backend API', async () => {
+  const calls = [];
+  const context = loadAdapter({ session: true, calls });
+  const repository = context.window.EquipmentRepository.current();
+  await repository.structure('eq-root', { includeArchived: true, depth: 3 });
+  assert.equal(calls[0].route, '/api/equipment/eq-root/structure?includeArchived=true&depth=3');
+  await repository.structure('eq-root');
+  assert.equal(calls[1].route, '/api/equipment/eq-root/structure');
+});
+
 test('equipment adapter sends operational writes only through the authenticated Backend API', async () => {
   const calls = [];
   const context = loadAdapter({ session: true, calls });

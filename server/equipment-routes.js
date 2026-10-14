@@ -246,8 +246,10 @@ function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry, securi
       if (!rootEquipmentId) return;
       const canArchive = await structure.hasPermission({ pool, security, user: req.user, permission: 'equipment.structure.archive' });
       const includeArchived = req.query.includeArchived === 'true' && canArchive;
+      const depthInput=req.query.depth==null?64:Number(req.query.depth);
+      if(!Number.isInteger(depthInput)||depthInput<1)return res.status(422).json({error:'STRUCTURE_DEPTH_INVALID'});
       const data = await structure.getStructure({
-        pool, security, user: req.user, rootEquipmentId, includeArchived
+        pool, security, user: req.user, rootEquipmentId, includeArchived, depth:Math.min(64,depthInput)
       });
       res.json({ data, source: 'postgresql' });
     } catch (error) { next(error); }

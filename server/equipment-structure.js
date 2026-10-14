@@ -250,7 +250,9 @@ function buildStructureTree(root, rows = []) {
       stock_on_hand: source.stock_on_hand == null ? null : Number(source.stock_on_hand),
       stock_reserved: source.stock_reserved == null ? null : Number(source.stock_reserved),
       stock_available: source.stock_available == null ? null : Number(source.stock_available),
-      last_purchase: source.last_purchase || null
+      last_purchase: source.last_purchase || null,
+      has_children: source.has_children===true||source.hasChildren===true,
+      children_count: Number(source.children_count??source.childCount)||0
     };
     normalized.push(row);
     indexed.set(row.id, {
@@ -264,6 +266,8 @@ function buildStructureTree(root, rows = []) {
       rootEquipmentId: root.id,
       rowVersion: row.row_version,
       archived: !!row.deleted_at,
+      hasChildren: row.has_children,
+      childCount: row.children_count,
       deleteReason: row.delete_reason,
       status: row.status,
       cls: row.cls,
@@ -606,8 +610,9 @@ async function bumpParentVersion(client, parent, user) {
   return Number(rows[0].row_version);
 }
 
-async function getStructure({ pool, security, user, rootEquipmentId, includeArchived = false }) {
+async function getStructure({ pool, security, user, rootEquipmentId, includeArchived = false, depth = 64 }) {
   const permissionContext = { pool, security, user };
+  const maxDepth=Number.isInteger(Number(depth))?Math.max(1,Math.min(64,Number(depth))):64;
   await assertPermission(permissionContext, 'equipment.structure.view');
   const root = await rootEquipmentById(pool, rootEquipmentId);
   await assertEquipmentScope(pool, user, root.id, root.factory_id);
@@ -624,9 +629,13 @@ async function getStructure({ pool, security, user, rootEquipmentId, includeArch
          child.id=ANY(structure.path)
        FROM assets child JOIN structure ON child.parent=structure.id
        WHERE child.type='eq' AND ($2::boolean OR child.deleted_at IS NULL)
-         AND structure.depth<64 AND NOT structure.cycle
+         AND structure.depth<$3 AND NOT structure.cycle
      )
      SELECT structure.*,
+       EXISTS(SELECT 1 FROM assets lower_row WHERE lower_row.parent=structure.id
+         AND lower_row.type='eq' AND ($2::boolean OR lower_row.deleted_at IS NULL)) AS has_children,
+       (SELECT count(*)::int FROM assets lower_row WHERE lower_row.parent=structure.id
+         AND lower_row.type='eq' AND ($2::boolean OR lower_row.deleted_at IS NULL)) AS children_count,
        CASE WHEN inventory.id IS NULL THEN NULL ELSE jsonb_build_object(
          'id',inventory.id,'code',inventory.code,'name',inventory.name,'unit',inventory.unit,
          'partType',inventory.part_type,'manufacturer',COALESCE(inventory.ext->>'manufacturer',inventory.ext->>'maker'),
@@ -669,7 +678,7 @@ async function getStructure({ pool, security, user, rootEquipmentId, includeArch
      ) purchase ON true
      WHERE structure.depth>0
      ORDER BY structure.depth,structure.sort_order,structure.name`,
-    [root.id, !!includeArchived]
+    [root.id, !!includeArchived, maxDepth]
   );
   const built = buildStructureTree(root, rows);
   const capabilities = {};

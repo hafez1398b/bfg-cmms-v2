@@ -124,23 +124,25 @@ function structurePool(options = {}) {
     if (/AS factory_id/.test(sql)) return { rows: [{ factory_id: 'factory-1' }] };
     if (/WITH RECURSIVE structure AS/.test(sql)) {
       const includeArchived = values[1] === true;
+      const maxDepth = Number(values[2]) || 64;
       const rows = [];
       const walk = (parentId, depth) => {
         for (const row of assets.values()) {
-          if (row.parent !== parentId) continue;
+          if (row.parent !== parentId || row.type !== 'eq') continue;
           if (row.deleted_at && !includeArchived) continue;
+          const lowerRows = [...assets.values()].filter(child => child.parent === row.id && child.type === 'eq' && (includeArchived || !child.deleted_at));
           const item = row.ext.inventoryItemId && items.get(row.ext.inventoryItemId) ? items.get(row.ext.inventoryItemId) : null;
           const balance = item ? balances.get(item.id) : null;
           const purchase = item ? purchases.get(item.id) : null;
           rows.push({
-            ...row, parent_id: row.parent, depth, cycle: false,
+            ...row, parent_id: row.parent, depth, cycle: false, has_children: lowerRows.length > 0, children_count: lowerRows.length,
             inventory_item: item ? { ...item, available: balance ? balance.available : 0 } : null,
             stock_on_hand: item && balance ? balance.onHand : null,
             stock_reserved: item && balance ? balance.reserved : null,
             stock_available: item && balance ? balance.available : null,
             last_purchase: item && purchase ? purchase : null
           });
-          walk(row.id, depth + 1);
+          if (depth < maxDepth) walk(row.id, depth + 1);
         }
       };
       walk(values[0], 1);
@@ -342,6 +344,31 @@ test('1 structure is served only inside the dossier of the current equipment', a
     assert.equal(body.data.nodes[0].children[0].level, 2);
     const scopeCall = pool.state.calls.find(call => /FROM user_scopes/.test(call.sql));
     assert.deepEqual(scopeCall.values.slice(0, 2), ['mgr-1', 'eq-root']);
+  });
+});
+
+test('structure API depth limit returns explicit child counts for controlled lazy loading', async () => {
+  const pool = structurePool();
+  await withApi(pool, 'mgr', async base => {
+    const first = await fetch(`${base}/eq-root/structure?depth=1`);
+    assert.equal(first.status, 200);
+    const firstData = (await first.json()).data;
+    assert.equal(firstData.nodes.length, 1);
+    assert.equal(firstData.nodes[0].id, 'sub-1');
+    assert.deepEqual(firstData.nodes[0].children, []);
+    assert.equal(firstData.nodes[0].hasChildren, true);
+    assert.equal(firstData.nodes[0].childCount, 1);
+
+    const next = await fetch(`${base}/eq-root/structure?depth=2`);
+    assert.equal(next.status, 200);
+    const nextData = (await next.json()).data;
+    assert.equal(nextData.nodes[0].children[0].id, 'comp-1');
+    assert.equal(nextData.nodes[0].children[0].hasChildren, true);
+    assert.equal(nextData.nodes[0].children[0].childCount, 1);
+
+    const invalid = await fetch(`${base}/eq-root/structure?depth=0`);
+    assert.equal(invalid.status, 422);
+    assert.equal((await invalid.json()).error, 'STRUCTURE_DEPTH_INVALID');
   });
 });
 
@@ -746,7 +773,7 @@ test('26-27 an independent structure drawer creates a subsystem and returns to t
   await context.eqv2StructureAdd('eq-root');
   assert.equal(context.EQV2.structureDrawerView.kind, 'subsystem');
   assert.match(document.drawerRoot.innerHTML, /پرونده تجهیز · ساختار/);
-  assert.match(document.drawerRoot.innerHTML, /والد از پیش انتخاب‌شده/);
+  assert.match(document.drawerRoot.innerHTML, /تجهیز انتخاب‌شده/);
   assert.match(document.drawerRoot.innerHTML, /ریشه/);
   assert.doesNotMatch(document.drawerRoot.innerHTML, /data-sw-action/);
   const name = document.drawerRoot.fields.find(field => field.dataset.structureField === 'name');
@@ -951,7 +978,9 @@ test('36 the dossier always sends the real PostgreSQL id, never the equipment co
   assert.doesNotMatch(ui, /R\(\)\.structure\(E\.detailKey/);
   assert.doesNotMatch(ui, /eqv2OpenDetail\('\$\{escText\(a\.code\)\}'\)/);
   const adapter = read('public/equipment-v2/equipment-adapter.js');
-  assert.match(adapter, /structure:\(id,options\)=>api\('\/'\+encodeURIComponent\(id\)\+'\/structure'/);
+  assert.match(adapter, /structure:\(id,options=\{\}\)=>\{/);
+  assert.match(adapter, /if\(options\.depth!=null\)query\.set\('depth',String\(options\.depth\)\)/);
+  assert.match(adapter, /encodeURIComponent\(id\)\+'\/structure'/);
 
   // Sending the code where the id belongs must fail loudly instead of falling back locally.
   const pool = legacyPool();
@@ -1066,13 +1095,13 @@ test('42 the structure tab renders a real hierarchy table with every required co
     'قلم انبار', 'موجودی', 'آخرین خرید', 'تأمین‌کننده', 'عملیات']) {
     assert.ok(ui.includes(column), `structure table is missing the column ${column}`);
   }
-  for (const action of ['افزودن فرزند', 'ویرایش', 'جزئیات', 'جابه‌جایی', 'بایگانی']) {
+  for (const action of ['زیرسیستم تجهیز', 'قطعه اصلی زیرسیستم', 'زیرقطعه قطعه اصلی', 'ویرایش', 'جزئیات', 'جابه‌جایی', 'بایگانی']) {
     assert.ok(ui.includes(action), `structure row is missing the action ${action}`);
   }
   // Expandable rows, breadcrumb and the Persian empty state with the add-subsystem button.
   assert.match(ui, /eqv2StructureToggle/);
   assert.match(ui, /eqv2-structure-crumbs/);
-  assert.match(ui, /افزودن زیرسیستم/);
+  assert.match(ui, /افزودن زیرسیستم تجهیز/);
   // No raw backend code may reach the user: every structure error has a Persian message.
   for (const code of ['ROOT_EQUIPMENT_NOT_FOUND', 'EQUIPMENT_NOT_FOUND', 'EQUIPMENT_ID_INVALID',
     'EQUIPMENT_SCOPE_DENIED', 'PERMISSION_DENIED', 'STRUCTURE_NODE_NOT_FOUND']) {
@@ -1188,7 +1217,7 @@ test('43 the structure tab renders the real hierarchy with every column and the 
   // Real purchase carries no supplier, so the cell says "ثبت نشده" instead of inventing one.
   assert.match(body, /ثبت نشده/);
   // Row actions.
-  for (const action of ['افزودن فرزند', 'ویرایش', 'مشاهده جزئیات', 'جابه‌جایی', 'بایگانی']) {
+  for (const action of ['افزودن قطعه اصلی زیرسیستم', 'افزودن زیرقطعه قطعه اصلی', 'ویرایش', 'مشاهده جزئیات', 'جابه‌جایی', 'بایگانی']) {
     assert.ok(body.includes(action), `rendered row is missing the action ${action}`);
   }
   assert.match(body, /eqv2-structure-crumbs/);
@@ -1213,8 +1242,8 @@ test('43 the structure tab renders the real hierarchy with every column and the 
   const emptyBody = emptyHarness.bodies.eqv2DetailBody.innerHTML;
   assert.doesNotMatch(emptyBody, /در حال دریافت ساختار تجهیز/);
   assert.doesNotMatch(emptyBody, /eqv2-structure-table/);
-  assert.match(emptyBody, /هنوز زیرسیستم، قطعه اصلی یا زیرقطعه‌ای ثبت نشده/);
-  assert.match(emptyBody, /افزودن زیرسیستم/);
+  assert.match(emptyBody, /هنوز بخشی در ساختار این تجهیز ثبت نشده است/);
+  assert.match(emptyBody, /افزودن زیرسیستم تجهیز/);
   assert.match(emptyBody, /eqv2StructureAddRoot/);
 
   // A backend failure must surface a Persian sentence, never the raw code.
@@ -1225,7 +1254,7 @@ test('43 the structure tab renders the real hierarchy with every column and the 
   await failHarness.context.eqv2DetailTab('structure');
   await failHarness.context.eqv2DetailTab('structure');
   const failBody = failHarness.bodies.eqv2DetailBody.innerHTML;
-  assert.match(failBody, /این رکورد تجهیز ریشه‌ای نیست/);
+  assert.match(failBody, /تجهیز انتخاب‌شده پیدا نشد/);
   assert.doesNotMatch(failBody, />ROOT_EQUIPMENT_NOT_FOUND</);
 });
 
@@ -1472,7 +1501,7 @@ test('48 the backend publishes the valid root levels and the UI offers them', as
   const body = harness.bodies.eqv2DetailBody.innerHTML;
   assert.doesNotMatch(body, /در حال دریافت ساختار تجهیز/);
   assert.match(body, /زیرسیستم سازگار/);
-  assert.match(body, /افزودن فرزند/);
+  assert.match(body, /افزودن زیرسیستم تجهیز/);
   assert.match(body, /eqv2-structure-table/);
 });
 
@@ -1688,14 +1717,14 @@ test('54 the structure tab of a real equipment with a location parent shows the 
   assert.doesNotMatch(body, /در حال دریافت ساختار تجهیز/);
   assert.doesNotMatch(body, /eqv2-structure-table/);
   // Persian empty state with the add-subsystem action.
-  assert.match(body, /هنوز زیرسیستم، قطعه اصلی یا زیرقطعه‌ای ثبت نشده/);
-  assert.match(body, /افزودن زیرسیستم/);
+  assert.match(body, /هنوز بخشی در ساختار این تجهیز ثبت نشده است/);
+  assert.match(body, /افزودن زیرسیستم تجهیز/);
   // An empty structure must not look like missing data: the equipment's real spare parts live in
   // their own section and are never turned into structure rows automatically.
   assert.match(body, /قطعات یدکی حیاتی/);
-  assert.match(body, /خودکار به ساختار داخلی تبدیل نمی‌شوند/);
-  // The preserved location parent is explained in Persian; no raw backend code ever reaches the UI.
-  assert.match(body, /خارج از ساختار داخلی حفظ شده است/);
+  assert.match(body, /خودکار به ساختار تجهیز تبدیل نمی‌شوند/);
+  // The preserved location or category is explained in Persian; raw backend terminology stays hidden.
+  assert.match(body, /جایگاه مکانی یا دسته‌بندی تجهیز خارج از ساختار تجهیز است و بدون تغییر حفظ می‌شود/);
   assert.doesNotMatch(body, /ROOT_PARENT_OUTSIDE_STRUCTURE/);
   assert.doesNotMatch(body, /PARENT_OUTSIDE_ROOT_EQUIPMENT/);
   // The structure request is sent with the real assets.id, never with the code.

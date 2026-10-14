@@ -127,7 +127,10 @@ td.eqv2-structure-actions .eqv2-structure-actions,.eqv2-structure-table td .eqv2
 .eqv2-structure-search{display:grid;gap:4px;min-width:min(100%,320px);font-size:10px;color:var(--text-2)}
 .eqv2-structure-search input{min-height:36px;border:1px solid var(--border);border-radius:9px;background:var(--surface);color:var(--text);padding:7px 10px;font:inherit}
 .eqv2-structure-tools-actions{display:flex;gap:6px;flex-wrap:wrap}
-.eqv2-structure-child-count{display:inline-block;margin-inline-start:4px;color:var(--text-2);font-size:9px;font-weight:500}
+.eqv2-structure-tools-actions .btn:disabled{opacity:.5;cursor:not-allowed;filter:none}
+.eqv2-structure-bulk-status{flex-basis:100%;color:var(--text-2);font-size:10px}
+.eqv2-structure-action-note{display:block;color:var(--text-2);font-size:10px;line-height:1.7}
+.eqv2-structure-section-count{display:inline-block;margin-inline-start:4px;color:var(--text-2);font-size:9px;font-weight:500}
 .eqv2-structure-tr.is-selected td{background:color-mix(in srgb,var(--primary) 12%,var(--surface))!important;box-shadow:inset 0 1px 0 color-mix(in srgb,var(--primary) 45%,transparent),inset 0 -1px 0 color-mix(in srgb,var(--primary) 45%,transparent)}
 .eqv2-structure-tr.is-selected .eqv2-structure-name b{color:var(--primary);font-weight:800}
 .eqv2-structure-drawer-backdrop{position:fixed;inset:0;z-index:12000;display:flex;justify-content:flex-start;background:rgba(8,22,37,.54);direction:rtl;overscroll-behavior:contain}

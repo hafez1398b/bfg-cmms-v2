@@ -116,7 +116,7 @@ test('dossier has exactly the authoritative eleven sections and no passport-prin
   await context.eqv2OpenDetail('eq-1');
   const labels = [...content.innerHTML.matchAll(/<button role="tab"[^>]*>([^<]+)<\/button>/g)].map(match => match[1]);
   assert.deepEqual(labels, [
-    'مشخصه فنی', 'ساختار', 'قطعات یدکی حیاتی', 'برنامه نگهداری', 'سوابق', 'کالیبراسیون',
+    'مشخصه فنی', 'ساختار تجهیز', 'قطعات یدکی حیاتی', 'برنامه نگهداری', 'سوابق', 'کالیبراسیون',
     'دستورالعمل‌ها', 'اسناد و فایل‌ها', 'تراکنش‌ها', 'پایش تجهیز', 'ریسک و فرصت'
   ]);
   assert.equal((content.innerHTML.match(/role="tab"/g) || []).length, 11);
