@@ -246,8 +246,10 @@ function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry, securi
       if (!rootEquipmentId) return;
       const canArchive = await structure.hasPermission({ pool, security, user: req.user, permission: 'equipment.structure.archive' });
       const includeArchived = req.query.includeArchived === 'true' && canArchive;
+      const depthInput=req.query.depth==null?64:Number(req.query.depth);
+      if(!Number.isInteger(depthInput)||depthInput<1)return res.status(422).json({error:'STRUCTURE_DEPTH_INVALID'});
       const data = await structure.getStructure({
-        pool, security, user: req.user, rootEquipmentId, includeArchived
+        pool, security, user: req.user, rootEquipmentId, includeArchived, depth:Math.min(64,depthInput)
       });
       res.json({ data, source: 'postgresql' });
     } catch (error) { next(error); }
@@ -412,9 +414,11 @@ function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry, securi
           input: body
         })
         : await createEquipment(client, req.user, body);
+      const idempotentReplay=internalNode&&row&&row.idempotentReplay===true;
+      const responseData=idempotentReplay?Object.fromEntries(Object.entries(row).filter(([key])=>key!=='idempotentReplay')):row;
       await client.query('COMMIT');
       if (!internalNode) emit({ action: 'create', id: row.id });
-      res.status(201).json({ data: row, committed: true });
+      res.status(201).json({ data: responseData, committed: true, ...(idempotentReplay?{idempotentReplay:true}:{}) });
     } catch (error) {
       await client.query('ROLLBACK').catch(() => {});
       next(error);

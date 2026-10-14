@@ -16,11 +16,12 @@
   }
 
   async function api(path, options={}, allowRefresh=true){
-    const headers = { ...(options.headers || {}) };
-    const method = String(options.method || 'GET').toUpperCase();
+    const expectedStatus=Number(options.expectedStatus)||null,requestOptions={...options};delete requestOptions.expectedStatus;
+    const headers = { ...(requestOptions.headers || {}) };
+    const method = String(requestOptions.method || 'GET').toUpperCase();
     if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) headers['x-csrf-token'] = csrfToken();
-    if (options.body && !(options.body instanceof FormData) && !headers['content-type']) headers['content-type'] = 'application/json';
-    const response = await fetch(path, { ...options, headers, credentials: 'same-origin' });
+    if (requestOptions.body && !(requestOptions.body instanceof FormData) && !headers['content-type']) headers['content-type'] = 'application/json';
+    const response = await fetch(path, { ...requestOptions, headers, credentials: 'same-origin' });
     let payload = null;
     try { payload = await response.json(); } catch (_) {}
     if (response.status === 401 && allowRefresh && path !== '/api/auth/login' && path !== '/api/auth/refresh' && path !== '/api/auth/logout') {
@@ -33,7 +34,10 @@
       error.payload = payload;
       throw error;
     }
-    return payload;
+    if(expectedStatus&&response.status!==expectedStatus){
+      const error=new Error('UNEXPECTED_RESPONSE_STATUS');error.status=response.status;error.payload={...(payload||{}),error:'UNEXPECTED_RESPONSE_STATUS'};throw error;
+    }
+    return expectedStatus&&payload&&typeof payload==='object'?{...payload,httpStatus:response.status}:payload;
   }
   window.bfgApi = api;
 

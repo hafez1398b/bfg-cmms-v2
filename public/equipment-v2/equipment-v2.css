@@ -121,3 +121,53 @@ td.eqv2-structure-actions .eqv2-structure-actions,.eqv2-structure-table td .eqv2
   td.eqv2-structure-actions{min-width:190px}
   td.eqv2-structure-name{padding-inline-start:calc(7px + (var(--eqv2-level,0) * 13px))}
 }
+
+/* Independent structure CRUD drawer (no nested modal or shared stage wizard). */
+.eqv2-structure-tools{display:flex;align-items:end;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:8px 0}
+.eqv2-structure-search{display:grid;gap:4px;min-width:min(100%,320px);font-size:10px;color:var(--text-2)}
+.eqv2-structure-search input{min-height:36px;border:1px solid var(--border);border-radius:9px;background:var(--surface);color:var(--text);padding:7px 10px;font:inherit}
+.eqv2-structure-tools-actions{display:flex;gap:6px;flex-wrap:wrap}
+.eqv2-structure-tools-actions .btn:disabled{opacity:.5;cursor:not-allowed;filter:none}
+.eqv2-structure-bulk-status{flex-basis:100%;color:var(--text-2);font-size:10px}
+.eqv2-structure-action-note{display:block;color:var(--text-2);font-size:10px;line-height:1.7}
+.eqv2-structure-section-count{display:inline-block;margin-inline-start:4px;color:var(--text-2);font-size:9px;font-weight:500}
+.eqv2-structure-tr.is-selected td{background:color-mix(in srgb,var(--primary) 12%,var(--surface))!important;box-shadow:inset 0 1px 0 color-mix(in srgb,var(--primary) 45%,transparent),inset 0 -1px 0 color-mix(in srgb,var(--primary) 45%,transparent)}
+.eqv2-structure-tr.is-selected .eqv2-structure-name b{color:var(--primary);font-weight:800}
+.eqv2-structure-drawer-backdrop{position:fixed;inset:0;z-index:12000;display:flex;justify-content:flex-start;background:rgba(8,22,37,.54);direction:rtl;overscroll-behavior:contain}
+.eqv2-structure-drawer{display:flex;flex-direction:column;width:min(760px,100vw);height:100vh;height:100dvh;background:var(--surface);color:var(--text);box-shadow:0 0 35px rgba(0,0,0,.3);border-inline-start:1px solid var(--border);outline:none}
+.eqv2-structure-drawer-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:15px 18px;border-bottom:1px solid var(--border);background:var(--surface-2)}
+.eqv2-structure-drawer-head small{font-size:10px;color:var(--text-2)}
+.eqv2-structure-drawer-head h2{font-size:16px;margin:4px 0 0}
+.eqv2-structure-drawer-x{width:38px;height:38px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text);font-size:23px;cursor:pointer}
+.eqv2-structure-drawer-body{overflow:auto;overscroll-behavior:contain;padding:16px;flex:1}
+.eqv2-structure-parent-banner{display:grid;gap:4px;margin-bottom:14px;padding:10px 12px;border:1px solid color-mix(in srgb,var(--primary) 35%,var(--border));border-radius:10px;background:var(--blue-bg)}
+.eqv2-structure-parent-banner small{color:var(--text-2);font-size:10px}
+.eqv2-structure-parent-banner b{font-size:12px}
+.eqv2-structure-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.eqv2-structure-field{display:grid;align-content:start;gap:5px;min-width:0}
+.eqv2-structure-field label,.eqv2-structure-parent-picker label{font-size:10.5px;font-weight:700;color:var(--text-2)}
+.eqv2-structure-field input,.eqv2-structure-field select,.eqv2-structure-field textarea,.eqv2-structure-parent-picker select{width:100%;min-height:38px;border:1px solid var(--border);border-radius:9px;background:var(--surface-2);color:var(--text);padding:8px 10px;font:inherit;font-size:12px}
+.eqv2-structure-field textarea{resize:vertical;min-height:74px}
+.eqv2-structure-field small{font-size:9.5px;color:var(--text-2);line-height:1.7}
+.eqv2-structure-inventory-field{grid-column:1/-1;padding:12px;border:1px dashed var(--border-2);border-radius:10px;background:var(--surface-2)}
+.eqv2-structure-inventory-search{display:flex;gap:7px}
+.eqv2-structure-inventory-search input{flex:1;min-width:0}
+.eqv2-structure-parent-picker{display:grid;gap:10px;max-width:560px}
+.eqv2-structure-parent-picker p{margin:0;color:var(--text-2);font-size:12px;line-height:1.9}
+.eqv2-structure-parent-picker-actions{display:flex;justify-content:flex-start;margin-top:8px}
+.eqv2-structure-drawer-error{margin-top:12px;padding:10px 12px;border:1px solid color-mix(in srgb,var(--danger,#d94747) 35%,var(--border));border-radius:9px;background:color-mix(in srgb,var(--danger,#d94747) 9%,var(--surface));color:var(--text);font-size:11px;line-height:1.8}
+.eqv2-structure-drawer-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:12px 16px;border-top:1px solid var(--border);background:var(--surface-2);padding-bottom:max(12px,env(safe-area-inset-bottom))}
+.eqv2-structure-drawer-actions [data-structure-action="save"]{min-width:130px}
+@media(max-width:780px){
+  .eqv2-structure-drawer-backdrop{inset:0;z-index:12000}
+  .eqv2-structure-drawer{width:100vw;max-width:none;height:100vh;height:100dvh;border:0;border-radius:0}
+  .eqv2-structure-drawer-head{padding:calc(12px + env(safe-area-inset-top)) 13px 12px}
+  .eqv2-structure-drawer-body{padding:13px}
+  .eqv2-structure-form{grid-template-columns:1fr;gap:10px}
+  .eqv2-structure-inventory-search{flex-wrap:wrap}
+  .eqv2-structure-inventory-search input{flex-basis:100%}
+  .eqv2-structure-drawer-actions{position:sticky;bottom:0;padding:10px 12px calc(10px + env(safe-area-inset-bottom))}
+  .eqv2-structure-drawer-actions .btn{flex:1;min-width:0}
+  .eqv2-structure-drawer-actions [data-structure-action="save"]{min-width:0}
+  .eqv2-structure-search{min-width:100%}
+}
