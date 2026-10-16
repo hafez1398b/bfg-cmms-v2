@@ -107,8 +107,24 @@ td.eqv2-structure-name{padding-inline-start:calc(9px + (var(--eqv2-level,0) * 18
 .eqv2-structure-toggle:hover{border-color:var(--primary);color:var(--primary)}
 .eqv2-structure-leaf{display:inline-block;width:20px;margin-inline-end:6px}
 .eqv2-structure-stock{white-space:nowrap;font-variant-numeric:tabular-nums}
-td.eqv2-structure-actions{min-width:250px}
-td.eqv2-structure-actions .eqv2-structure-actions,.eqv2-structure-table td .eqv2-structure-actions{display:flex;gap:5px;flex-wrap:wrap}
+th.eqv2-structure-actions,td.eqv2-structure-actions{display:table-cell;width:104px;min-width:104px;max-width:104px;text-align:center;white-space:nowrap}
+td.eqv2-structure-actions .eqv2-structure-row-actions{display:inline-flex;align-items:center;justify-content:flex-end;gap:4px;white-space:nowrap}
+.eqv2-structure-icon-button{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;min-width:28px;padding:0;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:var(--text-2);cursor:pointer;text-decoration:none}
+.eqv2-structure-icon-button:hover,.eqv2-structure-icon-button:focus-visible{border-color:var(--primary);background:var(--blue-bg);color:var(--primary);outline:2px solid color-mix(in srgb,var(--primary) 35%,transparent);outline-offset:1px}
+.eqv2-structure-icon-button svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.eqv2-structure-menu-trigger svg circle{fill:currentColor;stroke:none}
+.eqv2-structure-action-menu{display:inline-flex;position:relative}
+.eqv2-structure-action-menu>summary{list-style:none}
+.eqv2-structure-action-menu>summary::-webkit-details-marker{display:none}
+.eqv2-structure-action-menu-panel{display:none;position:absolute;top:calc(100% + 4px);inset-inline-end:0;z-index:25;min-width:174px;max-width:calc(100vw - 16px);padding:5px;border:1px solid var(--border);border-radius:9px;background:var(--surface);box-shadow:var(--shadow-m,0 8px 24px rgba(0,0,0,.18));text-align:right}
+.eqv2-structure-action-menu[open]>.eqv2-structure-action-menu-panel{display:grid;gap:3px}
+.eqv2-structure-action-menu-item{display:block;width:100%;min-height:32px;padding:7px 10px;border:0;border-radius:6px;background:transparent;color:var(--text);font:inherit;font-size:11px;text-align:right;cursor:pointer}
+.eqv2-structure-action-menu-item:hover,.eqv2-structure-action-menu-item:focus-visible{background:var(--blue-bg);color:var(--primary);outline:2px solid color-mix(in srgb,var(--primary) 35%,transparent);outline-offset:-1px}
+.eqv2-structure-action-menu-disabled{color:var(--text-2);cursor:not-allowed}
+.eqv2-structure-tooltip{position:relative}
+.eqv2-structure-tooltip::after{content:attr(data-tooltip);position:absolute;left:50%;bottom:calc(100% + 7px);z-index:12200;width:max-content;max-width:min(280px,calc(100vw - 20px));padding:5px 8px;border:1px solid var(--border);border-radius:6px;background:var(--text);color:var(--surface);font-size:10px;font-weight:500;line-height:1.5;text-align:center;white-space:normal;pointer-events:none;opacity:0;visibility:hidden;transform:translateX(-50%);transition:opacity .12s ease}
+.eqv2-structure-tooltip:hover::after,.eqv2-structure-tooltip:focus-visible::after{opacity:1;visibility:visible}
+.eqv2-structure-legacy-warning{display:inline-block;max-width:290px;white-space:normal;line-height:1.6}
 .eqv2-structure-empty{gap:8px}
 .eqv2-structure-empty .btn{margin-top:6px}
 .eqv2-na{color:var(--text-2);font-size:9.5px}
@@ -118,7 +134,8 @@ td.eqv2-structure-actions .eqv2-structure-actions,.eqv2-structure-table td .eqv2
   .eqv2-structure-meta{gap:4px 10px}
   .eqv2-structure-table{min-width:940px;font-size:10px}
   .eqv2-structure-name{min-width:170px}
-  td.eqv2-structure-actions{min-width:190px}
+  th.eqv2-structure-actions,td.eqv2-structure-actions{width:68px;min-width:68px;max-width:68px}
+  .eqv2-structure-view-action{display:none!important}
   td.eqv2-structure-name{padding-inline-start:calc(7px + (var(--eqv2-level,0) * 13px))}
 }
 

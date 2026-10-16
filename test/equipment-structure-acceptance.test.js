@@ -184,6 +184,23 @@ function flatten(nodes, result = []) { for (const node of nodes || []) { result.
 async function showStructure(h) { await h.context.eqv2DetailTab('structure'); return h.detailBody.innerHTML; }
 const settle = () => new Promise(resolve => setImmediate(resolve));
 async function settleUntil(testFn) { for (let i = 0; i < 30 && !testFn(); i++) await settle(); }
+function renderedStructureRow(html, id) {
+  const marker = `data-structure-node="${id}"`;
+  const markerIndex = html.indexOf(marker);
+  assert.ok(markerIndex >= 0, `missing rendered structure row: ${id}`);
+  const rowStart = html.lastIndexOf('<tr', markerIndex);
+  const rowEnd = html.indexOf('</tr>', markerIndex) + '</tr>'.length;
+  assert.ok(rowStart >= 0 && rowEnd >= '</tr>'.length, `malformed rendered structure row: ${id}`);
+  return html.slice(rowStart, rowEnd);
+}
+function structureMenuPanel(row) {
+  const marker = 'class="eqv2-structure-action-menu-panel"';
+  const markerIndex = row.indexOf(marker);
+  if (markerIndex < 0) return '';
+  const panelStart = row.lastIndexOf('<div', markerIndex);
+  const panelEnd = row.indexOf('</div>', markerIndex);
+  return panelStart >= 0 && panelEnd >= 0 ? row.slice(panelStart, panelEnd + '</div>'.length) : '';
+}
 
 // The legacy row action is deliberately tested through the rendered row, then through the real create callback.
 test('row action uses the exact selected equipment id from Drawer through POST', async () => {
@@ -365,12 +382,75 @@ test('active structure UI uses approved Persian terminology only', async () => {
   assert.match(read('public/equipment-v2/equipment-v2.js'), /\['structure','ساختار تجهیز'\]/);
 });
 
-test('legacy diagnostics are deduplicated in the rendered structure UI', async () => {
+test('legacy diagnostics use one clear row warning without a duplicate banner', async () => {
   const warning = { code: 'LEGACY_SUB_EQUIPMENT', nodeId: LEGACY_ID, message: 'رکورد زیرتجهیز قدیمی حفظ شده و فقط برای سازگاری نمایش داده می‌شود.' };
   const h = harness({ initialTree: structureTree({ diagnostics: [warning, copy(warning), copy(warning)] }) });
-  h.context.EQV2.structureFocus = LEGACY_ID;
   const html = await showStructure(h);
-  assert.equal((html.match(/رکورد قدیمی تجهیز حفظ شده و برای سازگاری نمایش داده می‌شود\./g) || []).length, 1);
+  assert.equal((html.match(/تجهیز قدیمی — ساختار داخلی آن جداگانه تکمیل می‌شود/g) || []).length, 1);
+  assert.doesNotMatch(html, /ساختار ناسازگار|یک یا چند بخش قدیمی یا ناسازگار است/);
+  h.context.EQV2.structureFocus = LEGACY_ID;
+  const focusedHtml = await showStructure(h);
+  assert.equal((focusedHtml.match(/تجهیز قدیمی — ساختار داخلی آن جداگانه تکمیل می‌شود/g) || []).length, 1);
+});
+
+test('structure row actions are compact, accessible icon controls with the approved overflow actions', async () => {
+  const h = harness();
+  const html = await showStructure(h);
+  const activeRow = renderedStructureRow(html, LEGACY_ID);
+  assert.match(activeRow, /class="eqv2-structure-row-actions"/);
+  assert.match(activeRow, /class="eqv2-structure-icon-button eqv2-structure-view-action/);
+  assert.match(activeRow, /class="eqv2-structure-icon-button eqv2-structure-add-action/);
+  assert.match(activeRow, /<details class="eqv2-structure-action-menu"/);
+  assert.ok(activeRow.includes('M2 12s3.7-7'), 'view uses an eye icon');
+  assert.ok(activeRow.includes('M12 5v14M5 12h14'), 'add uses a plus icon');
+  assert.equal((activeRow.match(/r="1\.5"/g) || []).length, 3, 'overflow uses three dots');
+  assert.match(activeRow, /aria-haspopup="menu" aria-expanded="false"/);
+  assert.match(activeRow, /onkeydown="eqv2StructureActionMenuKeydown\(event,this\)"/);
+  assert.equal((activeRow.match(/class="eqv2-structure-icon-button/g) || []).length, 3);
+  for (const label of ['مشاهده جزئیات', 'افزودن زیرسیستم تجهیز', 'عملیات بیشتر']) {
+    assert.ok(activeRow.includes(`aria-label="${label}`), `missing accessible label: ${label}`);
+    assert.ok(activeRow.includes(`data-tooltip="${label}`), `missing Persian tooltip: ${label}`);
+    assert.ok(activeRow.includes(`title="${label}`), `missing title fallback: ${label}`);
+  }
+  const activeMenu = structureMenuPanel(activeRow);
+  for (const action of ['ویرایش', 'جابه‌جایی', 'بایگانی']) {
+    assert.ok(activeMenu.includes(action));
+    assert.ok(activeMenu.includes(`data-tooltip="${action}`), `missing menu tooltip: ${action}`);
+    assert.ok(activeMenu.includes(`aria-label="${action}`), `missing menu label: ${action}`);
+  }
+  assert.doesNotMatch(activeMenu, /بازیابی/);
+  assert.doesNotMatch(activeRow, /حذف|🗑|trash/i);
+
+  const archivedHarness = harness({ initialTree: structureTree({ descendants: false, archived: true }) });
+  await archivedHarness.context.eqv2StructureArchivedToggle();
+  const archivedRow = renderedStructureRow(archivedHarness.detailBody.innerHTML, LEGACY_ID);
+  assert.doesNotMatch(archivedRow, /eqv2-structure-add-action/);
+  const archivedMenu = structureMenuPanel(archivedRow);
+  assert.match(archivedMenu, /بازیابی/);
+  assert.ok(archivedMenu.includes('data-tooltip="بازیابی'), 'restore has a Persian tooltip');
+  assert.ok(archivedMenu.includes('aria-label="بازیابی'), 'restore has an accessible label');
+  assert.doesNotMatch(archivedMenu, /ویرایش|جابه‌جایی|بایگانی/);
+  assert.doesNotMatch(archivedRow, /حذف|🗑|trash/i);
+});
+
+test('structure row counts use the next valid level label for each record type', async () => {
+  const h = harness();
+  const html = await showStructure(h);
+  assert.match(renderedStructureRow(html, LEGACY_ID), /1 زیرسیستم تجهیز/);
+  assert.match(renderedStructureRow(html, SUBSYSTEM_ID), /1 قطعه اصلی/);
+  assert.match(renderedStructureRow(html, MAIN_ID), /1 زیرقطعه/);
+  assert.match(renderedStructureRow(html, PART_ID), /هیچ سطح پایین‌تری/);
+  assert.doesNotMatch(html, /بخش زیرین/);
+});
+
+test('row action sizing, mobile visibility and hover/focus tooltips stay compact', () => {
+  const css = read('public/equipment-v2/equipment-v2.css');
+  assert.ok(css.includes('width:28px;height:28px'), 'icon buttons are 28 by 28 pixels');
+  assert.ok(css.includes('th.eqv2-structure-actions,td.eqv2-structure-actions{display:table-cell;width:104px'), 'desktop action column stays compact');
+  assert.ok(css.includes('th.eqv2-structure-actions,td.eqv2-structure-actions{width:68px;min-width:68px;max-width:68px}'), 'mobile action column is sized only for add and menu');
+  assert.ok(css.includes('.eqv2-structure-view-action{display:none!important}'), 'the view control is hidden on mobile');
+  assert.ok(css.includes('.eqv2-structure-tooltip:hover::after,.eqv2-structure-tooltip:focus-visible::after'), 'Persian tooltips appear on hover and keyboard focus');
+  assert.ok(css.includes('.eqv2-structure-action-menu-panel'), 'the three-dot menu has its own compact panel');
 });
 
 test('drawer overlay blocks page interaction and X, Close, Cancel, Escape restore scroll and focus', async () => {

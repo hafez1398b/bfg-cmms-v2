@@ -243,6 +243,7 @@
   const STRUCTURE_CHILD_KINDS={equipment:['subsystem'],'sub-equipment':['subsystem'],subsystem:['main-component'],'main-component':['sub-component'],'sub-component':[]};
   const STRUCTURE_KIND_LABEL={subsystem:'زیرسیستم تجهیز','main-component':'قطعه اصلی زیرسیستم','sub-component':'زیرقطعه قطعه اصلی','sub-equipment':'تجهیز قدیمی',equipment:'تجهیز'};
   const STRUCTURE_GUIDE='ساختار مجاز: تجهیز ← زیرسیستم تجهیز ← قطعه اصلی زیرسیستم ← زیرقطعه قطعه اصلی';
+  const STRUCTURE_LEGACY_WARNING='تجهیز قدیمی — ساختار داخلی آن جداگانه تکمیل می‌شود';
   const STRUCTURE_MESSAGES={
     STRUCTURE_PARENT_KIND_INVALID:'سطح انتخاب‌شده برای ثبت این بخش مجاز نیست.',
     SUBSYSTEM_REQUIRED:'برای افزودن قطعه اصلی، یک زیرسیستم تجهیز انتخاب کنید.',
@@ -375,16 +376,14 @@
   }
   const STRUCTURE_DIAGNOSTIC_MESSAGES={
     ROOT_PARENT_OUTSIDE_STRUCTURE:'جایگاه مکانی یا دسته‌بندی تجهیز خارج از ساختار تجهیز است و بدون تغییر حفظ می‌شود.',
-    STRUCTURE_PARENT_OUTSIDE_SCOPE:'بخش مرتبط با این رکورد در محدوده ساختار تجهیز یافت نشد؛ رکورد حفظ شده است.',
-    STRUCTURE_PARENT_KIND_INVALID:'سطح ثبت‌شده با ساختار مجاز تجهیز سازگار نیست؛ رکورد حفظ شده است.',
-    LEGACY_SUB_EQUIPMENT:'رکورد قدیمی تجهیز حفظ شده و برای سازگاری نمایش داده می‌شود.'
+    STRUCTURE_PARENT_OUTSIDE_SCOPE:'بخش مرتبط با این رکورد در محدوده ساختار تجهیز یافت نشد؛ رکورد حفظ شده است.'
   };
   function structureNotices(st,caps){
     const nodes=flattenStructure(st&&st.nodes||[]);
     const diagnostics=[...(st&&st.diagnostics||[]),...nodes.flatMap(node=>Array.isArray(node.diagnostics)?node.diagnostics:[])];
-    const notices=structureUniqueDiagnostics(diagnostics).map(item=>STRUCTURE_DIAGNOSTIC_MESSAGES[item.code]||String(item.message||'').trim()).filter(Boolean);
-    const hasLegacy=nodes.some(node=>node.legacy||node.validRelation===false);
-    if(hasLegacy)notices.push('یک یا چند بخش قدیمی یا ناسازگار است؛ بایگانی نرم فقط با دلیل اجباری و تأیید انجام می‌شود.');
+    const rowWarnings=new Set(['STRUCTURE_PARENT_KIND_INVALID','LEGACY_SUB_EQUIPMENT']);
+    const notices=structureUniqueDiagnostics(diagnostics).filter(item=>!rowWarnings.has(item.code))
+      .map(item=>STRUCTURE_DIAGNOSTIC_MESSAGES[item.code]||String(item.message||'').trim()).filter(Boolean);
     if(!caps.archive&&nodes.length)notices.push('مجوز بایگانی یا بازیابی بخش‌های ساختار تجهیز را ندارید.');
     return[...new Set(notices)];
   }
@@ -418,33 +417,85 @@
     return `<span title="${escText(item.name||'')}">${escText(item.code||'—')}</span>`;
   }
   function structureRowActions(node,caps,canAdd){
-    const archiveReason=String(node.archiveReason||node.archive_reason||'').trim();
+    const id=escText(node.id),name=String(node.name||node.code||'این بخش');
+    const archiveReason=String(node.archiveReason||node.archive_reason||'').trim()||'این بخش قابل بایگانی نیست.';
     const cannotArchive=node.canArchive===false||node.can_archive===false;
-    return `<button type="button" class="btn btn-sm btn-ghost" onclick="eqv2StructureFocus('${escText(node.id)}')">مشاهده جزئیات</button>
-      ${canAdd&&!node.archived?`<button type="button" class="btn btn-sm btn-ghost" onclick="eqv2StructureAdd('${escText(node.id)}')">${structureAddLabel(structureAllowedChildren(node.nodeKind,node)[0])}</button>`:''}
-      ${caps.update&&!node.archived?`<button type="button" class="btn btn-sm btn-ghost" onclick="eqv2StructureEdit('${escText(node.id)}')">ویرایش</button>`:''}
-      ${(caps.move||caps.moveAcrossEquipment)&&!node.archived?`<button type="button" class="btn btn-sm btn-ghost" onclick="eqv2StructureMove('${escText(node.id)}')">جابه‌جایی</button>`:''}
-      ${caps.archive&&!node.archived&&!cannotArchive?`<button type="button" class="btn btn-sm btn-danger" title="بایگانی نرم با دلیل اجباری و تأیید؛ سوابق حفظ می‌شوند" onclick="eqv2StructureArchive('${escText(node.id)}')">بایگانی</button>`:''}
-      ${cannotArchive&&!node.archived?`<span class="eqv2-structure-action-note" role="note">${escText(archiveReason||'این بخش قابل بایگانی نیست.')}</span>`:''}
-      ${caps.archive&&node.archived?`<button type="button" class="btn btn-sm btn-ghost" onclick="eqv2StructureRestore('${escText(node.id)}')">بازیابی</button>`:''}`;
+    const menuItems=[];
+    const menuButton=(label,tooltip,action)=>`<button type="button" role="menuitem" class="eqv2-structure-action-menu-item eqv2-structure-tooltip" data-tooltip="${escText(tooltip)}" title="${escText(tooltip)}" aria-label="${escText(tooltip)}" onclick="this.closest('details').open=false;eqv2Structure${action}('${id}')">${label}</button>`;
+    if(caps.update&&!node.archived)menuItems.push(menuButton('ویرایش',`ویرایش ${name}`,'Edit'));
+    if((caps.move||caps.moveAcrossEquipment)&&!node.archived)menuItems.push(menuButton('جابه‌جایی',`جابه‌جایی ${name}`,'Move'));
+    if(!node.archived&&(caps.archive||cannotArchive)){
+      if(cannotArchive){
+        const reason=escText(archiveReason);
+        menuItems.push(`<span class="eqv2-structure-action-menu-item eqv2-structure-action-menu-disabled eqv2-structure-tooltip" role="menuitem" aria-disabled="true" tabindex="0" data-tooltip="${reason}" title="${reason}" aria-label="بایگانی در دسترس نیست: ${reason}">بایگانی</span>`);
+      }else menuItems.push(menuButton('بایگانی','بایگانی نرم با دلیل اجباری و تأیید؛ سوابق حفظ می‌شوند','Archive'));
+    }
+    if(node.archived&&caps.archive)menuItems.push(menuButton('بازیابی',`بازیابی ${name}`,'Restore'));
+    const viewTooltip=`مشاهده جزئیات ${name}`;
+    const addLabel=structureAddLabel(structureAllowedChildren(node.nodeKind,node)[0]);
+    const addTooltip=`${addLabel} برای ${name}`;
+    const moreTooltip=`عملیات بیشتر برای ${name}`;
+    return `<div class="eqv2-structure-row-actions">
+      <button type="button" class="eqv2-structure-icon-button eqv2-structure-view-action eqv2-structure-tooltip" data-tooltip="${escText(viewTooltip)}" title="${escText(viewTooltip)}" aria-label="${escText(viewTooltip)}" onclick="eqv2StructureFocus('${id}')"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2 12s3.7-7 10-7 10 7 10 7-3.7 7-10 7S2 12 2 12Z"></path><circle cx="12" cy="12" r="3"></circle></svg></button>
+      ${canAdd&&!node.archived?`<button type="button" class="eqv2-structure-icon-button eqv2-structure-add-action eqv2-structure-tooltip" data-tooltip="${escText(addTooltip)}" title="${escText(addTooltip)}" aria-label="${escText(addTooltip)}" onclick="eqv2StructureAdd('${id}')"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 5v14M5 12h14"></path></svg></button>`:''}
+      ${menuItems.length?`<details class="eqv2-structure-action-menu" ontoggle="eqv2StructureActionMenuToggle(this)" onkeydown="eqv2StructureActionMenuKeydown(event,this)"><summary class="eqv2-structure-icon-button eqv2-structure-menu-trigger eqv2-structure-tooltip" data-tooltip="${escText(moreTooltip)}" title="${escText(moreTooltip)}" aria-label="${escText(moreTooltip)}" aria-haspopup="menu" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="5" r="1.5"></circle><circle cx="12" cy="12" r="1.5"></circle><circle cx="12" cy="19" r="1.5"></circle></svg></summary><div class="eqv2-structure-action-menu-panel" role="menu" aria-label="عملیات ساختار برای ${escText(name)}">${menuItems.join('')}</div></details>`:''}
+    </div>`;
   }
-  function structureRowCells(node,caps,level){
+  function structureActionMenuToggle(details){
+    const summary=details&&details.querySelector('summary'),panel=details&&details.querySelector('.eqv2-structure-action-menu-panel');
+    if(!summary||!panel)return;
+    summary.setAttribute('aria-expanded',String(!!details.open));
+    if(!details.open){panel.style.position='';panel.style.left='';panel.style.top='';panel.style.right='';panel.style.bottom='';return;}
+    requestAnimationFrame(()=>{
+      if(!details.open)return;
+      const rect=summary.getBoundingClientRect(),width=panel.offsetWidth||180,height=panel.offsetHeight||140;
+      const viewportWidth=Number(window.innerWidth)||document.documentElement&&document.documentElement.clientWidth||640;
+      const viewportHeight=Number(window.innerHeight)||document.documentElement&&document.documentElement.clientHeight||480;
+      const left=Math.max(8,Math.min(rect.right-width,viewportWidth-width-8));
+      const top=rect.bottom+height+12<=viewportHeight?rect.bottom+4:Math.max(8,rect.top-height-4);
+      panel.style.position='fixed';panel.style.left=`${left}px`;panel.style.top=`${top}px`;panel.style.right='auto';panel.style.bottom='auto';
+    });
+  }
+  function structureActionMenuKeydown(event,details){
+    if(!event||!details)return;
+    const summary=details.querySelector('summary'),items=Array.from(details.querySelectorAll('.eqv2-structure-action-menu-item'));
+    if(event.key==='Escape'&&details.open){event.preventDefault();event.stopPropagation();details.open=false;if(summary)summary.focus();return;}
+    if(!items.length)return;
+    const current=items.indexOf(event.target);
+    let next=-1;
+    if(event.target===summary&&(event.key==='ArrowDown'||event.key==='ArrowUp')){
+      event.preventDefault();details.open=true;next=event.key==='ArrowUp'?items.length-1:0;
+    }else if(event.key==='ArrowDown'&&current>=0){event.preventDefault();next=(current+1)%items.length;}
+    else if(event.key==='ArrowUp'&&current>=0){event.preventDefault();next=(current+items.length-1)%items.length;}
+    else if(event.key==='Home'&&current>=0){event.preventDefault();next=0;}
+    else if(event.key==='End'&&current>=0){event.preventDefault();next=items.length-1;}
+    if(next>=0)requestAnimationFrame(()=>items[next]&&items[next].focus());
+  }
+  function structureChildCountLabel(node,count){
+    const childLabel={equipment:'زیرسیستم تجهیز','sub-equipment':'زیرسیستم تجهیز',subsystem:'قطعه اصلی','main-component':'زیرقطعه'}[node.nodeKind];
+    if(node.nodeKind==='sub-component')return'هیچ سطح پایین‌تری';
+    return`${faText(count)} ${childLabel||'بخش پایین‌تر'}`;
+  }
+  function structureRowCells(node,caps,level,warningState={shown:false}){
     const children=node.children||[];
     const canChild=caps.create&&structureAllowedChildren(node.nodeKind,node).length>0;
     const hasChildren=structureHasChildren(node);
     const expanded=!!String(E.structureQuery||'').trim()||structureNodeExpanded(node);
-    const sectionCount=children.filter(child=>!child.archived).length||Number(node.childCount??node.childrenCount??node.activeChildCount??node.active_child_count)||0;
+    const activeChildCount=children.filter(child=>!child.archived).length;
+    const reportedChildCount=Number(node.childCount??node.childrenCount??node.activeChildCount??node.active_child_count);
+    const sectionCount=activeChildCount>0?activeChildCount:(Number.isFinite(reportedChildCount)&&reportedChildCount>0?reportedChildCount:0);
     const loading=String(E.structureNodeLoadingId)===String(node.id);
     const brand=node.brand||node.manufacturer||node.inventoryItem&&node.inventoryItem.manufacturer||node.maker||null;
     const partNumber=node.partNumber||(node.inventoryItem&&node.inventoryItem.partNumber)||null;
     const quantity=node.requiredQuantity==null?null:faText(node.requiredQuantity)+(node.unit?' '+node.unit:'');
+    const showLegacyWarning=!warningState.shown&&(node.legacy||node.validRelation===false);
+    if(showLegacyWarning)warningState.shown=true;
     return `<tr class="eqv2-structure-tr${node.archived?' is-archived':''}${node.validRelation===false?' is-invalid':''}${String(E.structureSelected)===String(node.id)?' is-selected':''}" data-structure-node="${escText(node.id)}" aria-selected="${String(E.structureSelected)===String(node.id)}">
       <td class="eqv2-structure-name" style="--eqv2-level:${Math.max(level,0)}">
         ${hasChildren?`<button type="button" class="eqv2-structure-toggle" aria-expanded="${expanded}" aria-label="${loading?'در حال بارگذاری':expanded?'بستن':'باز کردن'} سطوح پایین‌تر از ${escText(node.name||node.code||'')}" ${loading?'disabled':''} onclick="eqv2StructureToggle('${escText(node.id)}')">${loading?'…':expanded?'▾':'◂'}</button>`:'<span class="eqv2-structure-leaf" aria-hidden="true"></span>'}
-        <b>${escText(node.name||'بدون نام')}</b><small class="eqv2-structure-section-count">${faText(sectionCount)} بخش زیرین</small>
+        <b>${escText(node.name||'بدون نام')}</b><small class="eqv2-structure-section-count">${escText(structureChildCountLabel(node,sectionCount))}</small>
         ${node.archived?'<span class="badge b-orange">بایگانی</span>':''}
-        ${node.legacy?'<span class="badge b-orange">رکورد قدیمی</span>':''}
-        ${node.validRelation===false&&!node.legacy?'<span class="badge b-orange">ساختار ناسازگار</span>':''}
+        ${showLegacyWarning?`<span class="badge b-orange eqv2-structure-legacy-warning">${STRUCTURE_LEGACY_WARNING}</span>`:''}
       </td>
       <td>${structureCell(node.code)}</td>
       <td>${structureCell(STRUCTURE_KIND_LABEL[node.nodeKind]||node.nodeKind)}</td>
@@ -459,12 +510,13 @@
       <td>${structurePurchaseCell(node)}</td>
       <td>${structureSupplierCell(node)}</td>
       <td class="eqv2-structure-actions">${structureRowActions(node,caps,canChild)}</td>
-    </tr>${expanded&&children.length?children.map(child=>structureRowCells(child,caps,level+1)).join(''):''}`;
+    </tr>${expanded&&children.length?children.map(child=>structureRowCells(child,caps,level+1,warningState)).join(''):''}`;
   }
-  function structureTable(nodes,caps){
+  function structureTable(nodes,caps,warningAlreadyShown=false){
+    const warningState={shown:!!warningAlreadyShown};
     return `<div class="eqv2-structure-table-wrap"><table class="eqv2-structure-table">
       <thead><tr>${STRUCTURE_COLUMNS.map((column,index)=>`<th${index===0?' class="eqv2-structure-name"':''}${index===STRUCTURE_COLUMNS.length-1?' class="eqv2-structure-actions"':''}>${escText(column)}</th>`).join('')}</tr></thead>
-      <tbody>${nodes.map(node=>structureRowCells(node,caps,0)).join('')}</tbody></table></div>`;
+      <tbody>${nodes.map(node=>structureRowCells(node,caps,0,warningState)).join('')}</tbody></table></div>`;
   }
   function structureHasChildren(node){
     if((node&&node.children||[]).some(child=>!child.archived)||((node&&node.children||[]).length>0&&E.structureArchived))return true;
@@ -672,6 +724,8 @@
     }
     const caps=st.capabilities||{};
     const focusNode=E.structureFocus?structureNodeById(E.structureFocus):null;
+    const focusPathNodes=(focusNode&&Array.isArray(focusNode.path)?focusNode.path:[]).slice().reverse().map(step=>structureNodeById(step&&step.id||step)).filter(Boolean);
+    const focusWarningNode=focusNode&&(focusNode.legacy||focusNode.validRelation===false)?focusNode:focusPathNodes.find(node=>node.legacy||node.validRelation===false)||null;
     const levelNode=focusNode||structureNodeById((E.structurePanel||[]).at(-1))||{id:st.root.id,children:st.nodes,nodeKind:'equipment',name:st.root.name};
     const levelChildren=levelNode.children||[];
     const visibleChildren=structureFilterNodes(levelChildren,E.structureQuery);
@@ -687,6 +741,7 @@
     const focusCard=focusNode?`<section class="eqv2-structure-panel" aria-label="پنل جزئیات جزء ساختاری">
       <div class="eqv2-structure-panel-head"><b>جزئیات: ${escText(focusNode.name||focusNode.code||'')}</b>
         <button type="button" class="btn btn-sm btn-ghost" onclick="eqv2StructureClose()">بستن / بازگشت به سطح قبلی</button></div>
+      ${focusWarningNode?`<span class="badge b-orange eqv2-structure-legacy-warning">${STRUCTURE_LEGACY_WARNING}</span>`:''}
       <div class="eqv2-detail-grid">
         ${[['نوع',STRUCTURE_KIND_LABEL[focusNode.nodeKind]||focusNode.nodeKind],['کد',focusNode.code],['نام',focusNode.name],
           ['نوع قطعه',focusNode.componentType],['برند',focusNode.brand],['سازنده',focusNode.manufacturer||focusNode.maker],
@@ -707,7 +762,7 @@
     return`${heading}${rootNotes}${structureCrumb()}${focusCard}
       <div class="eqv2-structure-level"><b>سطح جاری: ${escText(STRUCTURE_KIND_LABEL[levelNode.nodeKind]||levelNode.nodeKind||'')} — ${escText(levelNode.name||levelNode.code||'')}</b>
       <span class="muted">${faText((levelNode.children||[]).length)} بخش در این سطح</span></div>
-      ${visibleChildren.length?structureTable(visibleChildren,caps):(String(E.structureQuery||'').trim()?empty('با این نام یا کد، جزئی ساختاری پیدا نشد.'):(E.structureArchived?empty('جزء بایگانی‌شده‌ای ثبت نشده است.'):structureEmptyState(caps)))}
+      ${visibleChildren.length?structureTable(visibleChildren,caps,!!focusWarningNode):(String(E.structureQuery||'').trim()?empty('با این نام یا کد، جزئی ساختاری پیدا نشد.'):(E.structureArchived?empty('جزء بایگانی‌شده‌ای ثبت نشده است.'):structureEmptyState(caps)))}
       ${structureSuggestionPanel()}`;
   }
   async function refreshStructure(options={}){
@@ -1619,6 +1674,7 @@
   window.eqv2StructureAdd=structureAdd;window.eqv2StructureEdit=structureEdit;window.eqv2StructureMove=structureMoveModal;
   window.eqv2StructureArchive=structureArchive;window.eqv2StructureRestore=structureRestore;window.eqv2StructureFocus=structureFocusNode;
   window.eqv2StructureToggle=structureToggle;window.eqv2StructureAddRoot=structureAddRoot;window.eqv2StructureAddMain=structureAddMainComponent;
+  window.eqv2StructureActionMenuToggle=structureActionMenuToggle;window.eqv2StructureActionMenuKeydown=structureActionMenuKeydown;
   window.eqv2StructureExpandAll=structureToggleAll;window.eqv2StructureSearch=structureSearch;
   window.eqv2StructureClose=structureClosePanel;window.eqv2StructureCrumb=structureCrumbTo;window.eqv2StructureArchivedToggle=structureArchivedToggle;
   window.eqv2StructureSuggest=structureSuggest;window.eqv2StructureApprove=structureApprove;window.eqv2StructureReject=structureReject;
