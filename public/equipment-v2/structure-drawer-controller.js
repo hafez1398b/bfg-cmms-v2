@@ -3,7 +3,7 @@
   'use strict';
 
   const PARENT_KINDS=Object.freeze({
-    subsystem:['equipment','sub-equipment'],
+    subsystem:['equipment'],
     'main-component':['subsystem'],
     'sub-component':['main-component']
   });

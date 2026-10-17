@@ -89,12 +89,21 @@ function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry, securi
   router.get('/', requireEquipment('view'), async (req, res, next) => {
     try {
       const params = listParams(req.query);
+      // Do not hide every type='eq' child based only on its equipment parent. Legacy rows such as
+      // B1BT9955/B1BT catali remain registry records; only explicitly internal registry kinds are
+      // hidden, with cls='زیرتجهیز' as a guarded compatibility exception for historical rows.
       const where = [
         `a.type='eq'`,
         `a.deleted_at IS NULL`,
-        `COALESCE(a.ext->>'nodeKind','equipment') NOT IN ('sub-equipment','subsystem','main-component','sub-component','sub','sys','panel')`,
-        `NOT EXISTS(SELECT 1 FROM assets structural_parent WHERE structural_parent.id=a.parent
-          AND structural_parent.type='eq' AND structural_parent.deleted_at IS NULL)`
+        `(COALESCE(a.ext->>'nodeKind','equipment') NOT IN ('sub-equipment','subsystem','main-component','sub-component','sub','sys','panel')
+          OR (a.cls='زیرتجهیز' AND EXISTS(SELECT 1 FROM assets registry_parent
+            WHERE registry_parent.id=a.parent AND registry_parent.type='eq' AND registry_parent.deleted_at IS NULL
+              AND COALESCE(NULLIF(registry_parent.ext->>'nodeKind',''),'equipment') NOT IN ('sub-equipment','subsystem','main-component','sub-component','sub','sys','panel')))`,
+        `(NOT EXISTS(SELECT 1 FROM assets structural_parent WHERE structural_parent.id=a.parent
+          AND structural_parent.type='eq' AND structural_parent.deleted_at IS NULL)
+          OR (a.cls='زیرتجهیز' AND EXISTS(SELECT 1 FROM assets structural_parent
+            WHERE structural_parent.id=a.parent AND structural_parent.type='eq' AND structural_parent.deleted_at IS NULL
+              AND COALESCE(NULLIF(structural_parent.ext->>'nodeKind',''),'equipment') NOT IN ('sub-equipment','subsystem','main-component','sub-component','sub','sys','panel')))`
       ];
       const values = [];
       const add = (sql, value) => {
@@ -226,9 +235,12 @@ function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry, securi
     }
     if (mode === 'id') return identifier;
     const { rows } = await pool.query(
-      `SELECT id FROM assets
-       WHERE code=$1 AND type='eq' AND deleted_at IS NULL
-         AND COALESCE(NULLIF(ext->>'nodeKind',''),'equipment') IN ('equipment','sub-equipment')
+      `SELECT id FROM assets a
+       WHERE a.code=$1 AND a.type='eq' AND a.deleted_at IS NULL
+         AND (COALESCE(NULLIF(a.ext->>'nodeKind',''),'equipment') IN ('equipment','sub-equipment')
+           OR (a.cls='زیرتجهیز' AND EXISTS(SELECT 1 FROM assets structural_parent
+             WHERE structural_parent.id=a.parent AND structural_parent.type='eq' AND structural_parent.deleted_at IS NULL
+               AND COALESCE(NULLIF(structural_parent.ext->>'nodeKind',''),'equipment') NOT IN ('sub-equipment','subsystem','main-component','sub-component','sub','sys','panel'))))
        LIMIT 1`,
       [identifier]
     );
@@ -394,7 +406,14 @@ function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry, securi
 
   router.post('/', async (req, res, next) => {
     const body = req.body || {};
-    const internalNode = structure.isStructureKind(body.nodeKind);
+    const structureRequest = structure.isStructureKind(body.nodeKind)
+      || Object.prototype.hasOwnProperty.call(body, 'structureKind')
+      || Object.prototype.hasOwnProperty.call(body, 'rootEquipmentId')
+      || Object.prototype.hasOwnProperty.call(body, 'equipmentId')
+      || Object.prototype.hasOwnProperty.call(body, 'parentRowVersion')
+      || Object.prototype.hasOwnProperty.call(body, 'parent_row_version')
+      || Object.prototype.hasOwnProperty.call(body, 'parentId');
+    const internalNode = structureRequest;
     if (internalNode) {
       if (!(await structurePermission(req, res, 'equipment.structure.create'))) return;
       const errors = structure.validateStructureInput(body, { requireParentVersion: true });
@@ -432,7 +451,7 @@ function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry, securi
     try {
       const target = await pool.query('SELECT id,type,ext FROM assets WHERE id=$1 AND deleted_at IS NULL', [req.params.id]);
       if (!target.rows[0]) return res.sendStatus(404);
-      const internalNode = structure.isInternalKind(structure.kindOf(target.rows[0]));
+      const internalNode = await structure.isStructureRecord(pool, target.rows[0]);
       if (internalNode) {
         if (!(await structurePermission(req, res, 'equipment.structure.update'))) return;
       } else if (!canEquipment(req.user, 'edit')) return res.status(403).json({ error: 'EQUIPMENT_PERMISSION_DENIED', permission: 'Equipment.edit' });
@@ -460,7 +479,7 @@ function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry, securi
     try {
       const target = await pool.query('SELECT id,type,ext FROM assets WHERE id=$1 AND deleted_at IS NULL', [req.params.id]);
       if (!target.rows[0]) return res.sendStatus(404);
-      const internalNode = structure.isInternalKind(structure.kindOf(target.rows[0]));
+      const internalNode = await structure.isStructureRecord(pool, target.rows[0]);
       if (!internalNode && !canEquipment(req.user, 'move')) return res.status(403).json({ error: 'EQUIPMENT_PERMISSION_DENIED', permission: 'Equipment.move' });
       const client = await pool.connect();
       try {
@@ -512,7 +531,7 @@ function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry, securi
     try {
       const target = await pool.query('SELECT id,type,ext FROM assets WHERE id=$1 AND deleted_at IS NULL', [req.params.id]);
       if (!target.rows[0]) return res.sendStatus(404);
-      const internalNode = structure.isInternalKind(structure.kindOf(target.rows[0]));
+      const internalNode = await structure.isStructureRecord(pool, target.rows[0]);
       if (internalNode) {
         if (!(await structurePermission(req, res, 'equipment.structure.archive'))) return;
       } else if (!canEquipment(req.user, 'delete')) return res.status(403).json({ error: 'EQUIPMENT_PERMISSION_DENIED', permission: 'Equipment.delete' });

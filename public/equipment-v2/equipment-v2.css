@@ -160,6 +160,9 @@ td.eqv2-structure-actions .eqv2-structure-row-actions{display:inline-flex;align-
 .eqv2-structure-parent-banner{display:grid;gap:4px;margin-bottom:14px;padding:10px 12px;border:1px solid color-mix(in srgb,var(--primary) 35%,var(--border));border-radius:10px;background:var(--blue-bg)}
 .eqv2-structure-parent-banner small{color:var(--text-2);font-size:10px}
 .eqv2-structure-parent-banner b{font-size:12px}
+.eqv2-structure-kind-readonly{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:-6px 0 14px;padding:9px 11px;border:1px dashed var(--border-2);border-radius:9px;background:var(--surface-2);font-size:11px}
+.eqv2-structure-kind-readonly span{color:var(--text-2)}
+.eqv2-structure-kind-readonly b{color:var(--primary)}
 .eqv2-structure-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .eqv2-structure-field{display:grid;align-content:start;gap:5px;min-width:0}
 .eqv2-structure-field label,.eqv2-structure-parent-picker label{font-size:10.5px;font-weight:700;color:var(--text-2)}

@@ -10,33 +10,31 @@ const rootPath = path.join(__dirname, '..');
 const read = file => fs.readFileSync(path.join(rootPath, file), 'utf8');
 const ROOT_ID = 'equipment-b1bt';
 const LEGACY_ID = 'equipment-b1bt9955';
-const SUBSYSTEM_ID = 'subsystem-1';
 const MAIN_ID = 'main-1';
 const PART_ID = 'part-1';
 const copy = value => JSON.parse(JSON.stringify(value));
 
 function structureTree({ descendants = true, archived = false, diagnostics = [] } = {}) {
   const legacy = {
-    id: LEGACY_ID, code: 'B1BT9955', name: 'تجهیز انتخاب‌شده B1BT9955', nodeKind: 'sub-equipment',
-    rowVersion: 6, archived, legacy: true, validRelation: false, path: [{ id: LEGACY_ID }], children: []
+    id: LEGACY_ID, code: 'B1BT9955', name: 'تجهیز انتخاب‌شده B1BT9955', nodeKind: 'subsystem', canonicalKind: 'subsystem',
+    parentId: ROOT_ID, level: 1, rowVersion: 6, archived, legacy: true, validRelation: true, path: [{ id: LEGACY_ID }], children: []
   };
   if (descendants) {
     legacy.children.push({
-      id: SUBSYSTEM_ID, code: 'SYS-1', name: 'زیرسیستم یک', nodeKind: 'subsystem', rowVersion: 3,
-      archived: false, legacy: false, validRelation: true, path: [{ id: LEGACY_ID }, { id: SUBSYSTEM_ID }], children: [{
-        id: MAIN_ID, code: 'CMP-1', name: 'قطعه اصلی یک', nodeKind: 'main-component', rowVersion: 2,
-        archived: false, legacy: false, validRelation: true, path: [{ id: LEGACY_ID }, { id: SUBSYSTEM_ID }, { id: MAIN_ID }], children: [{
-          id: PART_ID, code: 'PART-1', name: 'زیرقطعه یک', nodeKind: 'sub-component', rowVersion: 1,
-          archived: false, legacy: false, validRelation: true,
-          path: [{ id: LEGACY_ID }, { id: SUBSYSTEM_ID }, { id: MAIN_ID }, { id: PART_ID }], children: []
-        }]
+      id: MAIN_ID, code: 'CMP-1', name: 'قطعه اصلی یک', nodeKind: 'main-component', canonicalKind: 'main-component',
+      parentId: LEGACY_ID, level: 2, rowVersion: 3,
+      archived: false, legacy: false, validRelation: true, path: [{ id: LEGACY_ID }, { id: MAIN_ID }], children: [{
+        id: PART_ID, code: 'PART-1', name: 'زیرقطعه یک', nodeKind: 'sub-component', canonicalKind: 'sub-component',
+        parentId: MAIN_ID, level: 3, rowVersion: 2,
+        archived: false, legacy: false, validRelation: true,
+        path: [{ id: LEGACY_ID }, { id: MAIN_ID }, { id: PART_ID }], children: []
       }]
     });
   }
   return {
     rootId: ROOT_ID, rootEquipmentId: ROOT_ID,
     root: { id: ROOT_ID, code: 'B1BT', name: 'تجهیز B1BT', nodeKind: 'equipment', rowVersion: 9 },
-    nodes: [legacy], rootAllowedChildren: ['subsystem'], nodeCount: descendants ? 4 : 1,
+    nodes: [legacy], rootAllowedChildren: ['subsystem'], nodeCount: descendants ? 3 : 1,
     capabilities: { create: true, update: true, move: true, moveAcrossEquipment: false, archive: true, suggest: false, approveAi: false },
     suggestions: [], diagnostics: copy(diagnostics)
   };
@@ -108,8 +106,8 @@ class DrawerRoot {
 
 function harness({ initialTree = structureTree(), shallowTree = null } = {}) {
   let liveTree = copy(initialTree);
-  const calls = { structure: [], create: [], archive: [], restore: [] };
-  const behavior = { structure: null, archive: null, restore: null };
+  const calls = { structure: [], create: [], update: [], archive: [], restore: [] };
+  const behavior = { structure: null, update: null, archive: null, restore: null };
   const asset = { id: ROOT_ID, code: 'B1BT', name: 'تجهیز B1BT', type: 'eq', status: 'active', crit: 'A', row_version: 9, ext: {}, path: [], children: [], pm_plans: [], work_orders: [], maintenance_history: [], requests: [], spare_parts: [], consumed_parts: [], cost_entries: [], downtimes: [], documents: [], risks: [], rca: [], movements: [] };
   const activeTree = tree => {
     const result = copy(tree);
@@ -127,7 +125,13 @@ function harness({ initialTree = structureTree(), shallowTree = null } = {}) {
     },
     async structureCreate(payload) {
       calls.create.push(copy(payload));
-      return { httpStatus: 201, committed: true, data: { id: 'created-subsystem', ...copy(payload), row_version: 1 } };
+      return { httpStatus: 201, committed: true, data: { id: 'created-main-component', ...copy(payload), row_version: 1 } };
+    },
+    async structureUpdate(id, payload) {
+      calls.update.push({ id: String(id), payload: copy(payload) });
+      if (behavior.update) return behavior.update(id, payload);
+      const current = flatten(liveTree.nodes).find(item => String(item.id) === String(id));
+      return { httpStatus: 200, committed: true, data: { ...copy(current || {}), ...copy(payload), id: String(id), row_version: Number(payload.rowVersion) + 1 } };
     },
     async structureArchive(id, reason, rowVersion) {
       calls.archive.push({ id, reason, rowVersion });
@@ -207,17 +211,81 @@ test('row action uses the exact selected equipment id from Drawer through POST',
   const h = harness();
   const html = await showStructure(h);
   assert.match(html, new RegExp(`eqv2StructureAdd\\('${LEGACY_ID}'\\)`));
-  assert.match(html, /افزودن زیرسیستم تجهیز/);
+  assert.match(html, /افزودن قطعه اصلی زیرسیستم/);
   await h.context.eqv2StructureAdd(LEGACY_ID);
   const drawer = h.document.drawerRoot;
   assert.match(drawer.innerHTML, /B1BT9955/);
   assert.doesNotMatch(drawer.innerHTML, /تجهیز انتخاب‌شده:.*B1BT<\/b>/);
   h.context.EQV2.structure.rootId = 'stale-root-id';
-  drawer.input('name', 'زیرسیستم ثبت‌شده');
+  drawer.input('name', 'قطعه اصلی ثبت‌شده');
+  drawer.input('code', 'CMP-NEW');
   drawer.click('save');
   await settleUntil(() => h.calls.create.length === 1);
   assert.equal(h.calls.create[0].parentId, LEGACY_ID);
   assert.equal(h.calls.create[0].rootEquipmentId, ROOT_ID);
+  assert.equal(h.calls.create[0].nodeKind, 'main-component');
+});
+
+
+test('subsystem, main-component and sub-component edit use the exact row id, immutable type and real rowVersion PATCH', async () => {
+  const cases = [
+    { id: LEGACY_ID, kind: 'subsystem', rowVersion: 6, label: 'زیرسیستم تجهیز' },
+    { id: MAIN_ID, kind: 'main-component', rowVersion: 3, label: 'قطعه اصلی زیرسیستم' },
+    { id: PART_ID, kind: 'sub-component', rowVersion: 2, label: 'زیرقطعه قطعه اصلی' }
+  ];
+  for (const expected of cases) {
+    const h = harness();
+    const html = await showStructure(h);
+    const row = renderedStructureRow(html, expected.id);
+    assert.ok(row.includes(`eqv2StructureEdit('${expected.id}')`), `edit action must retain exact row id ${expected.id}`);
+    assert.match(row, /event\.stopPropagation\(\);this\.closest\('details'\)\.open=false/);
+    h.context.eqv2StructureEdit(expected.id);
+    const drawer = h.document.drawerRoot;
+    assert.match(drawer.innerHTML, new RegExp(`نوع ساختاری · تعیین‌شده بر اساس جایگاه</span><b>${expected.label}`));
+    assert.doesNotMatch(drawer.innerHTML, /data-structure-field="nodeKind"/);
+    drawer.input('name', `ویرایش ${expected.id}`);
+    if (expected.kind === 'main-component') drawer.input('code', 'CMP-EDITED');
+    drawer.click('save');
+    await settleUntil(() => h.context.toasts.some(message => message.includes('ویرایش جزء ساختاری پس از commit')));
+    assert.equal(h.calls.update.length, 1);
+    assert.equal(h.calls.update[0].id, expected.id);
+    assert.equal(h.calls.update[0].payload.nodeKind, expected.kind);
+    assert.equal(h.calls.update[0].payload.rowVersion, expected.rowVersion);
+    assert.equal(h.document.drawerRoot.removed, true);
+  }
+});
+
+test('level-four records remain visible as conflicts but cannot be expanded or operated on', async () => {
+  const tree = structureTree();
+  const part = flatten(tree.nodes).find(node => node.id === PART_ID);
+  part.hasChildren = true; part.childCount = 1;
+  part.children = [{
+    id: 'level-four', code: 'LEVEL-4', name: 'عمق نامعتبر', nodeKind: null, canonicalKind: null,
+    level: 4, parentId: PART_ID, rowVersion: 1, validRelation: false, conflict: true,
+    hasChildren: true, childCount: 1, children: [{ id: 'level-five', code: 'LEVEL-5', name: 'نباید باز شود', level: 5, children: [] }]
+  }];
+  const h = harness({ initialTree: tree });
+  const html = await showStructure(h);
+  const row = renderedStructureRow(html, 'level-four');
+  assert.match(row, /is-invalid/);
+  assert.match(row, /سطح نامعتبر \(عمق 4\)/);
+  assert.match(row, /عمق ساختار بیش از سه سطح است/);
+  assert.doesNotMatch(row, /eqv2StructureAdd\('level-four'\)|eqv2StructureEdit\('level-four'\)|eqv2StructureToggle\('level-four'\)/);
+  assert.doesNotMatch(html, /نباید باز شود/);
+});
+
+test('structure edit failure keeps the drawer open and never reports success', async () => {
+  const h = harness();
+  await showStructure(h);
+  h.context.eqv2StructureEdit(MAIN_ID);
+  const drawer = h.document.drawerRoot;
+  drawer.input('name', 'ویرایش ناموفق'); drawer.input('code', 'CMP-FAILED');
+  h.behavior.update = async () => { throw Object.assign(new Error('VERSION_CONFLICT'), { payload: { error: 'VERSION_CONFLICT' } }); };
+  drawer.click('save');
+  await settleUntil(() => h.calls.update.length === 1 && h.document.drawerRoot.errorNode.hidden === false);
+  assert.equal(h.document.drawerRoot.removed, false);
+  assert.equal(h.context.toasts.some(message => message.includes('ویرایش جزء ساختاری پس از commit')), false);
+  assert.match(h.document.drawerRoot.errorNode.textContent, /هم‌زمان تغییر کرده است/);
 });
 
 test('expand all lazily loads each registered level, shows loading, and preserves expansion state', async () => {
@@ -231,7 +299,7 @@ test('expand all lazily loads each registered level, shows loading, and preserve
   const depthThree = copy(full);
   depthThree.nodes[0].children[0].children = [depthThree.nodes[0].children[0].children[0]];
   depthThree.nodes[0].children[0].children[0].children = [];
-  depthThree.nodes[0].children[0].children[0].hasChildren = true; depthThree.nodes[0].children[0].children[0].childCount = 1;
+  depthThree.nodes[0].children[0].children[0].hasChildren = false; depthThree.nodes[0].children[0].children[0].childCount = 0;
   const h = harness({ initialTree: initial, shallowTree: initial });
   await showStructure(h);
   let release;
@@ -243,10 +311,10 @@ test('expand all lazily loads each registered level, shows loading, and preserve
   assert.match(h.detailBody.innerHTML, /در حال بارگذاری سطوح ساختار/);
   release({ data: depthTwo });
   await pending;
-  assert.deepEqual(h.calls.structure.map(call => call.options.depth), [2, 3, 4]);
+  assert.deepEqual(h.calls.structure.map(call => call.options.depth), [2, 3]);
   assert.equal(h.context.EQV2.structureExpanded[LEGACY_ID], true);
-  assert.equal(h.context.EQV2.structureExpanded[SUBSYSTEM_ID], true);
   assert.equal(h.context.EQV2.structureExpanded[MAIN_ID], true);
+  assert.equal(h.context.EQV2.structureExpanded[PART_ID], false, 'sub-components are terminal; no fourth level is expanded');
 });
 
 test('opening one unloaded section fetches only through that registered level', async () => {
@@ -259,7 +327,7 @@ test('opening one unloaded section fetches only through that registered level', 
   await h.context.eqv2StructureToggle(LEGACY_ID);
   assert.equal(h.calls.structure[0].options.depth, 2);
   assert.equal(h.context.EQV2.structureExpanded[LEGACY_ID], true);
-  assert.equal(h.context.EQV2.structure.nodes[0].children[0].id, SUBSYSTEM_ID);
+  assert.equal(h.context.EQV2.structure.nodes[0].children[0].id, MAIN_ID);
 });
 
 test('expand all with no descendants gives a clear message and does not silently do nothing', async () => {
@@ -287,17 +355,17 @@ test('collapse all closes every deeper level while preserving selected row and s
   const h = harness();
   await showStructure(h);
   Object.assign(h.context.EQV2, {
-    structureSelected: MAIN_ID, structurePanel: [LEGACY_ID, SUBSYSTEM_ID], structureFocus: SUBSYSTEM_ID,
-    structureExpanded: { [LEGACY_ID]: true, [SUBSYSTEM_ID]: true, [MAIN_ID]: true }
+    structureSelected: PART_ID, structurePanel: [LEGACY_ID, MAIN_ID], structureFocus: MAIN_ID,
+    structureExpanded: { [LEGACY_ID]: true, [MAIN_ID]: true, [PART_ID]: true }
   });
   h.scrollWrap.scrollTop = 82; h.scrollWrap.scrollLeft = 23; h.context.scrollY = 511;
   await h.context.eqv2StructureExpandAll(false);
   assert.equal(h.context.EQV2.structureExpanded[LEGACY_ID], false);
-  assert.equal(h.context.EQV2.structureExpanded[SUBSYSTEM_ID], false);
   assert.equal(h.context.EQV2.structureExpanded[MAIN_ID], false);
+  assert.equal(h.context.EQV2.structureExpanded[PART_ID], false);
   assert.equal(h.context.EQV2.structurePanel.length, 0);
   assert.equal(h.context.EQV2.structureFocus, null);
-  assert.equal(h.context.EQV2.structureSelected, MAIN_ID);
+  assert.equal(h.context.EQV2.structureSelected, PART_ID);
   assert.match(h.detailBody.innerHTML, /eqv2StructureExpandAll\(false\)" disabled/);
   assert.equal(h.scrollWrap.scrollTop, 82);
   assert.equal(h.scrollWrap.scrollLeft, 23);
@@ -382,15 +450,16 @@ test('active structure UI uses approved Persian terminology only', async () => {
   assert.match(read('public/equipment-v2/equipment-v2.js'), /\['structure','ساختار تجهیز'\]/);
 });
 
-test('legacy diagnostics use one clear row warning without a duplicate banner', async () => {
-  const warning = { code: 'LEGACY_SUB_EQUIPMENT', nodeId: LEGACY_ID, message: 'رکورد زیرتجهیز قدیمی حفظ شده و فقط برای سازگاری نمایش داده می‌شود.' };
+test('legacy registry rows use the canonical subsystem label and one clear row warning', async () => {
+  const warning = { code: 'LEGACY_SUB_EQUIPMENT', nodeId: LEGACY_ID, message: 'رکورد Legacy زیرسیستم است و نوع تاریخی آن حفظ شده است.' };
   const h = harness({ initialTree: structureTree({ diagnostics: [warning, copy(warning), copy(warning)] }) });
   const html = await showStructure(h);
-  assert.equal((html.match(/تجهیز قدیمی — ساختار داخلی آن جداگانه تکمیل می‌شود/g) || []).length, 1);
-  assert.doesNotMatch(html, /ساختار ناسازگار|یک یا چند بخش قدیمی یا ناسازگار است/);
+  assert.match(renderedStructureRow(html, LEGACY_ID), /زیرسیستم تجهیز/);
+  assert.equal((html.match(/رکورد Legacy با نوع و شناسه تاریخی حفظ شده/g) || []).length, 1);
+  assert.doesNotMatch(html, /تجهیز قدیمی — ساختار داخلی آن جداگانه تکمیل می‌شود/);
   h.context.EQV2.structureFocus = LEGACY_ID;
   const focusedHtml = await showStructure(h);
-  assert.equal((focusedHtml.match(/تجهیز قدیمی — ساختار داخلی آن جداگانه تکمیل می‌شود/g) || []).length, 1);
+  assert.equal((focusedHtml.match(/رکورد Legacy با نوع و شناسه تاریخی حفظ شده/g) || []).length, 1);
 });
 
 test('structure row actions are compact, accessible icon controls with the approved overflow actions', async () => {
@@ -407,7 +476,7 @@ test('structure row actions are compact, accessible icon controls with the appro
   assert.match(activeRow, /aria-haspopup="menu" aria-expanded="false"/);
   assert.match(activeRow, /onkeydown="eqv2StructureActionMenuKeydown\(event,this\)"/);
   assert.equal((activeRow.match(/class="eqv2-structure-icon-button/g) || []).length, 3);
-  for (const label of ['مشاهده جزئیات', 'افزودن زیرسیستم تجهیز', 'عملیات بیشتر']) {
+  for (const label of ['مشاهده جزئیات', 'افزودن قطعه اصلی زیرسیستم', 'عملیات بیشتر']) {
     assert.ok(activeRow.includes(`aria-label="${label}`), `missing accessible label: ${label}`);
     assert.ok(activeRow.includes(`data-tooltip="${label}`), `missing Persian tooltip: ${label}`);
     assert.ok(activeRow.includes(`title="${label}`), `missing title fallback: ${label}`);
@@ -436,9 +505,8 @@ test('structure row actions are compact, accessible icon controls with the appro
 test('structure row counts use the next valid level label for each record type', async () => {
   const h = harness();
   const html = await showStructure(h);
-  assert.match(renderedStructureRow(html, LEGACY_ID), /1 زیرسیستم تجهیز/);
-  assert.match(renderedStructureRow(html, SUBSYSTEM_ID), /1 قطعه اصلی/);
-  assert.match(renderedStructureRow(html, MAIN_ID), /1 زیرقطعه/);
+  assert.match(renderedStructureRow(html, LEGACY_ID), /1 قطعه اصلی زیرسیستم/);
+  assert.match(renderedStructureRow(html, MAIN_ID), /1 زیرقطعه قطعه اصلی/);
   assert.match(renderedStructureRow(html, PART_ID), /هیچ سطح پایین‌تری/);
   assert.doesNotMatch(html, /بخش زیرین/);
 });

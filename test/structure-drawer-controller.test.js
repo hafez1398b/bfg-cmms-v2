@@ -13,6 +13,7 @@ test('each structure type has a separate form contract and enforces its parent k
   assert.ok(contract.formFields('main-component').some(field => field.id === 'inventoryItemId'));
   assert.ok(contract.formFields('sub-component').some(field => field.id === 'requiredQuantity'));
   assert.equal(contract.isValidParent('subsystem', equipment), true);
+  assert.equal(contract.isValidParent('subsystem', { id: 'legacy-subsystem', nodeKind: 'sub-equipment' }), false);
   assert.equal(contract.isValidParent('subsystem', subsystem), false);
   assert.equal(contract.isValidParent('main-component', subsystem), true);
   assert.equal(contract.isValidParent('main-component', component), false);

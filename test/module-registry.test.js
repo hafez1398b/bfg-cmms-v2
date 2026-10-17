@@ -396,7 +396,7 @@ test('an update verifies a local backup before any migration and records the res
 
 test('numbered migrations are idempotent and the fresh schema includes the registry', () => {
   const files = updates.listMigrationFiles(path.join(root, 'migrations'));
-  assert.deepEqual(files.map(file => file.version), ['002', '003', '004', '005', '006', '007', '008', '009', '010', '011', '012', '013', '014', '015', '016']);
+  assert.deepEqual(files.map(file => file.version), ['002', '003', '004', '005', '006', '007', '008', '009', '010', '011', '012', '013', '014', '015', '016', '017']);
   const structureMigration = read('migrations/015_digital_equipment_structure.sql');
   assert.match(structureMigration, /equipment\.structure\.view/);
   assert.match(structureMigration, /ON CONFLICT \(role, permission\) DO NOTHING/);

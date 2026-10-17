@@ -121,6 +121,37 @@ function structurePool(options = {}) {
       const raw = resolved.ext && resolved.ext.nodeKind;
       return { rows: [{ id: resolved.id, parent: resolved.parent, type: resolved.type, node_kind: raw == null || raw === '' ? 'equipment' : raw, category_id: resolved.category_id, depth: 0 }] };
     }
+    if (/WITH RECURSIVE structure_path AS/.test(sql)) {
+      const [rootId, targetId, includeArchived] = values;
+      const queue = [{ id: rootId, depth: 0, path: [rootId] }];
+      while (queue.length) {
+        const current = queue.shift();
+        if (String(current.id) === String(targetId)) return { rows: [{ depth: current.depth }] };
+        if (current.depth >= 64) continue;
+        for (const child of assets.values()) {
+          if (String(child.parent) !== String(current.id) || child.type !== 'eq' || (!includeArchived && child.deleted_at)) continue;
+          if (current.path.includes(child.id)) continue;
+          queue.push({ id: child.id, depth: current.depth + 1, path: [...current.path, child.id] });
+        }
+      }
+      return { rows: [] };
+    }
+    if (/WITH RECURSIVE structure_subtree AS/.test(sql)) {
+      const rootId = values[0];
+      let maxDepth = 0;
+      const queue = [{ id: rootId, depth: 0, path: [rootId] }];
+      while (queue.length) {
+        const current = queue.shift();
+        maxDepth = Math.max(maxDepth, current.depth);
+        if (current.depth >= 64) continue;
+        for (const child of assets.values()) {
+          if (String(child.parent) !== String(current.id) || child.type !== 'eq' || child.deleted_at) continue;
+          if (current.path.includes(child.id)) continue;
+          queue.push({ id: child.id, depth: current.depth + 1, path: [...current.path, child.id] });
+        }
+      }
+      return { rows: [{ max_depth: maxDepth }] };
+    }
     if (/AS factory_id/.test(sql)) return { rows: [{ factory_id: 'factory-1' }] };
     if (/WITH RECURSIVE structure AS/.test(sql)) {
       const includeArchived = values[1] === true;
@@ -148,7 +179,7 @@ function structurePool(options = {}) {
       walk(values[0], 1);
       return { rows };
     }
-    if (/WHERE code=\$1 AND type='eq'/.test(sql)) {
+    if (/WHERE (?:a\.)?code=\$1 AND (?:a\.)?type='eq'/.test(sql)) {
       const found = [...assets.values()].find(row => String(row.code || '') === String(values[0])
         && row.type === 'eq' && !row.deleted_at
         && ['equipment', 'sub-equipment'].includes(row.ext && row.ext.nodeKind ? row.ext.nodeKind : 'equipment'));
@@ -240,13 +271,20 @@ function structurePool(options = {}) {
       row.row_version += 1;
       return { rows: [row] };
     }
-    if (/UPDATE assets SET /.test(sql) && /ext=COALESCE/.test(sql)) {
+    if (/UPDATE assets SET /.test(sql) && /row_version=row_version\+1/.test(sql) && /RETURNING \*/.test(sql)
+      && !/SET parent=/.test(sql) && !/SET is_active=/.test(sql)) {
       const row = assets.get(values[0]);
       if (!row) return { rows: [] };
       const versionParam = values[values.length - 1];
       if (Number(row.row_version) !== Number(versionParam)) return { rows: [] };
-      const extParam = values.find(value => typeof value === 'string' && value.startsWith('{'));
-      row.ext = { ...row.ext, ...JSON.parse(extParam || '{}') };
+      const setClause = sql.match(/UPDATE assets SET ([\s\S]+?) WHERE /)[1];
+      const extField = setClause.match(/(?:^|,)ext=COALESCE\(ext,'\{\}'::jsonb\)\|\|(\$\d+)::jsonb/);
+      if (extField) row.ext = { ...row.ext, ...JSON.parse(values[Number(extField[1].slice(1)) - 1] || '{}') };
+      const assignments = setClause.replace(/(?:^|,)ext=COALESCE\(ext,'\{\}'::jsonb\)\|\|\$\d+::jsonb/, '').split(',');
+      for (const assignment of assignments) {
+        const field = assignment.trim().match(/^([a-z_]+)=\$(\d+)$/);
+        if (field && !['updated_by'].includes(field[1])) row[field[1]] = values[Number(field[2]) - 1];
+      }
       row.row_version += 1;
       return { rows: [row] };
     }
@@ -385,19 +423,28 @@ test('2 the registry stays a flat comprehensive list without any tree mode', () 
   assert.doesNotMatch(read('public/index.html'), /id:'tree'/);
 });
 
-test('3 internal components stay filtered out of the comprehensive registry list', async () => {
+test('3 internal components stay filtered while verified legacy B1BT children remain in the registry list', async () => {
   const pool = structurePool();
+  const legacyRows = [
+    { id: 'b1-eq-bt9955', code: 'B1BT9955', name: 'مخازن پولیول بلندینگ', type: 'eq', parent: 'b1-eq-bt', cls: 'زیرتجهیز', node_kind: null },
+    { id: 'b1-eq-bt-catali', code: 'B1BT catali', name: 'مخازن استیل کاتالیست', type: 'eq', parent: 'b1-eq-bt', cls: 'زیرتجهیز', node_kind: 'subsystem' }
+  ];
   pool.query = async (sql, values) => {
     pool.state.calls.push({ sql, values });
-    if (/count\(\*\)::int total/.test(sql)) return { rows: [{ total: 1 }] };
-    if (/FROM assets a/.test(sql)) return { rows: [{ id: 'eq-root', code: 'EQ-ROOT', name: 'ریشه تجهیز' }] };
+    if (/count\(\*\)::int total/.test(sql)) return { rows: [{ total: legacyRows.length }] };
+    if (/SELECT a\.id,a\.code,a\.name/.test(sql)) return { rows: legacyRows };
     return { rows: [] };
   };
   await withApi(pool, 'planner', async base => {
     const response = await fetch(`${base}?limit=10`);
     assert.equal(response.status, 200);
+    const data = await response.json();
+    assert.deepEqual(data.data.map(row => row.code).sort(), ['B1BT catali', 'B1BT9955'].sort());
+    assert.deepEqual(data.data.map(row => row.id).sort(), ['b1-eq-bt-catali', 'b1-eq-bt9955'].sort());
     const listSql = pool.state.calls.map(call => call.sql).find(sql => /COALESCE\(a\.ext->>'nodeKind','equipment'\) NOT IN/.test(sql));
     assert.match(listSql, /'sub-equipment','subsystem','main-component','sub-component'/);
+    assert.match(listSql, /a\.cls='زیرتجهیز'/);
+    assert.match(listSql, /OR \(a\.cls='زیرتجهیز' AND EXISTS/);
     assert.match(listSql, /NOT EXISTS\(SELECT 1 FROM assets structural_parent/);
   });
 });
@@ -448,6 +495,41 @@ test('7 invalid parent kinds are rejected by the backend', async () => {
   });
 });
 
+test('backend rejects client-invented structure types and all fourth-level creates/moves', async () => {
+  const pool = structurePool();
+  pool.assets.set('level-4', {
+    ...pool.assets.get('part-1'), id: 'level-4', parent: 'part-1', code: 'LEVEL-4',
+    ext: { nodeKind: 'sub-component', structureKind: 'sub-component' }, row_version: 1
+  });
+  await withApi(pool, 'mgr', async base => {
+    const registryType = await fetch(`${base}/`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ rootEquipmentId: 'eq-root', nodeKind: 'equipment', name: 'نوع رجیستری',
+        code: 'BAD-EQ', parentId: 'eq-root', parentRowVersion: 3 })
+    });
+    assert.equal(registryType.status, 422);
+    assert.deepEqual((await registryType.json()).fields, ['nodeKind']);
+
+    const fourthCreate = await fetch(`${base}/`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ rootEquipmentId: 'eq-root', nodeKind: 'sub-component', name: 'سطح چهارم',
+        code: 'LEVEL-4-NEW', parentId: 'part-1', parentRowVersion: 2 })
+    });
+    assert.equal(fourthCreate.status, 422);
+    assert.equal((await fourthCreate.json()).error, 'STRUCTURE_DEPTH_EXCEEDED');
+
+    const invalidMove = await fetch(`${base}/level-4/move`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ parentId: 'comp-1', rowVersion: 1, reason: 'عمق چهارم نامعتبر' })
+    });
+    assert.equal(invalidMove.status, 422);
+    assert.equal((await invalidMove.json()).error, 'STRUCTURE_DEPTH_EXCEEDED');
+  });
+  assert.equal([...pool.assets.values()].some(row => row.code === 'LEVEL-4-NEW'), false, 'failed create leaves no duplicate or replacement row');
+  assert.equal(pool.assets.get('level-4').id, 'level-4');
+  assert.equal(pool.assets.get('level-4').parent, 'part-1');
+});
+
 test('8 cycles are prevented when moving a node under its own descendant', async () => {
   const pool = structurePool();
   await withApi(pool, 'mgr', async base => {
@@ -489,6 +571,38 @@ test('10-11 structure edits require the current row_version and report conflicts
     });
     assert.equal(stale.status, 409);
     assert.equal((await stale.json()).error, 'VERSION_CONFLICT');
+  });
+});
+
+test('subsystem, main component and sub-component PATCH operations keep exact ids and preserve stored type conflicts', async () => {
+  const pool = structurePool();
+  pool.assets.get('comp-1').ext.structureKind = 'subsystem';
+  const cases = [
+    { id: 'sub-1', kind: 'subsystem', version: 2 },
+    { id: 'comp-1', kind: 'main-component', version: 2 },
+    { id: 'part-1', kind: 'sub-component', version: 2 }
+  ];
+  await withApi(pool, 'mgr', async base => {
+    for (const item of cases) {
+      const response = await fetch(`${base}/${item.id}`, {
+        method: 'PATCH', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ rowVersion: item.version, nodeKind: item.kind, name: `edited-${item.id}` })
+      });
+      assert.equal(response.status, 200, item.id);
+      const data = (await response.json()).data;
+      assert.equal(data.id, item.id);
+      assert.equal(data.nodeKind, item.kind);
+      assert.equal(data.canonicalKind, item.kind);
+      assert.equal(data.ext.structureKind, item.id === 'comp-1' ? 'subsystem' : undefined,
+        'PATCH leaves absent values and pre-existing conflicts untouched; it does not auto-repair');
+      assert.equal(data.ext.nodeKind, item.kind, 'existing registry kind remains unchanged');
+    }
+    const wrongType = await fetch(`${base}/comp-1`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ rowVersion: 3, nodeKind: 'subsystem', name: 'نوع قابل تغییر نیست' })
+    });
+    assert.equal(wrongType.status, 422);
+    assert.equal((await wrongType.json()).error, 'NODE_KIND_IMMUTABLE');
   });
 });
 
@@ -1428,30 +1542,19 @@ test('46 the dossier keeps the code as its routing key and the real id for the s
   assert.doesNotMatch(harness.bodies.eqv2DetailBody.innerHTML, /در حال دریافت ساختار تجهیز/);
 });
 
-test('47 the read-only diagnosis script exists and cannot change any data', () => {
+test('47 the read-only diagnosis script reports root, depth, kinds, conflicts and repair proposals without writes', () => {
   const script = read('scripts/diagnose-equipment-structure.js');
-  assert.match(script, /Read-only diagnosis of the equipment dossier structure/);
-  assert.match(script, /GET \/api\/equipment\/:id\/structure expects/);
+  assert.match(script, /Read-only canonical diagnosis of equipment identity and depth-based dossier structure/);
+  assert.match(script, /SELECT a\.id,a\.parent,a\.code,a\.name,a\.type,a\.cls,a\.ext/);
+  assert.match(script, /stored nodeKind=/);
+  assert.match(script, /stored structureKind=/);
+  assert.match(script, /canonical=/);
+  assert.match(script, /conflict=/);
+  assert.match(script, /proposed repair:/);
+  assert.match(script, /level-four row or cycle/);
+  assert.match(script, /multiple active B1BT roots/);
   // It must never be able to mutate the live database.
   assert.doesNotMatch(script, /\b(INSERT\s+INTO|UPDATE\s+assets|DELETE\s+FROM|DROP|TRUNCATE|ALTER\s+TABLE)\b/i);
-  // It reports the exact causes instead of guessing: identifier, kind, resolver outcome.
-  assert.match(script, /ROOT_EQUIPMENT_NOT_FOUND/);
-  assert.match(script, /EQUIPMENT_NOT_FOUND/);
-  assert.match(script, /COALESCE\(NULLIF\(a\.ext->>'nodeKind',''\),'equipment'\)/);
-  // Its resolver query must stay identical to the runtime one (nearest equipment row).
-  assert.match(script, /ORDER BY depth ASC/);
-  assert.match(script, /NOT internal_child/);
-  assert.match(script, /registryListsIt\(row\)/);
-  // A registry-listed root is answered 200; the location parent stays outside the structure.
-  assert.match(script, /the API answers 200 with THIS row as the structure root/);
-  assert.match(script, /location\/grouping node kept outside the internal structure/);
-  // It must also separate "the database really has no structure rows" from "a query lost them".
-  assert.match(script, /children breakdown -> active type=eq:/);
-  assert.match(script, /linked spare parts \(asset_spare_parts\):/);
-  assert.match(script, /CONCLUSION: this equipment has no child assets row/);
-  assert.match(script, /the Persian empty state/);
-  assert.match(script, /FROM asset_spare_parts rel WHERE rel\.asset_id=\$1/);
-  assert.match(script, /npm run update:apply/);
   assert.match(script, /DATABASE_URL is not configured/);
 });
 
@@ -1644,8 +1747,8 @@ test('52 an internal node whose parent is outside the root equipment is still re
   });
 });
 
-test('53 moving an internal node to another equipment needs no cycle but does need confirmation, and the root relation is preserved', async () => {
-  const assets = realParentAssets();
+test('53 moving a subsystem between equipment roots preserves level and requires confirmation', async () => {
+  const assets = realLocationAssets();
   assets.set('sub-real', { ...assets.get('eq-real'), id: 'sub-real', parent: 'eq-real', code: 'B1P01-SUB', name: 'زیرسیستم هیدرولیک', ext: { nodeKind: 'subsystem' }, row_version: 2 });
   const pool = structurePool({
     assets,
@@ -1895,10 +1998,12 @@ test('58 the real legacy sub-equipment rows of B1BT are shown and preserved, nev
     assert.equal(data.nodeCount, 2);
     assert.deepEqual(data.nodes.map(node => node.code).sort(), ['B1BT catali', 'B1BT9955'].sort());
     for (const node of data.nodes) {
-      // Real rows carry no nodeKind: they are readable legacy sub-equipment, not invalid records.
-      assert.equal(node.nodeKind, 'sub-equipment');
+      // Real rows carry no structural kind, but placement makes each a Canonical level-one subsystem.
+      assert.equal(node.nodeKind, 'subsystem');
+      assert.equal(node.canonicalKind, 'subsystem');
       assert.equal(node.level, 1);
       assert.equal(node.legacy, true);
+      assert.equal(node.validRelation, true);
       assert.equal(node.archived, false);
       assert.equal(node.parentId, seed.bt.id);
       assert.equal(node.rootEquipmentId, seed.bt.id);
@@ -1921,7 +2026,7 @@ test('58 the real legacy sub-equipment rows of B1BT are shown and preserved, nev
   }
 });
 
-test('59 a subsystem can be added under B1P01 and under a real legacy sub-equipment row', async () => {
+test('59 additions use the canonical child type for a root and a legacy direct subsystem', async () => {
   const seed = seedShape();
   const pool = seedShapePool(seed);
   const legacyChild = seed.btChildren[0].id;
@@ -1937,15 +2042,24 @@ test('59 a subsystem can be added under B1P01 and under a real legacy sub-equipm
     assert.equal(createdRoot.rootEquipmentId, seed.b1p01.id);
     assert.equal(createdRoot.ext.nodeKind, 'subsystem');
 
-    // The boundary question is only "self or descendant": a legacy sub-equipment row is inside
-    // B1BT's boundary, so it stays usable as a parent instead of answering a boundary error.
+    // The legacy direct child is Canonical level one; its child must therefore be a main component.
+    const wrongKind = await fetch(`${base}/`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ rootEquipmentId: seed.bt.id, nodeKind: 'subsystem', name: 'نوع جابه‌جا',
+        code: 'B1BT-CAT-WRONG', parentId: legacyChild, parentRowVersion: 1 })
+    });
+    assert.equal(wrongKind.status, 422);
+    assert.equal((await wrongKind.json()).error, 'STRUCTURE_PARENT_KIND_INVALID');
     const underLegacy = await fetch(`${base}/`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ rootEquipmentId: seed.bt.id, nodeKind: 'subsystem', name: 'زیرسیستم کاتالیست',
-        code: 'B1BT-CAT-SUB', parentId: legacyChild, parentRowVersion: 1 })
+      body: JSON.stringify({ rootEquipmentId: seed.bt.id, nodeKind: 'main-component', name: 'قطعه اصلی کاتالیست',
+        code: 'B1BT-CAT-MAIN', parentId: legacyChild, parentRowVersion: 1 })
     });
     assert.equal(underLegacy.status, 201);
-    assert.equal((await underLegacy.json()).data.parent, legacyChild);
+    const createdLegacyChild = (await underLegacy.json()).data;
+    assert.equal(createdLegacyChild.parent, legacyChild);
+    assert.equal(createdLegacyChild.ext.nodeKind, 'main-component');
+    assert.equal(createdLegacyChild.ext.structureKind, 'main-component');
 
     // A category or factory node can still never be the parent of an internal component.
     const underCategory = await fetch(`${base}/`, {
@@ -1993,8 +2107,8 @@ test('60 the resolver attributes every real row to the same root equipment the r
   await withApi(pool, 'mgr', async base => {
     const created = await fetch(`${base}/`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ rootEquipmentId: seed.bt.id, nodeKind: 'subsystem', name: 'زیرسیستم بلندینگ',
-        code: 'B1BT-SUB', parentId: legacyChild, parentRowVersion: 1 })
+      body: JSON.stringify({ rootEquipmentId: seed.bt.id, nodeKind: 'main-component', name: 'قطعه اصلی بلندینگ',
+        code: 'B1BT-MAIN', parentId: legacyChild, parentRowVersion: 1 })
     });
     assert.equal(created.status, 201);
     const nodeId = (await created.json()).data.id;
