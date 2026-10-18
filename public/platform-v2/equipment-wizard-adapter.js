@@ -1,5 +1,4 @@
-/* Contract adapter for a future Equipment wizard. This file does not replace or open
-   the current Equipment pages; the next change supplies its own Backend adapters. */
+/* Contract adapter connecting the shared StepWizard engine to the Equipment dossier flow. */
 (function (root, factory) {
   'use strict';
   const api = factory();
@@ -23,14 +22,19 @@
     return engine.create({
       root:options.root,
       title:options.title || 'تعریف و تکمیل مشخصات تجهیز',
-      eyebrow:'آماده‌سازی برای تغییر شماره ۲',
+      eyebrow:'ثبت و تکمیل مشخصات تجهیز',
       initialAnswers:options.initialAnswers || {},
+      initialStepId:options.initialStepId || undefined,
       steps:contract.steps,
       onChange:payload => options.persistDraft({ resource:'equipment', contractVersion:CONTRACT_VERSION, ...payload }),
       confirmText:options.confirmText || 'اطلاعات تجهیز را بررسی و تأیید می‌کنم.',
       submitLabel:options.submitLabel || 'ثبت تجهیز در سرور',
       confirmSubmit:options.confirmSubmit,
-      onSubmit:payload => options.submit({ resource:'equipment', contractVersion:CONTRACT_VERSION, ...payload })
+      onSubmit:payload => options.submit({ resource:'equipment', contractVersion:CONTRACT_VERSION, ...payload }),
+      onSubmitError:error => options.onSubmitError&&options.onSubmitError(error),
+      onCancel:payload => options.onCancel&&options.onCancel({resource:'equipment',contractVersion:CONTRACT_VERSION,...payload}),
+      onPersistenceError:error => options.onPersistenceError&&options.onPersistenceError(error),
+      onAction:payload => options.onAction&&options.onAction(payload)
     });
   }
 

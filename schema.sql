@@ -412,6 +412,22 @@ ALTER TABLE assets ADD COLUMN IF NOT EXISTS delete_reason TEXT;
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS row_version BIGINT NOT NULL DEFAULT 1;
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS health_score NUMERIC(5,2) CHECK (health_score IS NULL OR (health_score >= 0 AND health_score <= 100));
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS activity_type TEXT;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS manufacturer_country TEXT;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS install_date DATE;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS operational_status TEXT;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS responsible_user_id TEXT REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS general_notes TEXT;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS record_status TEXT NOT NULL DEFAULT 'complete';
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS updated_by TEXT REFERENCES users(id) ON DELETE SET NULL;
+DO $$ BEGIN
+  ALTER TABLE assets ADD CONSTRAINT assets_record_status_check
+    CHECK (record_status IN ('draft','complete'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+CREATE INDEX IF NOT EXISTS idx_assets_record_status_active
+  ON assets(record_status, updated_at DESC)
+  WHERE deleted_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS feature_flags (
   key TEXT PRIMARY KEY,
@@ -1249,5 +1265,224 @@ CREATE INDEX IF NOT EXISTS idx_request_files_request
 CREATE UNIQUE INDEX IF NOT EXISTS idx_request_files_upload_token
   ON request_files(request_id, upload_token)
   WHERE upload_token IS NOT NULL;
+
+COMMIT;
+
+-- Equipment V2 Phase 2: internal equipment structure permissions and indexes.
+-- Mirrors migrations/015_digital_equipment_structure.sql. Additive and idempotent:
+-- structure nodes reuse assets rows (type='eq'); canonical depth-based kind is kept in
+-- ext->>'structureKind'. Existing ext->>'nodeKind' remains the registry classification so legacy
+-- equipment rows can keep their comprehensive-list visibility. Structural profile fields live
+-- in assets.ext (componentType, partNumber, brand, manufacturer, technicalSpecification,
+-- structureNotes, requiredQuantity, inventoryItemId).
+
+BEGIN;
+
+INSERT INTO role_permissions(role, permission) VALUES
+  ('mgr','equipment.structure.view'),
+  ('mgr','equipment.structure.create'),
+  ('mgr','equipment.structure.update'),
+  ('mgr','equipment.structure.move'),
+  ('mgr','equipment.structure.move_cross_equipment'),
+  ('mgr','equipment.structure.archive'),
+  ('mgr','equipment.structure.suggest'),
+  ('mgr','equipment.structure.approve_ai'),
+  ('planner','equipment.structure.view'),
+  ('planner','equipment.structure.create'),
+  ('planner','equipment.structure.update'),
+  ('planner','equipment.structure.move'),
+  ('planner','equipment.structure.suggest'),
+  ('store','equipment.structure.view'),
+  ('op','equipment.structure.view'),
+  ('hse','equipment.structure.view'),
+  ('cal','equipment.structure.view')
+ON CONFLICT (role, permission) DO NOTHING;
+
+CREATE INDEX IF NOT EXISTS idx_assets_structure_parent
+  ON assets(parent, sort_order, name)
+  WHERE deleted_at IS NULL AND type='eq';
+
+CREATE INDEX IF NOT EXISTS idx_assets_structure_kind
+  ON assets((COALESCE(ext->>'nodeKind','equipment')), parent)
+  WHERE deleted_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_assets_structure_inventory_item
+  ON assets((ext->>'inventoryItemId'))
+  WHERE deleted_at IS NULL AND ext->>'inventoryItemId' IS NOT NULL;
+
+COMMIT;
+
+-- Equipment V2 Phase 2 correction: backfill ext->>'nodeKind' for legacy equipment records.
+-- Mirrors migrations/016_structure_root_equipment_backfill.sql. Additive, re-runnable and
+-- non-destructive: only a missing/empty nodeKind key is filled on real assets rows with
+-- type='eq' that have no equipment ancestor; existing values, parents and history are preserved.
+
+BEGIN;
+
+WITH RECURSIVE equipment_ancestry AS (
+  SELECT a.id,
+         a.parent,
+         NULLIF(a.ext->>'nodeKind','') AS node_kind,
+         0 AS depth,
+         ARRAY[a.id]::text[] AS path,
+         false AS has_equipment_ancestor
+  FROM assets a
+  WHERE a.type='eq' AND a.deleted_at IS NULL AND NULLIF(a.ext->>'nodeKind','') IS NULL
+  UNION ALL
+  SELECT p.id,
+         p.parent,
+         NULLIF(p.ext->>'nodeKind',''),
+         equipment_ancestry.depth+1,
+         equipment_ancestry.path||p.id,
+         equipment_ancestry.has_equipment_ancestor
+           OR (p.type='eq' AND NOT p.id=ANY(equipment_ancestry.path))
+  FROM assets p
+  JOIN equipment_ancestry ON equipment_ancestry.parent=p.id
+  WHERE equipment_ancestry.depth<64 AND NOT p.id=ANY(equipment_ancestry.path)
+), root_equipment AS (
+  SELECT DISTINCT equipment_ancestry.id
+  FROM equipment_ancestry
+  WHERE equipment_ancestry.node_kind IS NULL
+    AND equipment_ancestry.has_equipment_ancestor=false
+)
+UPDATE assets
+SET ext=COALESCE(assets.ext,'{}'::jsonb) || jsonb_build_object('nodeKind','equipment'),
+    updated_at=now()
+FROM root_equipment
+WHERE assets.id=root_equipment.id
+  AND assets.type='eq'
+  AND assets.deleted_at IS NULL
+  AND NULLIF(assets.ext->>'nodeKind','') IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_assets_structure_root_equipment
+  ON assets((COALESCE(NULLIF(ext->>'nodeKind',''),'equipment')), parent)
+  WHERE deleted_at IS NULL AND type='eq';
+
+COMMIT;
+
+-- Repair canonical structure kinds for the unique B1BT equipment tree.
+--
+-- The B1BT code is used only to identify the root. Every row below that root is selected by its
+-- real assets.id/parent chain, and its canonical kind comes only from its relative depth. Display
+-- names and descendant codes are never used for classification. Disconnected rows are not guessed
+-- into this scope; only rows with a proven parent chain from B1BT can be repaired.
+--
+-- A duplicate/missing root, cycle, depth-four row, or broken chain aborts this migration. Existing
+-- wrong non-empty structureKind values are intentionally repaired. The update changes only
+-- ext.structureKind, row_version, and updated_at; all identity, relationship, history, and other
+-- extension fields remain untouched. A second run is a no-op because already-canonical rows are
+-- excluded by IS DISTINCT FROM.
+
+BEGIN;
+
+DO $migration_017_scope_guard$
+DECLARE
+  root_count bigint;
+  root_identifier assets.id%TYPE;
+  invalid_scope boolean;
+  broken_parent_chain boolean;
+BEGIN
+  SELECT count(*) INTO root_count
+  FROM assets AS root
+  WHERE root.code='B1BT' AND root.type='eq' AND root.deleted_at IS NULL;
+
+  IF root_count <> 1 THEN
+    RAISE EXCEPTION 'Migration 017 requires exactly one active B1BT equipment root; found %', root_count
+      USING ERRCODE='P0001';
+  END IF;
+
+  SELECT root.id INTO root_identifier
+  FROM assets AS root
+  WHERE root.code='B1BT' AND root.type='eq' AND root.deleted_at IS NULL
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Migration 017 could not lock the active B1BT equipment root'
+      USING ERRCODE='P0001';
+  END IF;
+
+  WITH RECURSIVE structure AS (
+    SELECT root.id AS root_id,root.id,root.parent,root.type,0::integer AS depth,
+           ARRAY[root.id]::text[] AS path,false AS cycle
+    FROM assets AS root
+    WHERE root.id=root_identifier
+    UNION ALL
+    SELECT structure.root_id,child.id,child.parent,child.type,structure.depth+1,
+           structure.path||child.id,child.id=ANY(structure.path)
+    FROM assets AS child
+    JOIN structure ON child.parent=structure.id
+    WHERE child.type='eq'
+      AND structure.depth<4
+      AND NOT structure.cycle
+  )
+  SELECT
+    EXISTS(SELECT 1 FROM structure WHERE cycle OR depth>3),
+    EXISTS(
+      SELECT 1
+      FROM structure AS child
+      LEFT JOIN structure AS parent
+        ON parent.root_id=child.root_id
+       AND parent.id=child.parent
+       AND parent.depth=child.depth-1
+      WHERE child.depth>0
+        AND (parent.id IS NULL OR cardinality(child.path)<>child.depth+1)
+    )
+  INTO invalid_scope,broken_parent_chain;
+
+  IF invalid_scope THEN
+    RAISE EXCEPTION 'Migration 017 rejected the B1BT tree: cycle or depth greater than three'
+      USING ERRCODE='P0001';
+  END IF;
+
+  IF broken_parent_chain THEN
+    RAISE EXCEPTION 'Migration 017 rejected the B1BT tree: broken parent chain'
+      USING ERRCODE='P0001';
+  END IF;
+END
+$migration_017_scope_guard$;
+
+WITH RECURSIVE root_equipment AS (
+  SELECT root.id,root.code,root.parent,root.type,root.ext
+  FROM assets AS root
+  WHERE root.code='B1BT'
+    AND root.type='eq'
+    AND root.deleted_at IS NULL
+    AND (SELECT count(*) FROM assets AS duplicate_root
+         WHERE duplicate_root.code='B1BT'
+           AND duplicate_root.type='eq'
+           AND duplicate_root.deleted_at IS NULL)=1
+), structure AS (
+  SELECT root.id AS root_id,root.id,root.parent,root.type,root.ext,
+         0::integer AS depth,ARRAY[root.id]::text[] AS path,false AS cycle
+  FROM root_equipment AS root
+  UNION ALL
+  SELECT structure.root_id,child.id,child.parent,child.type,child.ext,
+         structure.depth+1,structure.path||child.id,child.id=ANY(structure.path)
+  FROM assets AS child
+  JOIN structure ON child.parent=structure.id
+  WHERE child.type='eq'
+    AND structure.depth<4
+    AND NOT structure.cycle
+), proposed AS (
+  SELECT node.id,
+         CASE node.depth
+           WHEN 0 THEN 'equipment'
+           WHEN 1 THEN 'subsystem'
+           WHEN 2 THEN 'main-component'
+           WHEN 3 THEN 'sub-component'
+         END AS canonical_kind
+  FROM structure AS node
+  WHERE node.type='eq'
+    AND node.depth BETWEEN 0 AND 3
+    AND NOT node.cycle
+)
+UPDATE assets AS target
+SET ext=COALESCE(target.ext,'{}'::jsonb)||jsonb_build_object('structureKind',proposed.canonical_kind),
+    row_version=target.row_version+1,
+    updated_at=now()
+FROM proposed
+WHERE target.id=proposed.id
+  AND target.type='eq'
+  AND NULLIF(target.ext->>'structureKind','') IS DISTINCT FROM proposed.canonical_kind;
 
 COMMIT;

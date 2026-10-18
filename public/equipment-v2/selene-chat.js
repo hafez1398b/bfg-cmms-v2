@@ -2,17 +2,16 @@
 (function(){
   'use strict';
   const ACCEPT = '.md,.xlsx,.csv,.pdf,.jpg,.jpeg';
-  const FIELDS = [
-    ['name', 'نام تجهیز', 'ثبت'], ['code', 'کد تجهیز', 'ثبت'], ['nodeKind', 'نوع گره', 'ثبت'],
-    ['maker', 'سازنده', 'شناسنامه'], ['model', 'مدل', 'شناسنامه'], ['serial', 'سریال', 'شناسنامه'],
-    ['year', 'سال ساخت', 'شناسنامه'], ['install', 'تاریخ نصب', 'شناسنامه'], ['power', 'توان', 'شناسنامه'],
-    ['capacity', 'ظرفیت', 'شناسنامه'], ['location', 'محل استقرار', 'شناسنامه'], ['cls', 'کلاس', 'شناسنامه'],
-    ['status', 'وضعیت', 'شناسنامه'], ['crit', 'بحرانیت', 'شناسنامه'],
-    ['technicalSpecification', 'مشخصات فنی', 'تکمیل'], ['notes', 'شرح', 'تکمیل'],
-    ['panelCode', 'تابلو برق', 'تکمیل'], ['refrigerant', 'نوع مبرد', 'تکمیل'],
-    ['dailyOperatingHours', 'کارکرد روزانه', 'تکمیل'], ['criticalityScore', 'امتیاز بحرانی', 'تکمیل'],
-    ['keyParts', 'قطعات کلیدی', 'تکمیل']
-  ];
+  const FIELD_LABELS = {
+    name: 'نام تجهیز', code: 'کد تجهیز', nodeKind: 'نوع گره', activityType: 'نوع فعالیت',
+    maker: 'سازنده', manufacturerCountry: 'کشور سازنده', model: 'مدل', serial: 'سریال',
+    year: 'سال ساخت', install: 'تاریخ نصب', installDate: 'تاریخ نصب', power: 'توان',
+    capacity: 'ظرفیت', location: 'محل استقرار', cls: 'کلاس', status: 'وضعیت فنی',
+    operationalStatus: 'وضعیت بهره‌برداری', crit: 'بحرانیت', hours: 'کارکرد تجمعی',
+    technicalSpecification: 'مشخصات فنی', notes: 'شرح عملکرد', panelCode: 'تابلو برق',
+    refrigerant: 'نوع مبرد', dailyOperatingHours: 'کارکرد روزانه',
+    criticalityScore: 'امتیاز بحرانی', keyParts: 'قطعات کلیدی'
+  };
   const INTENTS = { analyze: 'تحلیل', create: 'ساخت تجهیز', complete: 'تکمیل شناسنامه', generate: 'تولید از داده' };
   const COVERAGE = { found: 'موجود', missing: 'لازم', empty: 'خالی', default: 'پیش‌فرض' };
   const MESSAGES = {
@@ -84,7 +83,7 @@
   function mount(root, options){
     if (!root) return;
     const opts = options || {};
-    const state = { sessionId: null, equipmentId: opts.equipmentId || null, messages: [], file: null, sending: false, sessions: [] };
+    const state = { sessionId: null, equipmentId: opts.equipmentId || null, current: null, currentStatus: opts.equipmentId ? 'loading' : 'none', messages: [], file: null, sending: false, sessions: [] };
     root.replaceChildren();
     const shell = el('section', 'selene');
     shell.setAttribute('aria-label', 'سلن، ورود هوشمند تجهیزات');
@@ -206,94 +205,153 @@
       });
       return row;
     }
+    function sourceLabel(draft){
+      const source = draft && draft.source;
+      if (source === 'column-match') return 'ستون‌های واقعی فایل';
+      if (source === 'deepseek') return 'پیشنهاد مدل DeepSeek';
+      if (source === 'local') return 'پیشنهاد مدل محلی';
+      return 'ورودی همین گفتگو';
+    }
+    function valueText(value){
+      if (Array.isArray(value)) return value.join('، ');
+      if (value == null || value === '') return '—';
+      return String(value);
+    }
     function draftCard(record, draft){
       const card = el('article', 'selene-draft');
       const analyzed = draft && (draft.source === 'deepseek' || draft.source === 'local');
-      card.appendChild(el('h3', '', analyzed ? (record.action === 'update' ? 'پیش‌نویس تکمیل شناسنامه' : 'پیش‌نویس ساخت تجهیز') : 'خواندن ستونی؛ هنوز تحلیل مدل نیست'));
-      card.appendChild(coverage(record));
-      const grid = el('div', 'selene-grid');
-      const inputs = {};
-      FIELDS.forEach(([key, label]) => {
-        const field = el('label', key === 'technicalSpecification' || key === 'notes' || key === 'keyParts' ? 'wide' : '', label);
-        const input = document.createElement(key === 'status' || key === 'crit' || key === 'nodeKind' ? 'select' : (key === 'technicalSpecification' || key === 'notes' ? 'textarea' : 'input'));
-        if (key === 'nodeKind') ['equipment', 'sub-equipment', 'subsystem', 'main-component', 'sub-component'].forEach((value, index) => input.appendChild(option(value, ['تجهیز', 'زیرتجهیز', 'زیرسیستم', 'جزء اصلی', 'جزء فرعی'][index])));
-        if (key === 'status') [['', '—'], ['active', 'فعال'], ['standby', 'آماده'], ['repair', 'تعمیر'], ['stopped', 'توقف']].forEach(([value, name]) => input.appendChild(option(value, name)));
-        if (key === 'crit') [['', '—'], ['A', 'A'], ['B', 'B'], ['C', 'C']].forEach(([value, name]) => input.appendChild(option(value, name)));
-        input.value = key === 'keyParts' && Array.isArray(record.keyParts) ? record.keyParts.join('، ') : (record[key] || '');
-        inputs[key] = input;
-        field.appendChild(input);
-        grid.appendChild(field);
-      });
-      card.appendChild(grid);
-      const button = el('button', 'btn btn-sm btn-primary', record.action === 'update' && state.equipmentId ? 'تکمیل شناسنامه' : 'ثبت تجهیز');
+      card.appendChild(el('h3', '', analyzed ? (record.action === 'update' ? 'پیشنهاد تکمیل شناسنامه' : 'پیشنهاد ساخت تجهیز') : 'خواندن ستونی؛ بدون تحلیل مدل'));
+      const summary = el('p', 'selene-evidence-summary', `منبع: ${sourceLabel(draft)}${record.confidence == null ? ' · اطمینان عددی: ثبت نشده' : ` · اطمینان کلی مدل: ${Math.round(record.confidence * 100)}٪`}`);
+      card.appendChild(summary);
+      const entries = record.coverage || [];
+      const certain = entries.filter(item => item.status === 'found' && draft && draft.source === 'column-match');
+      const suggested = entries.filter(item => item.status === 'found' && (!draft || draft.source !== 'column-match'));
+      const defaulted = entries.filter(item => item.status === 'default');
+      const incomplete = entries.filter(item => item.status === 'missing' || item.status === 'empty');
+      const conflicts = state.current ? recordConflicts(record) : [];
+      const group = (title, css, items, describe, emptyText='موردی ثبت نشده است.') => {
+        const section = el('section', `selene-evidence-group ${css}`);
+        section.appendChild(el('b', '', title));
+        if (!items.length) section.appendChild(el('span', 'selene-evidence-empty', emptyText));
+        items.forEach(item => section.appendChild(el('span', 'selene-evidence-item', `${item.label}: ${valueText(item.value)}${describe ? ` · ${describe}` : ''}`)));
+        card.appendChild(section);
+      };
+      group('قطعی — مطابق ستون فایل', 'is-certain', certain, 'شاهد: مقدار خوانده‌شده از همان ستون فایل');
+      group('پیشنهادی — نیازمند بازبینی', 'is-suggested', suggested, `منبع: ${sourceLabel(draft)} · نقل‌قول مستقل در دسترس نیست`);
+      if (state.equipmentId) {
+        if (state.current) group('متعارض با مقدار ثبت‌شده', 'is-conflict', conflicts.map(item=>({label:FIELD_LABELS[item.key]||item.key,value:`ثبت‌شده: ${valueText(item.current)} · پیشنهاد: ${valueText(item.proposed)}`})), '', 'با رکورد فعلی تعارضی در فیلدهای پیشنهادی دیده نشد.');
+        else group('تعارض با پرونده موجود', 'is-conflict', [], '', state.currentStatus==='loading'?'در حال دریافت رکورد فعلی؛ مقایسه هنوز انجام نشده است.':'رکورد فعلی برای مقایسه در دسترس نیست؛ مقایسه در ویزارد دوباره انجام می‌شود.');
+      }
+      group('پیش‌فرض‌های نیازمند تأیید', 'is-default', defaulted, 'منشأ: مقدار پیش‌فرض سیستم؛ بدون تأیید ذخیره نمی‌شود');
+      group('ناقص / ثبت‌نشده', 'is-incomplete', incomplete, 'سلن مقداری را حدس نمی‌زند');
+      const footer = el('div', 'selene-draft-actions');
+      const button = el('button', 'btn btn-sm btn-primary', record.action === 'update' && state.equipmentId ? 'بازبینی در ویزارد مشترک' : 'بازبینی در ویزارد مشترک');
       button.type = 'button';
-      const note = el('div', 'selene-note', record.missing && record.missing.length ? 'نام و کد باید قبل از ثبت کامل شوند. سلن آن‌ها را حدس نمی‌زند.' : 'ثبت فقط با این دکمه انجام می‌شود.');
-      button.addEventListener('click', () => place(record, inputs, button, note));
-      card.append(button, note);
+      const note = el('div', 'selene-note', 'تحلیل هنوز ذخیره نشده است. مقادیر را در همان ویزارد تجهیز بازبینی کنید؛ ذخیره فقط پس از تأیید نهایی انجام می‌شود.');
+      button.addEventListener('click', () => handoff(record, draft, button, note));
+      footer.append(button, note);
+      card.appendChild(footer);
       return card;
     }
-    function parts(value){
-      return String(value || '').split(/[،,\n]/).map(part => part.trim()).filter(Boolean);
+    function proposedFromRecord(record){
+      const proposed = {};
+      for (const key of Object.keys(FIELD_LABELS)) {
+        if (record[key] == null || record[key] === '') continue;
+        proposed[key] = record[key];
+      }
+      if (Array.isArray(record.keyParts) && record.keyParts.length) proposed.keyParts = record.keyParts;
+      return proposed;
     }
-    async function place(record, inputs, button, note){
-      const name = inputs.name.value.trim();
-      const code = inputs.code.value.trim();
-      if (!name || !code) { note.textContent = 'نام و کد الزامی است و سلن آن را حدس نمی‌زند.'; return; }
-      if (typeof window.bfgApi !== 'function') { note.textContent = 'نشاندن داده فقط از سرور مرکزی انجام می‌شود.'; return; }
+    function comparisonValue(key,value){
+      if(value==null||value==='')return'';
+      if(key==='install'||key==='installDate'){
+        const text=String(value).trim(),iso=text.match(/^(\d{4}-\d{2}-\d{2})/);
+        if(iso)return iso[1];
+        const engine=window.BFGStepWizard,parts=engine&&engine.parseJalaliDate(text);
+        if(parts)return`${parts.year}-${String(parts.month).padStart(2,'0')}-${String(parts.day).padStart(2,'0')}`;
+      }
+      if(Array.isArray(value))return JSON.stringify(value.map(item=>String(item).trim().toLowerCase()));
+      return String(value).trim().toLowerCase();
+    }
+    function recordConflicts(record){
+      const proposed=proposedFromRecord(record),conflicts=[];
+      for(const [key,value] of Object.entries(proposed)){
+        const current=state.current&&state.current[key];
+        if(current==null||current===''||value==null||value==='')continue;
+        if(comparisonValue(key,current)!==comparisonValue(key,value))conflicts.push({key,current,proposed:value});
+      }
+      return conflicts;
+    }
+    function currentForAction(current){
+      const ext = current.ext || {};
+      return {
+        id: current.id, rowVersion: current.row_version || current.rowVersion,
+        name: current.name || '', code: current.code || '', maker: current.maker || '',
+        model: current.model || '', serial: current.serial || '', year: current.year || '',
+        install: current.installDate || current.install_date || current.install || '',
+        installDate: current.installDate || current.install_date || null, power: current.power || '',
+        cls: current.cls || '', status: current.status || '', crit: current.crit || '',
+        location: ext.locationDescription || current.location_name || current.location || '',
+        notes: ext.description || current.general_notes || current.generalNotes || '',
+        activityType: current.activity_type || current.activityType || '',
+        manufacturerCountry: current.manufacturer_country || current.manufacturerCountry || '',
+        operationalStatus: current.operational_status || current.operationalStatus || '',
+        responsibleUserId: current.responsible_user_id || current.responsibleUserId || '',
+        technicalSpecification: ext.technicalSpecification || current.technicalSpecification || '',
+        capacity: ext.capacity || current.capacity || '', panelCode: ext.panelCode || current.panelCode || '',
+        refrigerant: ext.refrigerant || current.refrigerant || '',
+        dailyOperatingHours: ext.dailyOperatingHours ?? current.dailyOperatingHours ?? null,
+        criticalityScore: ext.criticalityScore ?? current.criticalityScore ?? null,
+        keyParts: Array.isArray(ext.keyParts) ? ext.keyParts : (current.keyParts || [])
+      };
+    }
+    async function handoff(record, draft, button, note){
+      if (typeof window.bfgApi !== 'function' || typeof window.eqv2OpenWizard !== 'function') {
+        note.textContent = 'اتصال سرور یا ویزارد مشترک در دسترس نیست؛ هیچ داده‌ای ذخیره نشد.';
+        return;
+      }
       button.disabled = true;
-      const completing = record.action === 'update' && state.equipmentId;
-      const proposed = { name, code, nodeKind: inputs.nodeKind.value || record.nodeKind || '' };
-      ['maker', 'model', 'serial', 'year', 'install', 'power', 'cls', 'location', 'notes', 'technicalSpecification', 'capacity', 'panelCode', 'refrigerant'].forEach(key => {
-        const value = inputs[key] && inputs[key].value.trim();
-        if (value) proposed[key] = value;
-      });
-      if (inputs.status.value) proposed.status = inputs.status.value;
-      if (inputs.crit.value) proposed.crit = inputs.crit.value;
-      const hours = inputs.dailyOperatingHours.value.trim();
-      const score = inputs.criticalityScore.value.trim();
-      if (hours) proposed.dailyOperatingHours = hours;
-      if (score) proposed.criticalityScore = score;
-      const keyParts = parts(inputs.keyParts.value);
-      if (keyParts.length) proposed.keyParts = keyParts;
-      const evidence = Object.keys(proposed).map(field => ({ field, value: proposed[field], origin: record[field] ? 'source' : 'user' }));
       try {
-        let recordVersion = null;
+        const completing = record.action === 'update' && state.equipmentId;
         let current = null;
+        let recordVersion = null;
         if (completing) {
           const loaded = await window.bfgApi('/api/equipment/' + encodeURIComponent(state.equipmentId));
-          current = loaded.data || {};
-          recordVersion = current.row_version || current.rowVersion || null;
+          current = currentForAction(loaded.data || {});
+          recordVersion = current.rowVersion || null;
+          if (!recordVersion) throw new Error('ROW_VERSION_REQUIRED');
         }
+        const proposed = proposedFromRecord(record);
+        if (!proposed.nodeKind && !completing) proposed.nodeKind = 'equipment';
+        const sourceRef = state.sessionId || (record.sourceRef || 'selene-intake');
+        const evidence = (record.coverage || []).filter(item => item.status === 'found' || item.status === 'default').map(item => ({
+          field: item.key, value: item.value, origin: item.status === 'default' ? 'system-default' : (draft.source === 'column-match' ? 'matched-source-column' : 'model-suggestion'),
+          sourceRef, confidence: record.confidence
+        }));
         const created = await window.bfgApi('/api/equipment/actions/drafts', {
           method: 'POST',
           body: JSON.stringify({
             actionType: completing ? 'equipment.complete' : 'equipment.create',
-            proposed,
-            targetId: completing ? state.equipmentId : null,
-            recordVersion,
-            current,
-            source: { kind: state.sessionId ? 'import-session' : 'user-confirmed-form', ref: state.sessionId || 'typed-text', verified: true },
-            evidence,
-            confidence: record.confidence == null ? null : record.confidence
+            proposed, targetId: completing ? state.equipmentId : null,
+            recordVersion, current,
+            source: { kind: state.sessionId ? 'import-session' : (draft.source === 'column-match' ? 'document' : 'text'), ref: sourceRef, verified: false },
+            evidence, confidence: record.confidence
           })
         });
-        const draft = created.data;
-        if (!draft || draft.status !== 'pending') {
-          button.disabled = false;
-          note.textContent = draft && draft.status === 'conflict' ? 'تعارض اطلاعات باید قبل از تأیید حل شود.' : 'داده کافی نیست؛ فقط پیش‌نویس ناقص ساخته شد و ثبت نهایی انجام نمی‌شود.';
-          return;
-        }
-        const confirmation = await window.bfgApi('/api/equipment/actions/drafts/' + encodeURIComponent(draft.id) + '/confirm', { method: 'POST', body: '{}' });
-        const requestId = window.crypto && crypto.randomUUID ? crypto.randomUUID() : 'req-' + Date.now();
-        const result = await window.bfgApi('/api/equipment/actions/drafts/' + encodeURIComponent(draft.id) + '/execute', {
-          method: 'POST',
-          body: JSON.stringify({ confirmationId: confirmation.data.id, requestId })
+        const actionDraft = created.data;
+        if (!actionDraft || !actionDraft.id) throw new Error('ACTION_DRAFT_NOT_CREATED');
+        note.textContent = actionDraft.status === 'conflict'
+          ? 'تعارض با مقدار ثبت‌شده پیدا شد؛ در ویزارد مقدارها را مقایسه و صریحاً تأیید کنید.'
+          : actionDraft.status === 'incomplete'
+            ? 'پیش‌نویس ناقص است؛ در ویزارد فقط داده واقعی را تکمیل کنید.'
+            : 'پیشنهاد در سرور پیش‌نویس شد؛ هنوز هیچ رکورد تجهیزی ذخیره نشده است.';
+        window.eqv2OpenWizard({
+          source: 'selene', record, actionDraft, current, targetId: completing ? state.equipmentId : null,
+          sessionId: state.sessionId, provider: draft.source, returnTab: window.EQV2?.intakeReturn?.tab || 'technical'
         });
-        if (!result || result.committed !== true) throw new Error('NOT_COMMITTED');
-        note.textContent = 'پس از تأیید پایگاه داده ثبت شد. شناسنامه را تازه کنید تا داده ثبت‌شده را ببینید.';
       } catch (error) {
         button.disabled = false;
-        note.textContent = 'ثبت در سرور انجام نشد: ' + ((error.payload && error.payload.error) || 'REQUEST_FAILED');
+        note.textContent = 'آماده‌سازی پیش‌نویس انجام نشد: ' + ((error.payload && error.payload.error) || error.message || 'REQUEST_FAILED');
       }
     }
     async function openSession(id){
@@ -316,6 +374,15 @@
         state.sessions = result.data || [];
         paintSessions();
       } catch (_) {}
+    }
+    async function loadCurrentEquipment(){
+      if(!state.equipmentId||typeof window.bfgApi!=='function')return;
+      try{
+        const result=await window.bfgApi('/api/equipment/'+encodeURIComponent(state.equipmentId));
+        if(!result||!result.data||!result.data.id)throw new Error('EQUIPMENT_NOT_FOUND');
+        state.current=currentForAction(result.data);state.currentStatus='ready';
+      }catch(_){state.current=null;state.currentStatus='unavailable';}
+      if(state.messages.length)paint();
     }
     function pushLocal(message){ state.messages.push(message); paint(); }
     async function submit(event){
@@ -399,6 +466,7 @@
     shell.addEventListener('drop', event => { event.preventDefault(); shell.classList.remove('selene-drop'); takeFile(event.dataTransfer.files && event.dataTransfer.files[0]); });
     welcome();
     loadSessions();
+    loadCurrentEquipment();
   }
 
   window.BFGSelene = { mount };

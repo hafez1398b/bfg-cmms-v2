@@ -266,12 +266,12 @@
       if (!serverOnly()) return typeof originalSave === 'function' ? originalSave.apply(this, args) : undefined;
       sync({ quiet:true }).catch(() => {});
     };
-    wrap('openReqForm', () => {
-      if (window.BFGMaintenanceWizards && typeof window.BFGMaintenanceWizards.openRequest === 'function') return window.BFGMaintenanceWizards.openRequest();
+    wrap('openReqForm', options => {
+      if (window.BFGMaintenanceWizards && typeof window.BFGMaintenanceWizards.openRequest === 'function') return window.BFGMaintenanceWizards.openRequest(options);
       if (typeof toast === 'function') toast('موتور ویزارد درخواست کار بارگذاری نشده است.', 1);
     });
-    wrap('openWOForm', () => {
-      if (window.BFGMaintenanceWizards && typeof window.BFGMaintenanceWizards.openWorkOrder === 'function') return window.BFGMaintenanceWizards.openWorkOrder();
+    wrap('openWOForm', options => {
+      if (window.BFGMaintenanceWizards && typeof window.BFGMaintenanceWizards.openWorkOrder === 'function') return window.BFGMaintenanceWizards.openWorkOrder(options);
       if (typeof toast === 'function') toast('موتور ویزارد دستورکار بارگذاری نشده است.', 1);
     });
     wrap('saveReq', saveRequestFromForm);
