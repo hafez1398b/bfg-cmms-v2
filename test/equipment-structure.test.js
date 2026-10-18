@@ -13,6 +13,41 @@ const { applyControlledAction } = require('../server/equipment-commands');
 const root = path.join(__dirname, '..');
 const read = name => fs.readFileSync(path.join(root, name), 'utf8');
 
+function assertBalancedSqlAndPlaceholders(sql, values) {
+  let depth = 0;
+  let singleQuoted = false;
+  let doubleQuoted = false;
+  for (let index = 0; index < sql.length; index += 1) {
+    const char = sql[index];
+    const next = sql[index + 1];
+    if (singleQuoted) {
+      if (char === "'" && next === "'") { index += 1; continue; }
+      if (char === "'") singleQuoted = false;
+      continue;
+    }
+    if (doubleQuoted) {
+      if (char === '"' && next === '"') { index += 1; continue; }
+      if (char === '"') doubleQuoted = false;
+      continue;
+    }
+    if (char === "'") { singleQuoted = true; continue; }
+    if (char === '"') { doubleQuoted = true; continue; }
+    if (char === '(') depth += 1;
+    if (char === ')') {
+      depth -= 1;
+      assert.ok(depth >= 0, 'SQL has an unmatched closing parenthesis');
+    }
+  }
+  assert.equal(singleQuoted, false, 'SQL has an unterminated string literal');
+  assert.equal(doubleQuoted, false, 'SQL has an unterminated quoted identifier');
+  assert.equal(depth, 0, 'SQL parentheses must balance');
+
+  const placeholderNumbers = [...sql.matchAll(/\$(\d+)/g)].map(match => Number(match[1]));
+  const uniquePlaceholders = [...new Set(placeholderNumbers)].sort((a, b) => a - b);
+  assert.deepEqual(uniquePlaceholders, Array.from({ length: values.length }, (_, index) => index + 1),
+    'SQL placeholders must be contiguous and match the values array');
+}
+
 const STRUCTURE_PERMISSIONS = [
   'equipment.structure.view', 'equipment.structure.create', 'equipment.structure.update',
   'equipment.structure.move', 'equipment.structure.move_cross_equipment',
@@ -423,30 +458,89 @@ test('2 the registry stays a flat comprehensive list without any tree mode', () 
   assert.doesNotMatch(read('public/index.html'), /id:'tree'/);
 });
 
-test('3 internal components stay filtered while verified legacy B1BT children remain in the registry list', async () => {
+test('3 equipment list SQL is balanced, parameterized, keeps B1BT legacy rows, and filters internal structure nodes', async () => {
   const pool = structurePool();
-  const legacyRows = [
-    { id: 'b1-eq-bt9955', code: 'B1BT9955', name: 'مخازن پولیول بلندینگ', type: 'eq', parent: 'b1-eq-bt', cls: 'زیرتجهیز', node_kind: null },
-    { id: 'b1-eq-bt-catali', code: 'B1BT catali', name: 'مخازن استیل کاتالیست', type: 'eq', parent: 'b1-eq-bt', cls: 'زیرتجهیز', node_kind: 'subsystem' }
+  const candidates = [
+    { id: 'b1-eq-bt', code: 'B1BT', name: 'دستگاه بلندینگ', type: 'eq', parent: 'category-1', cls: 'تجهیز', node_kind: 'equipment', structure_kind: 'equipment' },
+    { id: 'b1-eq-bt9955', code: 'B1BT9955', name: 'مخازن پولیول بلندینگ', type: 'eq', parent: 'b1-eq-bt', cls: 'زیرتجهیز', node_kind: null, structure_kind: 'subsystem' },
+    { id: 'b1-eq-bt-catali', code: 'B1BT catali', name: 'مخازن استیل کاتالیست', type: 'eq', parent: 'b1-eq-bt', cls: 'زیرتجهیز', node_kind: 'subsystem', structure_kind: 'subsystem' },
+    { id: 'bt-sub-internal', code: 'BT-SUB', name: 'Subsystem', type: 'eq', parent: 'b1-eq-bt', cls: null, node_kind: 'equipment', structure_kind: 'subsystem' },
+    { id: 'bt-main-internal', code: 'BT-MAIN', name: 'Main component', type: 'eq', parent: 'bt-sub-internal', cls: null, node_kind: null, structure_kind: 'main-component' },
+    { id: 'bt-part-internal', code: 'BT-PART', name: 'Subcomponent', type: 'eq', parent: 'bt-main-internal', cls: null, node_kind: null, structure_kind: 'sub-component' }
   ];
+  const internalKindsForFixture = new Set(['sub-equipment', 'subsystem', 'main-component', 'sub-component', 'sub', 'sys', 'panel']);
+  const candidatesById = new Map(candidates.map(row => [row.id, row]));
+  const registryRows = candidates.filter(row => {
+    const parent = candidatesById.get(row.parent);
+    const effectiveKind = row.structure_kind || row.node_kind || 'equipment';
+    const hasEquipmentParent = !!(parent && parent.type === 'eq' && !parent.deleted_at);
+    const legacyDirectSubsystem = row.cls === 'زیرتجهیز' && hasEquipmentParent
+      && !internalKindsForFixture.has(parent.structure_kind || parent.node_kind || 'equipment');
+    return row.type === 'eq' && !row.deleted_at
+      && ((!internalKindsForFixture.has(effectiveKind) && !hasEquipmentParent) || legacyDirectSubsystem);
+  });
+  const executedQueries = [];
   pool.query = async (sql, values) => {
     pool.state.calls.push({ sql, values });
-    if (/count\(\*\)::int total/.test(sql)) return { rows: [{ total: legacyRows.length }] };
-    if (/SELECT a\.id,a\.code,a\.name/.test(sql)) return { rows: legacyRows };
+    executedQueries.push({ sql, values });
+    assertBalancedSqlAndPlaceholders(sql, values);
+    assert.match(sql, /FROM assets structural_parent/);
+    assert.match(sql, /FROM assets registry_parent/);
+    assert.match(sql, /COALESCE\(NULLIF\(a\.ext->>'structureKind',''\),NULLIF\(a\.ext->>'nodeKind',''\),'equipment'\) NOT IN \('sub-equipment','subsystem','main-component','sub-component','sub','sys','panel'\)/);
+    assert.match(sql, /a\.cls='زیرتجهیز'[\s\S]*EXISTS \([\s\S]*registry_parent\.ext->>'structureKind'/);
+    if (/count\(\*\)::int total/.test(sql)) return { rows: [{ total: registryRows.length }] };
+    if (/SELECT a\.id,a\.code,a\.name/.test(sql)) return { rows: registryRows };
     return { rows: [] };
   };
   await withApi(pool, 'planner', async base => {
-    const response = await fetch(`${base}?limit=10`);
-    assert.equal(response.status, 200);
+    const response = await fetch(`${base}?q=BT&factoryId=factory-1&categoryId=category-1&status=active&criticality=A&limit=10`);
+    assert.equal(response.status, 200, 'the route must not surface PostgreSQL 42601');
     const data = await response.json();
-    assert.deepEqual(data.data.map(row => row.code).sort(), ['B1BT catali', 'B1BT9955'].sort());
-    assert.deepEqual(data.data.map(row => row.id).sort(), ['b1-eq-bt-catali', 'b1-eq-bt9955'].sort());
-    const listSql = pool.state.calls.map(call => call.sql).find(sql => /COALESCE\(a\.ext->>'nodeKind','equipment'\) NOT IN/.test(sql));
-    assert.match(listSql, /'sub-equipment','subsystem','main-component','sub-component'/);
-    assert.match(listSql, /a\.cls='زیرتجهیز'/);
-    assert.match(listSql, /OR \(a\.cls='زیرتجهیز' AND EXISTS/);
-    assert.match(listSql, /NOT EXISTS\(SELECT 1 FROM assets structural_parent/);
+    assert.deepEqual(data.data.map(row => row.code).sort(), ['B1BT', 'B1BT catali', 'B1BT9955'].sort());
+    assert.deepEqual(data.data.map(row => row.id).sort(), ['b1-eq-bt', 'b1-eq-bt-catali', 'b1-eq-bt9955'].sort());
+    assert.equal(data.data.length, 3, 'B1BT and each legacy registry record appear exactly once');
+    assert.equal(new Set(data.data.map(row => row.id)).size, 3);
+    assert.equal(data.data.some(row => ['bt-sub-internal', 'bt-main-internal', 'bt-part-internal'].includes(row.id)), false);
+    assert.equal(registryRows.some(row => ['bt-sub-internal', 'bt-main-internal', 'bt-part-internal'].includes(row.id)), false);
+    assert.equal(executedQueries.length, 2);
+    const countQuery = executedQueries.find(call => /count\(\*\)::int total/.test(call.sql));
+    const listQuery = executedQueries.find(call => /SELECT a\.id,a\.code,a\.name/.test(call.sql));
+    assert.deepEqual(countQuery.values, ['BT', 'factory-1', 'category-1', 'active', 'A']);
+    assert.deepEqual(listQuery.values, ['BT', 'factory-1', 'category-1', 'active', 'A', 10, 0]);
+    assert.match(listQuery.sql, /NOT EXISTS \(\s*SELECT 1 FROM assets structural_parent/);
+    assert.match(listQuery.sql, /structureKind/);
+    assert.match(listQuery.sql, /'subsystem','main-component','sub-component'/);
+    assert.doesNotMatch(listQuery.sql, /COALESCE\(a\.ext->>'nodeKind','equipment'\) NOT IN/,
+      'legacy nodeKind alone must not override the canonical structureKind filter');
   });
+});
+
+test('equipment list logs route, PostgreSQL code and position without SQL or secret details', async () => {
+  const pool = structurePool();
+  pool.query = async () => {
+    const error = new Error('postgres://user:top-secret@db.invalid/private');
+    error.code = '42601';
+    error.position = '73';
+    error.query = 'SELECT private_secret FROM assets';
+    throw error;
+  };
+  const messages = [];
+  const originalError = console.error;
+  console.error = (...parts) => messages.push(parts.join(' '));
+  try {
+    await withApi(pool, 'planner', async base => {
+      const response = await fetch(`${base}?limit=10`);
+      assert.equal(response.status, 500);
+      assert.deepEqual(await response.json(), { error: 'EQUIPMENT_API_ERROR' });
+    });
+  } finally {
+    console.error = originalError;
+  }
+  const log = messages.join('\n');
+  assert.match(log, /route=GET \/api\/equipment\//);
+  assert.match(log, /postgres_code=42601/);
+  assert.match(log, /position=73/);
+  assert.doesNotMatch(log, /SELECT|top-secret|db\.invalid|private_secret|postgres:\/\//i);
 });
 
 test('4-6 subsystem, main component and sub component chain is created through the equipment endpoints', async () => {
@@ -1872,8 +1966,7 @@ test('55 the registry keeps showing the location and the category of a root equi
   assert.equal(pool.state.calls.some(call => /UPDATE asset_categories/.test(call.sql)), false);
   // The registry list and the dossier endpoint both keep their immediate-parent rule untouched.
   const routes = read('server/equipment-routes.js');
-  assert.match(routes, /NOT EXISTS\(SELECT 1 FROM assets structural_parent WHERE structural_parent\.id=a\.parent/);
-  assert.equal((routes.match(/NOT EXISTS\(SELECT 1 FROM assets structural_parent/g) || []).length, 2);
+  assert.match(routes, /NOT EXISTS\s*\(\s*SELECT 1 FROM assets structural_parent\s+WHERE structural_parent\.id=a\.parent/);
 });
 
 test('56 internal descendants still answer ROOT_EQUIPMENT_NOT_FOUND and never PARENT_OUTSIDE_ROOT_EQUIPMENT on a read', async () => {

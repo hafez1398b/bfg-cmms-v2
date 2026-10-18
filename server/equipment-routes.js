@@ -89,21 +89,36 @@ function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry, securi
   router.get('/', requireEquipment('view'), async (req, res, next) => {
     try {
       const params = listParams(req.query);
-      // Do not hide every type='eq' child based only on its equipment parent. Legacy rows such as
-      // B1BT9955/B1BT catali remain registry records; only explicitly internal registry kinds are
-      // hidden, with cls='زیرتجهیز' as a guarded compatibility exception for historical rows.
+      // Canonical structureKind takes precedence over the older registry nodeKind. A legacy
+      // direct child (cls='زیرتجهیز') remains listable only when its immediate equipment parent
+      // is itself a registry root; internal descendants stay out of the flat registry.
+      const internalKinds = "('sub-equipment','subsystem','main-component','sub-component','sub','sys','panel')";
+      const effectiveStructureKind = "COALESCE(NULLIF(a.ext->>'structureKind',''),NULLIF(a.ext->>'nodeKind',''),'equipment')";
       const where = [
         `a.type='eq'`,
         `a.deleted_at IS NULL`,
-        `(COALESCE(a.ext->>'nodeKind','equipment') NOT IN ('sub-equipment','subsystem','main-component','sub-component','sub','sys','panel')
-          OR (a.cls='زیرتجهیز' AND EXISTS(SELECT 1 FROM assets registry_parent
-            WHERE registry_parent.id=a.parent AND registry_parent.type='eq' AND registry_parent.deleted_at IS NULL
-              AND COALESCE(NULLIF(registry_parent.ext->>'nodeKind',''),'equipment') NOT IN ('sub-equipment','subsystem','main-component','sub-component','sub','sys','panel')))`,
-        `(NOT EXISTS(SELECT 1 FROM assets structural_parent WHERE structural_parent.id=a.parent
-          AND structural_parent.type='eq' AND structural_parent.deleted_at IS NULL)
-          OR (a.cls='زیرتجهیز' AND EXISTS(SELECT 1 FROM assets structural_parent
-            WHERE structural_parent.id=a.parent AND structural_parent.type='eq' AND structural_parent.deleted_at IS NULL
-              AND COALESCE(NULLIF(structural_parent.ext->>'nodeKind',''),'equipment') NOT IN ('sub-equipment','subsystem','main-component','sub-component','sub','sys','panel')))`
+        `(
+          (
+            ${effectiveStructureKind} NOT IN ${internalKinds}
+            AND NOT EXISTS (
+              SELECT 1 FROM assets structural_parent
+              WHERE structural_parent.id=a.parent
+                AND structural_parent.type='eq'
+                AND structural_parent.deleted_at IS NULL
+            )
+          )
+          OR (
+            a.cls='زیرتجهیز'
+            AND EXISTS (
+              SELECT 1 FROM assets registry_parent
+              WHERE registry_parent.id=a.parent
+                AND registry_parent.type='eq'
+                AND registry_parent.deleted_at IS NULL
+                AND COALESCE(NULLIF(registry_parent.ext->>'structureKind',''),
+                             NULLIF(registry_parent.ext->>'nodeKind',''),'equipment') NOT IN ${internalKinds}
+            )
+          )
+        )`
       ];
       const values = [];
       const add = (sql, value) => {
@@ -588,8 +603,16 @@ function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry, securi
     } catch (error) { next(error); }
   });
 
-  router.use((error, _req, res, _next) => {
-    console.error('Equipment V2 API:', error.code || 'db_error');
+  router.use((error, req, res, _next) => {
+    const routePattern = req.route && req.route.path ? String(req.route.path) : '/';
+    const method = String(req.method || 'UNKNOWN').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 10) || 'UNKNOWN';
+    const routeName = `${method} ${String(req.baseUrl || '')}${routePattern}`.slice(0, 240);
+    const postgresCode = typeof error.code === 'string' && /^[0-9A-Z]{5}$/.test(error.code) ? error.code : 'unknown';
+    const position = /^\d{1,9}$/.test(String(error.position || '')) ? String(error.position) : 'unknown';
+    // Do not print error.message, SQL text, query values, connection data, or secrets.
+    if (postgresCode !== 'unknown') {
+      console.error(`[equipment-api] route=${routeName} postgres_code=${postgresCode} position=${position}`);
+    }
     if (error.code === '23505') return res.status(409).json({ error: 'DUPLICATE_CODE' });
     const status = Number(error.status) || 500;
     if (status >= 500) return res.status(500).json({ error: 'EQUIPMENT_API_ERROR' });
