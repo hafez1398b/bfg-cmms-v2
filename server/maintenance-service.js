@@ -96,6 +96,97 @@ function appendHistory(history, text) {
   return next;
 }
 
+function dateIso(value, code = 'INVALID_DATE') {
+  if (value == null || value === '') return null;
+  const date = value instanceof Date ? new Date(value.getTime()) : new Date(value);
+  if (Number.isNaN(date.getTime())) throw coded(422, code);
+  return date.toISOString();
+}
+
+function timestampIso(value) {
+  if (value == null || value === '') return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
+}
+
+function calendarDaysFrom(value, days) {
+  const start = timestampIso(value);
+  const amount = Number(days);
+  if (!start || !Number.isInteger(amount) || amount < 1) return null;
+  const date = new Date(start);
+  date.setUTCDate(date.getUTCDate() + amount);
+  return date.toISOString();
+}
+
+function nextDueAtForPlan(plan = {}) {
+  const basis = String(plan.schedule_basis || plan.scheduleBasis || '').toLowerCase();
+  if (basis !== 'calendar') return null;
+  const lastCompletedAt = timestampIso(plan.last_completed_at ?? plan.lastCompletedAt);
+  const firstDueAt = timestampIso(plan.first_due_at ?? plan.firstDueAt);
+  const interval = plan.interval_days ?? plan.intervalDays ?? plan.interval;
+  if (lastCompletedAt) return calendarDaysFrom(lastCompletedAt, interval);
+  return firstDueAt;
+}
+
+function calculatePmDue(plan = {}, now = new Date()) {
+  const nextDueAt = nextDueAtForPlan(plan);
+  const archived = Boolean(plan.archived_at || plan.archivedAt || plan.deleted_at || plan.deletedAt);
+  const state = String(plan.status || 'active').toLowerCase();
+  if (archived) return { nextDueAt, dueStatus:'archived' };
+  if (state === 'paused' || state === 'cancelled' || state === 'inactive') return { nextDueAt, dueStatus:'paused' };
+  if (!nextDueAt) return { nextDueAt:null, dueStatus:'insufficient_schedule_data' };
+  const dueTime = Date.parse(nextDueAt);
+  const currentTime = now instanceof Date ? now.getTime() : Date.parse(now);
+  if (!Number.isFinite(dueTime) || !Number.isFinite(currentTime)) return { nextDueAt:null, dueStatus:'insufficient_schedule_data' };
+  const toleranceDays = Math.max(0, Number(plan.tolerance_days ?? plan.toleranceDays) || 0);
+  const dueDay = Math.floor(dueTime / 86400000);
+  const currentDay = Math.floor(currentTime / 86400000);
+  if (currentDay < dueDay) return { nextDueAt, dueStatus:'scheduled' };
+  if (currentDay <= dueDay + toleranceDays) return { nextDueAt, dueStatus:'due' };
+  return { nextDueAt, dueStatus:'overdue' };
+}
+
+function periodKeyForDueDate(value, basis = 'calendar') {
+  const iso = timestampIso(value);
+  if (!iso || String(basis).toLowerCase() !== 'calendar') throw coded(422, 'PM_SCHEDULE_DATA_REQUIRED');
+  return `calendar:${iso.slice(0, 10)}`;
+}
+
+function occurrenceDto(row) {
+  return {
+    id:row.id, pmPlanId:row.pm_plan_id, equipmentId:row.equipment_id, periodKey:row.period_key,
+    dueAt:row.due_at, dueMeterValue:row.due_meter_value == null ? null : Number(row.due_meter_value),
+    status:row.status, workOrderId:row.work_order_id || null, generatedAt:row.generated_at || null,
+    startedAt:row.started_at || null, completedAt:row.completed_at || null, cancelledAt:row.cancelled_at || null,
+    cancellationReason:row.cancellation_reason || null, completionSource:row.completion_source || null,
+    provenanceStatus:row.provenance_status || 'verified', rowVersion:Number(row.row_version),
+    createdAt:row.created_at, updatedAt:row.updated_at, createdBy:row.created_by || null, updatedBy:row.updated_by || null
+  };
+}
+
+function positiveInteger(value, code, { nullable = true, maximum = 1000000 } = {}) {
+  if (value == null || value === '') {
+    if (nullable) return null;
+    throw coded(422, code);
+  }
+  const number = Number(value);
+  if (!Number.isInteger(number) || number < 1 || number > maximum) throw coded(422, code);
+  return number;
+}
+
+function nonNegativeInteger(value, code, maximum = 3650) {
+  if (value == null || value === '') return 0;
+  const number = Number(value);
+  if (!Number.isInteger(number) || number < 0 || number > maximum) throw coded(422, code);
+  return number;
+}
+
+function pmListValue(row, snake, camel, fallback) {
+  if (Object.prototype.hasOwnProperty.call(row, snake)) return row[snake];
+  if (Object.prototype.hasOwnProperty.call(row, camel)) return row[camel];
+  return fallback;
+}
+
 function equipmentOf(row) {
   if (!row.asset_id && !row.equipment_id) return null;
   return {
@@ -135,12 +226,24 @@ function workOrderDto(row) {
 
 function pmDto(row) {
   const checklist = asArray(row.checklist).map(item => typeof item === 'string' ? item : (item.text || item.item || item.title || '')).filter(Boolean);
+  const due = calculatePmDue(row);
   return {
-    id: row.id, assetId: row.asset_id, equipment: equipmentOf(row), title: row.title,
-    interval: row.interval_days, intervalDays: row.interval_days, last: row.last_run, spec: row.spec,
-    owner: row.owner, sup: row.sup, kind: row.kind, checklist, status: row.status || 'active',
-    createdAt: row.created_at, updatedAt: row.updated_at, rowVersion: Number(row.row_version),
-    cancelReason: row.cancel_reason, deletedAt: row.deleted_at || null
+    id:row.id, code:row.code || null, assetId:row.asset_id, equipment:equipmentOf(row), title:row.title,
+    interval:row.interval_days, intervalDays:row.interval_days, scheduleBasis:row.schedule_basis || null,
+    firstDueAt:row.first_due_at || null, nextDueAt:due.nextDueAt, dueStatus:due.dueStatus,
+    periodKey:due.nextDueAt && String(row.schedule_basis || '').toLowerCase() === 'calendar' ? `calendar:${due.nextDueAt.slice(0, 10)}` : null,
+    toleranceDays:Number(row.tolerance_days || 0), last:row.last_completed_at || null,
+    lastCompletedAt:row.last_completed_at || null, provenanceStatus:row.provenance_status || 'legacy_unverified',
+    estimatedDurationMinutes:row.estimated_duration_minutes == null ? null : Number(row.estimated_duration_minutes),
+    requiredSkill:row.required_skill || null, requiredPersonnel:row.required_personnel == null ? null : Number(row.required_personnel),
+    requiredTools:asArray(row.required_tools), requiredParts:asArray(row.required_parts),
+    safetyRequirements:asArray(row.safety_requirements), lotoRequired:row.loto_required === true,
+    ptwRequired:row.ptw_required === true, instructions:row.instructions || '', spec:row.spec || '',
+    owner:row.owner || null, sup:row.sup || null, kind:row.kind || 'PM', checklist,
+    status:row.status || 'active', archivedAt:row.archived_at || null, archivedBy:row.archived_by || null,
+    archiveReason:row.archive_reason || null, cancelReason:row.cancel_reason || null,
+    createdAt:row.created_at, updatedAt:row.updated_at, rowVersion:Number(row.row_version),
+    deletedAt:row.deleted_at || null
   };
 }
 
@@ -221,11 +324,46 @@ async function audit(client, user, action, module, entity, before, after, note) 
 async function factoryOf(client, equipmentId) {
   if (!equipmentId) return null;
   const { rows } = await client.query(
-    `SELECT c.factory_asset_id FROM assets a
-     LEFT JOIN asset_categories c ON c.id=a.category_id WHERE a.id=$1`,
+    `WITH RECURSIVE ancestors(id,parent,node_kind,depth) AS (
+       SELECT a.id,a.parent,a.ext->>'nodeKind',0 FROM assets a WHERE a.id=$1
+       UNION ALL
+       SELECT p.id,p.parent,p.ext->>'nodeKind',ancestors.depth+1
+       FROM assets p JOIN ancestors ON p.id=ancestors.parent WHERE ancestors.depth < 64
+     )
+     SELECT COALESCE(c.factory_asset_id,
+       (SELECT id FROM ancestors WHERE lower(COALESCE(node_kind,''))='factory' ORDER BY depth LIMIT 1)
+     ) AS factory_asset_id
+     FROM assets a LEFT JOIN asset_categories c ON c.id=a.category_id WHERE a.id=$1`,
     [equipmentId]
   );
-  return rows[0] ? rows[0].factory_asset_id : null;
+  return rows[0] ? rows[0].factory_asset_id || null : null;
+}
+
+async function userScopes(client, user) {
+  if (!user || !user.id) throw coded(403, 'EQUIPMENT_SCOPE_DENIED');
+  if (user.role === 'admin') return [];
+  const { rows } = await client.query(
+    'SELECT scope_type,scope_id FROM user_scopes WHERE user_id=$1', [user.id]
+  );
+  return rows;
+}
+
+function scopeAllows(scopes, equipmentId, factoryId) {
+  return scopes.some(scope => scope && (
+    scope.scope_type === 'company'
+    || (scope.scope_type === 'equipment' && scope.scope_id === equipmentId)
+    || (factoryId && scope.scope_type === 'factory' && scope.scope_id === factoryId)
+  ));
+}
+
+async function assertEquipmentScope(client, user, equipmentId, knownFactoryId = null) {
+  const equipment = await requireEquipment(client, equipmentId, true);
+  if (!user || !user.id) throw coded(403, 'EQUIPMENT_SCOPE_DENIED');
+  if (user.role === 'admin') return { equipment, factoryId:knownFactoryId || await factoryOf(client, equipmentId) };
+  const scopes = await userScopes(client, user);
+  const factoryId = knownFactoryId || await factoryOf(client, equipmentId);
+  if (!scopeAllows(scopes, equipmentId, factoryId)) throw coded(403, 'EQUIPMENT_SCOPE_DENIED');
+  return { equipment, factoryId };
 }
 
 async function selectRecipients(client, permission, equipmentId) {
