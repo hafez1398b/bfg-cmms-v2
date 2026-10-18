@@ -89,12 +89,36 @@ function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry, securi
   router.get('/', requireEquipment('view'), async (req, res, next) => {
     try {
       const params = listParams(req.query);
+      // Canonical structureKind takes precedence over the older registry nodeKind. A legacy
+      // direct child (cls='زیرتجهیز') remains listable only when its immediate equipment parent
+      // is itself a registry root; internal descendants stay out of the flat registry.
+      const internalKinds = "('sub-equipment','subsystem','main-component','sub-component','sub','sys','panel')";
+      const effectiveStructureKind = "COALESCE(NULLIF(a.ext->>'structureKind',''),NULLIF(a.ext->>'nodeKind',''),'equipment')";
       const where = [
         `a.type='eq'`,
         `a.deleted_at IS NULL`,
-        `COALESCE(a.ext->>'nodeKind','equipment') NOT IN ('sub-equipment','subsystem','main-component','sub-component','sub','sys','panel')`,
-        `NOT EXISTS(SELECT 1 FROM assets structural_parent WHERE structural_parent.id=a.parent
-          AND structural_parent.type='eq' AND structural_parent.deleted_at IS NULL)`
+        `(
+          (
+            ${effectiveStructureKind} NOT IN ${internalKinds}
+            AND NOT EXISTS (
+              SELECT 1 FROM assets structural_parent
+              WHERE structural_parent.id=a.parent
+                AND structural_parent.type='eq'
+                AND structural_parent.deleted_at IS NULL
+            )
+          )
+          OR (
+            a.cls='زیرتجهیز'
+            AND EXISTS (
+              SELECT 1 FROM assets registry_parent
+              WHERE registry_parent.id=a.parent
+                AND registry_parent.type='eq'
+                AND registry_parent.deleted_at IS NULL
+                AND COALESCE(NULLIF(registry_parent.ext->>'structureKind',''),
+                             NULLIF(registry_parent.ext->>'nodeKind',''),'equipment') NOT IN ${internalKinds}
+            )
+          )
+        )`
       ];
       const values = [];
       const add = (sql, value) => {
@@ -226,9 +250,12 @@ function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry, securi
     }
     if (mode === 'id') return identifier;
     const { rows } = await pool.query(
-      `SELECT id FROM assets
-       WHERE code=$1 AND type='eq' AND deleted_at IS NULL
-         AND COALESCE(NULLIF(ext->>'nodeKind',''),'equipment') IN ('equipment','sub-equipment')
+      `SELECT id FROM assets a
+       WHERE a.code=$1 AND a.type='eq' AND a.deleted_at IS NULL
+         AND (COALESCE(NULLIF(a.ext->>'nodeKind',''),'equipment') IN ('equipment','sub-equipment')
+           OR (a.cls='زیرتجهیز' AND EXISTS(SELECT 1 FROM assets structural_parent
+             WHERE structural_parent.id=a.parent AND structural_parent.type='eq' AND structural_parent.deleted_at IS NULL
+               AND COALESCE(NULLIF(structural_parent.ext->>'nodeKind',''),'equipment') NOT IN ('sub-equipment','subsystem','main-component','sub-component','sub','sys','panel'))))
        LIMIT 1`,
       [identifier]
     );
@@ -246,8 +273,10 @@ function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry, securi
       if (!rootEquipmentId) return;
       const canArchive = await structure.hasPermission({ pool, security, user: req.user, permission: 'equipment.structure.archive' });
       const includeArchived = req.query.includeArchived === 'true' && canArchive;
+      const depthInput=req.query.depth==null?64:Number(req.query.depth);
+      if(!Number.isInteger(depthInput)||depthInput<1)return res.status(422).json({error:'STRUCTURE_DEPTH_INVALID'});
       const data = await structure.getStructure({
-        pool, security, user: req.user, rootEquipmentId, includeArchived
+        pool, security, user: req.user, rootEquipmentId, includeArchived, depth:Math.min(64,depthInput)
       });
       res.json({ data, source: 'postgresql' });
     } catch (error) { next(error); }
@@ -392,7 +421,14 @@ function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry, securi
 
   router.post('/', async (req, res, next) => {
     const body = req.body || {};
-    const internalNode = structure.isStructureKind(body.nodeKind);
+    const structureRequest = structure.isStructureKind(body.nodeKind)
+      || Object.prototype.hasOwnProperty.call(body, 'structureKind')
+      || Object.prototype.hasOwnProperty.call(body, 'rootEquipmentId')
+      || Object.prototype.hasOwnProperty.call(body, 'equipmentId')
+      || Object.prototype.hasOwnProperty.call(body, 'parentRowVersion')
+      || Object.prototype.hasOwnProperty.call(body, 'parent_row_version')
+      || Object.prototype.hasOwnProperty.call(body, 'parentId');
+    const internalNode = structureRequest;
     if (internalNode) {
       if (!(await structurePermission(req, res, 'equipment.structure.create'))) return;
       const errors = structure.validateStructureInput(body, { requireParentVersion: true });
@@ -412,9 +448,11 @@ function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry, securi
           input: body
         })
         : await createEquipment(client, req.user, body);
+      const idempotentReplay=internalNode&&row&&row.idempotentReplay===true;
+      const responseData=idempotentReplay?Object.fromEntries(Object.entries(row).filter(([key])=>key!=='idempotentReplay')):row;
       await client.query('COMMIT');
       if (!internalNode) emit({ action: 'create', id: row.id });
-      res.status(201).json({ data: row, committed: true });
+      res.status(201).json({ data: responseData, committed: true, ...(idempotentReplay?{idempotentReplay:true}:{}) });
     } catch (error) {
       await client.query('ROLLBACK').catch(() => {});
       next(error);
@@ -428,7 +466,7 @@ function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry, securi
     try {
       const target = await pool.query('SELECT id,type,ext FROM assets WHERE id=$1 AND deleted_at IS NULL', [req.params.id]);
       if (!target.rows[0]) return res.sendStatus(404);
-      const internalNode = structure.isInternalKind(structure.kindOf(target.rows[0]));
+      const internalNode = await structure.isStructureRecord(pool, target.rows[0]);
       if (internalNode) {
         if (!(await structurePermission(req, res, 'equipment.structure.update'))) return;
       } else if (!canEquipment(req.user, 'edit')) return res.status(403).json({ error: 'EQUIPMENT_PERMISSION_DENIED', permission: 'Equipment.edit' });
@@ -456,7 +494,7 @@ function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry, securi
     try {
       const target = await pool.query('SELECT id,type,ext FROM assets WHERE id=$1 AND deleted_at IS NULL', [req.params.id]);
       if (!target.rows[0]) return res.sendStatus(404);
-      const internalNode = structure.isInternalKind(structure.kindOf(target.rows[0]));
+      const internalNode = await structure.isStructureRecord(pool, target.rows[0]);
       if (!internalNode && !canEquipment(req.user, 'move')) return res.status(403).json({ error: 'EQUIPMENT_PERMISSION_DENIED', permission: 'Equipment.move' });
       const client = await pool.connect();
       try {
@@ -508,7 +546,7 @@ function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry, securi
     try {
       const target = await pool.query('SELECT id,type,ext FROM assets WHERE id=$1 AND deleted_at IS NULL', [req.params.id]);
       if (!target.rows[0]) return res.sendStatus(404);
-      const internalNode = structure.isInternalKind(structure.kindOf(target.rows[0]));
+      const internalNode = await structure.isStructureRecord(pool, target.rows[0]);
       if (internalNode) {
         if (!(await structurePermission(req, res, 'equipment.structure.archive'))) return;
       } else if (!canEquipment(req.user, 'delete')) return res.status(403).json({ error: 'EQUIPMENT_PERMISSION_DENIED', permission: 'Equipment.delete' });
@@ -565,8 +603,16 @@ function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry, securi
     } catch (error) { next(error); }
   });
 
-  router.use((error, _req, res, _next) => {
-    console.error('Equipment V2 API:', error.code || 'db_error');
+  router.use((error, req, res, _next) => {
+    const routePattern = req.route && req.route.path ? String(req.route.path) : '/';
+    const method = String(req.method || 'UNKNOWN').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 10) || 'UNKNOWN';
+    const routeName = `${method} ${String(req.baseUrl || '')}${routePattern}`.slice(0, 240);
+    const postgresCode = typeof error.code === 'string' && /^[0-9A-Z]{5}$/.test(error.code) ? error.code : 'unknown';
+    const position = /^\d{1,9}$/.test(String(error.position || '')) ? String(error.position) : 'unknown';
+    // Do not print error.message, SQL text, query values, connection data, or secrets.
+    if (postgresCode !== 'unknown') {
+      console.error(`[equipment-api] route=${routeName} postgres_code=${postgresCode} position=${position}`);
+    }
     if (error.code === '23505') return res.status(409).json({ error: 'DUPLICATE_CODE' });
     const status = Number(error.status) || 500;
     if (status >= 500) return res.status(500).json({ error: 'EQUIPMENT_API_ERROR' });

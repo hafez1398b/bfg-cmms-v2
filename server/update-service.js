@@ -22,6 +22,11 @@ function coded(status, code) {
   return error;
 }
 
+function safePostgresErrorCode(error) {
+  const code = error && typeof error.code === 'string' ? error.code : '';
+  return /^[0-9A-Z]{5}$/.test(code) ? code : 'UNKNOWN';
+}
+
 function hasRemoteReference(source) {
   const text = String(source || '');
   if (text.includes('eval(')) return true;
@@ -147,6 +152,9 @@ async function applyPending({ pool, migrationsDir, backupPath, user, now, maxAge
       applied.push(file.version);
     } catch (error) {
       await pool.query('ROLLBACK').catch(() => {});
+      // Keep operational diagnostics useful without exposing SQL text, connection details, or
+      // secrets. The CLI/API continues to receive only the generic MIGRATION_FAILED code below.
+      console.error(`[migration] filename=${path.basename(file.filename)} postgres_code=${safePostgresErrorCode(error)}`);
       await writeAudit(pool, actor, 'migration_failed', file.version, error.code || 'MIGRATION_FAILED', null, { filename: file.filename }).catch(() => {});
       throw coded(500, 'MIGRATION_FAILED');
     }

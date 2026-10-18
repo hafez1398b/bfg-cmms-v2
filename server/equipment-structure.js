@@ -6,12 +6,12 @@ const { isRecipientAllowed } = require('./maintenance-service');
 const { coded } = require('./equipment-service');
 
 const STRUCTURE_KINDS = new Set(['subsystem', 'main-component', 'sub-component']);
+const STRUCTURE_DEPTH_KINDS = Object.freeze({ 1: 'subsystem', 2: 'main-component', 3: 'sub-component' });
+const MAX_STRUCTURE_DEPTH = 3;
 const INTERNAL_KINDS = new Set([...STRUCTURE_KINDS, 'sub-equipment']);
-// Kinds that the comprehensive registry hides because they are internal components. The
-// registry defines an equipment row exactly as: type='eq' AND the effective nodeKind is not
-// one of these. The structure root check must use the same definition, otherwise a real
-// equipment record that carries an unexpected legacy nodeKind value is rejected with
-// ROOT_EQUIPMENT_NOT_FOUND even though the registry lists it.
+// nodeKind remains the comprehensive-registry classification. structureKind is the canonical
+// kind in a dossier tree, derived from depth and stored separately so a legacy type='eq' child can
+// remain in the equipment list while appearing as a subsystem under its real equipment root.
 const REGISTRY_INTERNAL_KINDS = Object.freeze([
   'sub-equipment', 'subsystem', 'main-component', 'sub-component', 'sub', 'sys', 'panel'
 ]);
@@ -20,19 +20,18 @@ const CHILD_KINDS = Object.freeze({
   equipment: new Set(['subsystem']),
   subsystem: new Set(['main-component']),
   'main-component': new Set(['sub-component']),
-  'sub-component': new Set([]),
-  // Existing sub-equipment rows remain readable; new nodes still use the three kinds above.
-  'sub-equipment': new Set(['subsystem'])
+  'sub-component': new Set([])
 });
-// A legacy equipment row may carry an unexpected nodeKind value. It is still the equipment root
-// of its own dossier, so it accepts the same first level as 'equipment'.
+// A legacy equipment row may carry an unexpected registry nodeKind value. It is still the
+// equipment root of its own dossier, so it accepts the first canonical level when explicitly
+// selected as a root. Placement validation below always uses the actual depth, never this fallback.
 const STRUCTURE_CHILD_FALLBACK = Object.freeze(new Set(['subsystem']));
 const LEVEL_LABELS = Object.freeze({
   equipment: 'تجهیز',
-  'sub-equipment': 'زیرتجهیز قدیمی',
-  subsystem: 'زیرسیستم',
-  'main-component': 'جزء اصلی',
-  'sub-component': 'جزء فرعی'
+  'sub-equipment': 'زیرسیستم تجهیز',
+  subsystem: 'زیرسیستم تجهیز',
+  'main-component': 'قطعه اصلی زیرسیستم',
+  'sub-component': 'زیرقطعه قطعه اصلی'
 });
 const EXT_TEXT_FIELDS = Object.freeze([
   'componentType', 'partNumber', 'technicalSpecification', 'structureNotes', 'manufacturer', 'brand', 'unit'
@@ -63,24 +62,48 @@ function isInternalKind(kind) {
   return INTERNAL_KINDS.has(String(kind || ''));
 }
 
-function kindOf(row) {
+function registryKindOf(row) {
   const ext = jsonObject(row && row.ext);
-  return String(ext.nodeKind || row?.node_kind || row?.nodeKind || '');
+  return String(ext.nodeKind || row?.registry_node_kind || row?.node_kind || row?.nodeKind || '');
 }
 
-// Single fallback rule shared by the resolver, the root check and the parent-kind check so a
-// legacy row can never be read as equipment in one place and as "unknown" in another.
+function storedStructureKindOf(row) {
+  const ext = jsonObject(row && row.ext);
+  return String(ext.structureKind || row?.structure_kind || row?.structureKind || '');
+}
+
+// Structural operations prefer the canonical structureKind, while registry classification is
+// intentionally read from nodeKind only. This split prevents a structural repair from hiding a
+// legacy equipment record that the comprehensive list must continue to show.
+function kindOf(row) {
+  return storedStructureKindOf(row) || registryKindOf(row);
+}
+
+function canonicalKindAtDepth(depth) {
+  const value = Number(depth);
+  if (!Number.isInteger(value)) return null;
+  if (value === 0) return 'equipment';
+  return STRUCTURE_DEPTH_KINDS[value] || null;
+}
+
+// Registry fallback: old real equipment rows have no nodeKind, but are still equipment by type.
 function effectiveKindOf(row) {
-  const declared = kindOf(row);
+  const declared = registryKindOf(row);
   if (declared) return declared;
   if (!row) return '';
   return row.type === 'eq' ? 'equipment' : 'location';
 }
 
-// True when the row is one of the equipment records the comprehensive registry lists, which is
-// exactly the set of rows allowed to own a dossier structure.
+function isLegacyRegistrySubequipment(row) {
+  return !!(row && row.type === 'eq' && String(row.cls || '').trim() === 'زیرتجهیز'
+    && (row.parent || row.parent_id));
+}
+
+// Registry eligibility and structural placement are separate: verified legacy sub-equipment
+// rows remain listable assets even when their structureKind is a subsystem.
 function isRegistryEquipment(row) {
   if (!row || row.type !== 'eq') return false;
+  if (isLegacyRegistrySubequipment(row)) return true;
   const kind = effectiveKindOf(row);
   // A location kind on an eq row is contradictory legacy data; the registry would still list it,
   // so it stays readable and is reported through diagnostics instead of being rejected.
@@ -90,7 +113,7 @@ function isRegistryEquipment(row) {
 
 function allowedChildKinds(parentKind, parentRow = null) {
   if (CHILD_KINDS[parentKind]) return [...CHILD_KINDS[parentKind]];
-  // Tolerant path for a real legacy equipment root with an unexpected nodeKind value.
+  // Tolerant path for a selected legacy equipment root with an unexpected registry nodeKind.
   if (parentRow ? isRegistryEquipment(parentRow) : false) return [...STRUCTURE_CHILD_FALLBACK];
   return [];
 }
@@ -139,18 +162,28 @@ function requiredText(value, code, max = 500) {
   return result;
 }
 
-function structureExt(input = {}, { nodeKind, allowNullInventory = false } = {}) {
+function structureExt(input = {}, {
+  nodeKind,
+  structureKind,
+  writeRegistryKind = false,
+  allowNullInventory = false,
+  allowNullFields = false
+} = {}) {
   const nested = jsonObject(input.ext);
   const source = { ...nested };
   for (const key of [...EXT_TEXT_FIELDS, 'requiredQuantity', 'inventoryItemId']) {
     if (Object.prototype.hasOwnProperty.call(input, key)) source[key] = input[key];
   }
   const result = {};
-  if (nodeKind) result.nodeKind = nodeKind;
+  if (structureKind) result.structureKind = structureKind;
+  // New internal components retain the established registry marker; legacy repairs and edits only
+  // write structureKind, leaving nodeKind untouched so list visibility is preserved.
+  if (writeRegistryKind && nodeKind) result.nodeKind = nodeKind;
   for (const key of EXT_TEXT_FIELDS) {
     if (!Object.prototype.hasOwnProperty.call(source, key)) continue;
     const value = text(source[key], key === 'technicalSpecification' || key === 'structureNotes' ? 4000 : 240);
     if (value) result[key] = value;
+    else if (allowNullFields) result[key] = null;
   }
   if (Object.prototype.hasOwnProperty.call(source, 'requiredQuantity')) {
     const raw = source.requiredQuantity;
@@ -187,31 +220,41 @@ function validateStructureInput(input = {}, { requireParentVersion = false } = {
   return [...new Set(errors)];
 }
 
-function diagnostic(code, node, parent, message) {
+function diagnostic(code, node, parent, message, extra = {}) {
   return {
     code,
     nodeId: node && node.id || null,
     parentId: parent && parent.id || node && node.parent_id || null,
-    nodeKind: node && node.node_kind || null,
-    parentKind: parent && parent.node_kind || null,
+    nodeKind: node && (node.canonical_kind || node.node_kind) || null,
+    parentKind: parent && (parent.canonicalKind || parent.nodeKind || parent.node_kind) || null,
+    depth: node && (node.level ?? node.depth) != null ? Number(node.level ?? node.depth) : null,
+    storedNodeKind: node && (node.registry_node_kind || node.storedNodeKind) || null,
+    storedStructureKind: node && (node.stored_structure_kind || node.storedStructureKind) || null,
+    canonicalKind: node && (node.canonical_kind || node.canonicalKind) || null,
+    conflict: extra.conflict === true,
+    proposedRepair: extra.proposedRepair || null,
     message
   };
 }
 
 function buildStructureTree(root, rows = []) {
-  const rootExt = jsonObject(root && root.ext);
   const rootNode = {
-    id: root.id,
+    id: String(root.id),
     code: root.code || null,
     name: root.name,
     nodeKind: 'equipment',
+    canonicalKind: 'equipment',
+    storedNodeKind: registryKindOf(root) || null,
+    storedStructureKind: storedStructureKindOf(root) || null,
+    registryKind: effectiveKindOf(root),
     level: 0,
     levelLabel: LEVEL_LABELS.equipment,
     parentId: root.parent || root.parent_id || null,
-    rootEquipmentId: root.id,
+    rootEquipmentId: String(root.id),
     rowVersion: Number(root.row_version) || 1,
     archived: false,
     validRelation: true,
+    conflict: false,
     path: [],
     children: []
   };
@@ -221,19 +264,21 @@ function buildStructureTree(root, rows = []) {
 
   for (const source of rows || []) {
     if (source.cycle === true || source.is_cycle === true) {
-      diagnostics.push(diagnostic('STRUCTURE_CYCLE', source, null, 'چرخه در روابط قدیمی شناسایی شد؛ رکورد حذف نشده است.'));
+      diagnostics.push(diagnostic('STRUCTURE_CYCLE', source, null, 'چرخه در روابط قدیمی شناسایی شد؛ رکورد حذف نشده است.', { conflict: true }));
       continue;
     }
     if (String(source.id) === String(root.id)) continue;
     const ext = jsonObject(source.ext);
-    const nodeKind = String(source.node_kind || ext.nodeKind || '');
     const row = {
       id: String(source.id),
       parent_id: source.parent_id || source.parent || null,
       code: source.code || null,
       name: source.name || '',
-      node_kind: nodeKind,
+      registry_node_kind: registryKindOf(source) || '',
+      stored_structure_kind: storedStructureKindOf(source) || '',
+      stored_kind: storedStructureKindOf(source) || registryKindOf(source) || '',
       ext,
+      type: source.type || null,
       status: source.status || null,
       cls: source.cls || null,
       maker: source.maker || null,
@@ -249,20 +294,29 @@ function buildStructureTree(root, rows = []) {
       stock_on_hand: source.stock_on_hand == null ? null : Number(source.stock_on_hand),
       stock_reserved: source.stock_reserved == null ? null : Number(source.stock_reserved),
       stock_available: source.stock_available == null ? null : Number(source.stock_available),
-      last_purchase: source.last_purchase || null
+      last_purchase: source.last_purchase || null,
+      has_children: source.has_children === true || source.hasChildren === true,
+      children_count: Number(source.children_count ?? source.childCount) || 0
     };
     normalized.push(row);
     indexed.set(row.id, {
       id: row.id,
       code: row.code,
       name: row.name,
-      nodeKind: nodeKind || null,
+      nodeKind: null,
+      canonicalKind: null,
+      storedKind: row.stored_kind || null,
+      storedNodeKind: row.registry_node_kind || null,
+      storedStructureKind: row.stored_structure_kind || null,
+      registryKind: row.registry_node_kind || (row.type === 'eq' ? 'equipment' : null),
       level: 0,
-      levelLabel: LEVEL_LABELS[nodeKind] || 'نوع ثبت‌نشده',
+      levelLabel: 'نوع ثبت‌نشده',
       parentId: row.parent_id,
-      rootEquipmentId: root.id,
+      rootEquipmentId: String(root.id),
       rowVersion: row.row_version,
       archived: !!row.deleted_at,
+      hasChildren: row.has_children,
+      childCount: row.children_count,
       deleteReason: row.delete_reason,
       status: row.status,
       cls: row.cls,
@@ -278,30 +332,21 @@ function buildStructureTree(root, rows = []) {
       requiredQuantity: ext.requiredQuantity == null ? null : Number(ext.requiredQuantity),
       inventoryItemId: ext.inventoryItemId || null,
       inventoryItem: row.inventory_item,
-      // Real stock only: read from item_balances through active storage_locations/warehouses.
-      // It is never typed by the user and never written back into structure fields.
       stockOnHand: row.inventory_item ? row.stock_on_hand : null,
       stockReserved: row.inventory_item ? row.stock_reserved : null,
-      stockAvailable: row.inventory_item
-        ? row.stock_available
-        : null,
-      // Real purchase only: the newest non-reversed 'receipt' row of inventory_ledger.
-      // The schema stores no supplier on a receipt, so supplier stays null ("ثبت نشده")
-      // instead of being invented.
+      stockAvailable: row.inventory_item ? row.stock_available : null,
       lastPurchase: lastPurchaseDto(row.last_purchase),
       validRelation: false,
       legacy: false,
+      conflict: false,
       path: [],
       children: [],
       _row: row
     });
   }
 
-  const rootParent = root && root.parent ? String(root.parent) : null;
-  if (rootParent) {
-    // Kept exactly as it is: the location/category relation of the root is never changed and
-    // never treated as part of the internal structure.
-    diagnostics.push(diagnostic('ROOT_PARENT_OUTSIDE_STRUCTURE', null, { id: rootParent },
+  if (root && root.parent) {
+    diagnostics.push(diagnostic('ROOT_PARENT_OUTSIDE_STRUCTURE', null, { id: root.parent },
       'والد مکانی یا دسته‌ای این تجهیز بخشی از ساختار داخلی نیست و بدون تغییر حفظ شده است؛ ساختار داخلی از خود تجهیز آغاز می‌شود.'));
   }
 
@@ -311,39 +356,82 @@ function buildStructureTree(root, rows = []) {
     const key = String(node.code).trim().toLocaleLowerCase('en');
     if (duplicateCodes.has(key)) {
       const prior = duplicateCodes.get(key);
-      diagnostics.push(diagnostic('DUPLICATE_STRUCTURE_CODE', node, prior, 'کد تکراری در ساختار موجود است؛ داده حفظ شده و برای اصلاح گزارش می‌شود.'));
+      diagnostics.push(diagnostic('DUPLICATE_STRUCTURE_CODE', node, prior, 'کد تکراری در ساختار موجود است؛ داده حفظ شده و برای اصلاح گزارش می‌شود.', { conflict: true }));
     } else duplicateCodes.set(key, node);
   }
 
+  // SQL returns rows by depth, but sorting here also makes the projection deterministic for
+  // callers/tests that supply the same parent-linked rows in a different order.
+  normalized.sort((left, right) => left.depth - right.depth || left.sort_order - right.sort_order || left.id.localeCompare(right.id));
   for (const row of normalized) {
     const node = indexed.get(row.id);
     const parent = indexed.get(String(row.parent_id));
-    if (!row.node_kind) {
-      diagnostics.push(diagnostic('STRUCTURE_NODE_KIND_MISSING', row, parent, 'نوع گره در دادهٔ قدیمی ثبت نشده است؛ رکورد حفظ شده است.'));
-    } else if (!INTERNAL_KINDS.has(row.node_kind)) {
-      diagnostics.push(diagnostic('STRUCTURE_NODE_KIND_UNSUPPORTED', row, parent, 'نوع گره با ساختار داخلی پشتیبانی‌شده سازگار نیست؛ رکورد حفظ شده است.'));
-    }
     if (!parent) {
-      diagnostics.push(diagnostic('STRUCTURE_PARENT_OUTSIDE_SCOPE', row, null, 'والد این رکورد در Scope تجهیز جاری پیدا نشد؛ رکورد حذف نشده است.'));
+      diagnostics.push(diagnostic('STRUCTURE_PARENT_OUTSIDE_SCOPE', row, null,
+        'والد این رکورد در Scope تجهیز جاری پیدا نشد؛ رکورد حذف نشده است.', { conflict: true }));
       continue;
     }
-    // Real legacy data stores sub-equipment as type='eq' with cls='زیرتجهیز' and no nodeKind.
-    // Such a row under a registry equipment parent is readable legacy sub-equipment, not an
-    // invalid relation; the record itself is never rewritten.
-    const childKind = node.nodeKind || (parent.nodeKind === 'equipment' ? 'sub-equipment' : '');
-    const relation = relationStatus(parent.nodeKind, childKind);
-    if (!node.nodeKind && childKind) {
-      node.nodeKind = childKind;
-      node.levelLabel = LEVEL_LABELS[childKind] || node.levelLabel;
+
+    const depth = (Number(parent.level) || 0) + 1;
+    const canonicalKind = canonicalKindAtDepth(depth);
+    const registryKind = row.registry_node_kind;
+    const structureKind = row.stored_structure_kind;
+    const directLegacyEquipment = depth === 1 && row.type === 'eq'
+      && String(row.cls || '').trim() === 'زیرتجهیز';
+    let conflict = false;
+    let conflictMessage = null;
+
+    if (!canonicalKind) {
+      conflict = true;
+      conflictMessage = 'عمق ساختار از سه سطح مجاز بیشتر است؛ رکورد حفظ شده و فقط گزارش می‌شود.';
+    } else if (structureKind && structureKind !== canonicalKind) {
+      conflict = true;
+      conflictMessage = 'نوع ساختاری ذخیره‌شده با جایگاه واقعی رکورد هم‌خوان نیست؛ رکورد حفظ شده است.';
+    } else if (!structureKind && registryKind && REGISTRY_INTERNAL_KINDS.includes(registryKind)
+      && registryKind !== canonicalKind && !(depth === 1 && registryKind === 'sub-equipment')) {
+      // Old internal nodeKind values can contain the pre-canonical shifted classification. A
+      // direct legacy equipment marker is different: its registry kind remains equipment while
+      // its structural kind is derived from level one.
+      conflict = true;
+      conflictMessage = 'نوع ثبت‌شده با نوع Canonical این سطح هم‌خوان نیست؛ رکورد حفظ شده است.';
     }
-    node.validRelation = relation === 'valid';
-    node.legacy = relation === 'legacy';
-    if (relation === 'invalid') {
-      diagnostics.push(diagnostic('STRUCTURE_PARENT_KIND_INVALID', row, parent, 'رابطهٔ والد و فرزند با زنجیرهٔ مجاز هم‌خوان نیست؛ رکورد حفظ شده است.'));
-    } else if (relation === 'legacy') {
-      diagnostics.push(diagnostic('LEGACY_SUB_EQUIPMENT', row, parent, 'رکورد زیرتجهیز قدیمی حفظ شده و فقط برای سازگاری نمایش داده می‌شود.'));
+
+    node.level = depth;
+    node.canonicalKind = canonicalKind;
+    node.nodeKind = canonicalKind;
+    node.levelLabel = canonicalKind ? LEVEL_LABELS[canonicalKind] : `سطح نامعتبر (عمق ${depth})`;
+    node.storedNodeKind = registryKind || null;
+    node.storedStructureKind = structureKind || null;
+    node.storedKind = structureKind || registryKind || null;
+    node.registryKind = registryKind || (row.type === 'eq' ? 'equipment' : null);
+    node.legacy = !!directLegacyEquipment;
+    node.conflict = conflict;
+    node.validRelation = !!canonicalKind && !conflict;
+
+    if (!structureKind && !registryKind) {
+      diagnostics.push(diagnostic('STRUCTURE_NODE_KIND_MISSING', row, parent,
+        'نوع ساختاری در داده ثبت نشده است؛ Canonical از جایگاه محاسبه شد و رکورد حفظ شده است.', {
+          conflict: false,
+          proposedRepair: canonicalKind ? `ext.structureKind=${canonicalKind}` : 'REPORT_ONLY'
+        }));
     }
-    node.level = (parent.level || 0) + 1;
+    if (registryKind && !isInternalKind(registryKind) && registryKind !== 'equipment'
+      && !LOCATION_KINDS.has(registryKind)) {
+      diagnostics.push(diagnostic('STRUCTURE_NODE_KIND_UNSUPPORTED', row, parent,
+        'nodeKind ثبت‌شده در فهرست نوع‌های داخلی نیست؛ نوع Canonical از جایگاه محاسبه شد.', { conflict: true }));
+      node.conflict = true;
+      node.validRelation = false;
+    }
+    if (conflict) {
+      diagnostics.push(diagnostic(canonicalKind ? 'STRUCTURE_KIND_CONFLICT' : 'STRUCTURE_DEPTH_EXCEEDED',
+        { ...row, level: depth, canonical_kind: canonicalKind, stored_structure_kind: structureKind, registry_node_kind: registryKind },
+        parent, conflictMessage, { conflict: true, proposedRepair: canonicalKind ? 'REPORT_OR_MIGRATE_AFTER_REVIEW' : 'REPORT_ONLY' }));
+    }
+    if (directLegacyEquipment) {
+      diagnostics.push(diagnostic('LEGACY_SUB_EQUIPMENT', row, parent,
+        'رکورد Legacy نوع تجهیز و تاریخچه خود را حفظ می‌کند و در این ساختار به‌عنوان زیرسیستم نمایش داده می‌شود.'));
+    }
+
     const parentPath = Array.isArray(parent.path) ? parent.path : [];
     node.path = parentPath.concat({ id: node.id, code: node.code, name: node.name, nodeKind: node.nodeKind });
     parent.children.push(node);
@@ -375,7 +463,8 @@ function buildStructureTree(root, rows = []) {
     diagnostics,
     nodeCount: normalized.length,
     orphaned: normalized.filter(row => !indexed.get(row.id)?.parentId || !indexed.has(String(indexed.get(row.id).parentId))).map(row => ({
-      id: row.id, code: row.code, name: row.name, nodeKind: row.node_kind || null, parentId: row.parent_id
+      id: row.id, code: row.code, name: row.name, nodeKind: row.registry_node_kind || null,
+      structureKind: row.stored_structure_kind || null, parentId: row.parent_id
     }))
   };
 }
@@ -414,20 +503,15 @@ async function getFactoryId(client, rootId) {
   return rows[0]?.factory_id || null;
 }
 
-// Legacy equipment rows created before the digital dossier never stored ext->>'nodeKind';
-// only location rows (factory/site/area/line/unit/category) carry an explicit nodeKind.
-// The registry has always read those assets as equipment through
-// COALESCE(ext->>'nodeKind','equipment'), so the structure resolver must apply exactly the
-// same fallback. Without it every real legacy equipment record resolved to "no root" and the
-// dossier answered ROOT_EQUIPMENT_NOT_FOUND even though the row exists and is visible in the list.
+// Legacy equipment rows created before the digital dossier never stored ext->>'nodeKind'; the
+// registry reads those as equipment through COALESCE(ext->>'nodeKind','equipment'). Structural
+// attribution is separate: an equipment row whose parent is another equipment row belongs to that
+// parent's structure, even when the legacy row also remains visible in the comprehensive list.
 async function resolveRootEquipment(client, assetId) {
   const { rows } = await client.query(
-    // The decisive rule is the comprehensive registry's own definition of a root equipment: a
-    // type='eq' row whose immediate parent is not a live type='eq' row. Walking the ancestry and
-    // returning the nearest such row keeps this resolver identical to the registry for every data
-    // shape, including legacy sub-equipment rows that carry no nodeKind at all (real seed data
-    // stores them as type='eq' with cls='زیرتجهیز' and an empty ext.nodeKind, so a kind-based rule
-    // cannot tell them apart from a root).
+    // The structure boundary is based on the real parent chain, not the registry's list filter.
+    // Walking upward to the nearest type='eq' row whose own parent is not an active type='eq'
+    // keeps direct legacy rows (including cls='زیرتجهیز' and no nodeKind) under their real root.
     `WITH RECURSIVE ancestry AS (
        SELECT a.id,a.parent,a.type,COALESCE(NULLIF(a.ext->>'nodeKind',''),'equipment') AS node_kind,
          a.category_id,0 AS depth,ARRAY[a.id]::text[] AS path,
@@ -458,7 +542,7 @@ async function rootEquipmentById(client, rootId) {
   const identifier = rootId == null ? '' : String(rootId).trim();
   if (!identifier || identifier.length > 200) throw coded(404, 'EQUIPMENT_NOT_FOUND');
   const { rows } = await client.query(
-    `SELECT id,parent,code,name,type,category_id,ext,row_version,deleted_at
+    `SELECT id,parent,code,name,type,cls,category_id,ext,row_version,deleted_at
      FROM assets WHERE id=$1`, [identifier]
   );
   const row = rows[0];
@@ -499,6 +583,58 @@ async function rootForAsset(client, user, assetId, { requireActive = true } = {}
   if (requireActive && root.deleted_at) throw coded(404, 'EQUIPMENT_NOT_FOUND');
   await assertEquipmentScope(client, user, root.id, root.factory_id);
   return root;
+}
+
+async function isStructureRecord(client, rowOrId) {
+  let row = rowOrId;
+  if (!row || typeof row !== 'object') {
+    const { rows } = await client.query(
+      'SELECT id,parent,type,cls,ext FROM assets WHERE id=$1 AND deleted_at IS NULL', [rowOrId]
+    );
+    row = rows[0];
+  }
+  if (!row || row.type !== 'eq') return false;
+  const declaredStructureKind = storedStructureKindOf(row);
+  const declaredRegistryKind = registryKindOf(row);
+  if (isStructureKind(declaredStructureKind) || isInternalKind(declaredRegistryKind)) return true;
+  const root = await resolveRootEquipment(client, row.id);
+  return !!root && String(root.id) !== String(row.id);
+}
+
+// Returns a row's real depth relative to the addressed equipment root. Stored kind values are
+// deliberately ignored: placement, not a client or legacy nodeKind, decides the canonical type.
+async function structureDepth(client, rootId, nodeId, { includeArchived = false } = {}) {
+  const { rows } = await client.query(
+    `WITH RECURSIVE structure_path AS (
+       SELECT a.id,a.parent,0 AS depth,ARRAY[a.id]::text[] AS path
+       FROM assets a WHERE a.id=$1 AND a.type='eq' AND ($3::boolean OR a.deleted_at IS NULL)
+       UNION ALL
+       SELECT child.id,child.parent,structure_path.depth+1,structure_path.path||child.id
+       FROM assets child JOIN structure_path ON child.parent=structure_path.id
+       WHERE child.type='eq' AND ($3::boolean OR child.deleted_at IS NULL)
+         AND structure_path.depth<64 AND NOT child.id=ANY(structure_path.path)
+     )
+     SELECT depth FROM structure_path WHERE id=$2 LIMIT 1`,
+    [rootId, nodeId, !!includeArchived]
+  );
+  return rows[0] ? Number(rows[0].depth) : null;
+}
+
+async function maxSubtreeRelativeDepth(client, nodeId) {
+  const { rows } = await client.query(
+    `WITH RECURSIVE structure_subtree AS (
+       SELECT a.id,0 AS depth,ARRAY[a.id]::text[] AS path
+       FROM assets a WHERE a.id=$1 AND a.type='eq' AND a.deleted_at IS NULL
+       UNION ALL
+       SELECT child.id,structure_subtree.depth+1,structure_subtree.path||child.id
+       FROM assets child JOIN structure_subtree ON child.parent=structure_subtree.id
+       WHERE child.type='eq' AND child.deleted_at IS NULL
+         AND structure_subtree.depth<64 AND NOT child.id=ANY(structure_subtree.path)
+     )
+     SELECT COALESCE(MAX(depth),0)::int AS max_depth FROM structure_subtree`,
+    [nodeId]
+  );
+  return Number(rows[0]?.max_depth) || 0;
 }
 
 // The boundary of a dossier structure. It answers exactly one question: is the target parent the
@@ -564,7 +700,7 @@ function asArray(value) {
   return [];
 }
 
-async function publishStructureEvent(client, user, roots, action, node) {
+async function publishStructureEvent(client, user, roots, action, node, canonicalKind = null) {
   const uniqueRoots = [...new Set((roots || []).filter(Boolean).map(String))];
   for (const rootId of uniqueRoots) {
     const factoryId = await getFactoryId(client, rootId);
@@ -583,17 +719,22 @@ async function publishStructureEvent(client, user, roots, action, node) {
       `INSERT INTO event_outbox(id,event_type,aggregate_type,aggregate_id,actor_id,payload,recipient_ids)
        VALUES($1,'equipment.structure.changed','equipment',$2,$3,$4,$5)`,
       [crypto.randomUUID(), rootId, user.id,
-        JSON.stringify({ action, rootEquipmentId: rootId, nodeId: node.id, nodeKind: kindOf(node) || null, rowVersion: Number(node.row_version) || null }),
+        JSON.stringify({ action, rootEquipmentId: rootId, nodeId: node.id, nodeKind: canonicalKind || kindOf(node) || null, rowVersion: Number(node.row_version) || null }),
         JSON.stringify(recipients)]
     );
   }
 }
 
-async function parentForNode(client, parentId, childKind) {
+async function parentForNode(client, rootId, parentId, childKind) {
   const parent = await lockAsset(client, parentId);
-  const parentKind = effectiveKindOf(parent);
-  validateParentKind(childKind, parentKind, parent);
-  return { row: parent, kind: parentKind };
+  if (parent.type !== 'eq') throw coded(422, 'STRUCTURE_PARENT_KIND_INVALID');
+  await assertInsideRootBoundary(client, parent.id, rootId, parent);
+  const parentDepth = await structureDepth(client, rootId, parent.id);
+  if (parentDepth == null) throw coded(422, 'PARENT_OUTSIDE_ROOT_EQUIPMENT');
+  const expectedKind = canonicalKindAtDepth(parentDepth + 1);
+  if (!expectedKind) throw coded(422, 'STRUCTURE_DEPTH_EXCEEDED');
+  if (String(childKind || '') !== expectedKind) throw coded(422, 'STRUCTURE_PARENT_KIND_INVALID');
+  return { row: parent, kind: canonicalKindAtDepth(parentDepth), depth: parentDepth };
 }
 
 async function bumpParentVersion(client, parent, user) {
@@ -605,8 +746,9 @@ async function bumpParentVersion(client, parent, user) {
   return Number(rows[0].row_version);
 }
 
-async function getStructure({ pool, security, user, rootEquipmentId, includeArchived = false }) {
+async function getStructure({ pool, security, user, rootEquipmentId, includeArchived = false, depth = 64 }) {
   const permissionContext = { pool, security, user };
+  const maxDepth=Number.isInteger(Number(depth))?Math.max(1,Math.min(64,Number(depth))):64;
   await assertPermission(permissionContext, 'equipment.structure.view');
   const root = await rootEquipmentById(pool, rootEquipmentId);
   await assertEquipmentScope(pool, user, root.id, root.factory_id);
@@ -623,9 +765,13 @@ async function getStructure({ pool, security, user, rootEquipmentId, includeArch
          child.id=ANY(structure.path)
        FROM assets child JOIN structure ON child.parent=structure.id
        WHERE child.type='eq' AND ($2::boolean OR child.deleted_at IS NULL)
-         AND structure.depth<64 AND NOT structure.cycle
+         AND structure.depth<$3 AND NOT structure.cycle
      )
      SELECT structure.*,
+       EXISTS(SELECT 1 FROM assets lower_row WHERE lower_row.parent=structure.id
+         AND lower_row.type='eq' AND ($2::boolean OR lower_row.deleted_at IS NULL)) AS has_children,
+       (SELECT count(*)::int FROM assets lower_row WHERE lower_row.parent=structure.id
+         AND lower_row.type='eq' AND ($2::boolean OR lower_row.deleted_at IS NULL)) AS children_count,
        CASE WHEN inventory.id IS NULL THEN NULL ELSE jsonb_build_object(
          'id',inventory.id,'code',inventory.code,'name',inventory.name,'unit',inventory.unit,
          'partType',inventory.part_type,'manufacturer',COALESCE(inventory.ext->>'manufacturer',inventory.ext->>'maker'),
@@ -668,7 +814,7 @@ async function getStructure({ pool, security, user, rootEquipmentId, includeArch
      ) purchase ON true
      WHERE structure.depth>0
      ORDER BY structure.depth,structure.sort_order,structure.name`,
-    [root.id, !!includeArchived]
+    [root.id, !!includeArchived, maxDepth]
   );
   const built = buildStructureTree(root, rows);
   const capabilities = {};
@@ -718,6 +864,37 @@ async function getStructure({ pool, security, user, rootEquipmentId, includeArch
   };
 }
 
+function canonicalJson(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value && typeof value === 'object') return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`;
+  return JSON.stringify(value);
+}
+
+async function reserveStructureRequest(client, userId, requestId, requestHash) {
+  await client.query(
+    `DELETE FROM idempotency_keys WHERE user_id=$1 AND idempotency_key=$2 AND expires_at<=now()`,
+    [userId, requestId]
+  );
+  const inserted = await client.query(
+    `INSERT INTO idempotency_keys(user_id,idempotency_key,request_hash,expires_at)
+     VALUES($1,$2,$3,now()+interval '24 hours')
+     ON CONFLICT(user_id,idempotency_key) DO NOTHING RETURNING idempotency_key`,
+    [userId, requestId, requestHash]
+  );
+  if (inserted.rows[0]) return null;
+  const existing = await client.query(
+    `SELECT request_hash,response_status,response_body FROM idempotency_keys
+     WHERE user_id=$1 AND idempotency_key=$2 FOR UPDATE`, [userId, requestId]
+  );
+  const row = existing.rows[0];
+  if (!row) throw coded(409, 'DUPLICATE_REQUEST_PENDING');
+  if (row.request_hash !== requestHash) throw coded(409, 'IDEMPOTENCY_KEY_REUSED');
+  if (Number(row.response_status) !== 201 || !row.response_body) throw coded(409, 'DUPLICATE_REQUEST_PENDING');
+  const body = typeof row.response_body === 'string' ? JSON.parse(row.response_body) : row.response_body;
+  if (!body || !body.data || !body.data.id) throw coded(409, 'DUPLICATE_REQUEST_PENDING');
+  return body;
+}
+
 async function createStructureNode({ client, pool, security, user, rootEquipmentId, input = {}, permission = 'equipment.structure.create' }) {
   await assertPermission({ pool, security, user }, permission);
   const errors = validateStructureInput(input, { requireParentVersion: true });
@@ -727,16 +904,27 @@ async function createStructureNode({ client, pool, security, user, rootEquipment
   const code = text(input.code, 120);
   const parentId = requiredText(input.parentId, 'PARENT_NOT_FOUND', 120);
   const parentVersion = versionOf(input.parentRowVersion ?? input.parent_row_version);
-  const extPatch = structureExt(input, { nodeKind: kind });
-  const item = await assertInventoryItem(client, extPatch.inventoryItemId);
-  const resolvedRootId = rootEquipmentId
-    || (await resolveRootEquipment(client, parentId) || {}).id
-    || null;
+  const requestId = text(input.requestId || input.idempotencyKey, 120);
+  const resolvedRootId = rootEquipmentId || input.rootEquipmentId || input.equipmentId
+    || (await resolveRootEquipment(client, parentId) || {}).id || null;
   if (!resolvedRootId) throw coded(422, 'ROOT_EQUIPMENT_NOT_FOUND');
   const root = await rootEquipmentById(client, resolvedRootId);
   await assertEquipmentScope(client, user, root.id, root.factory_id);
-  const parent = await parentForNode(client, parentId, kind);
-  await assertInsideRootBoundary(client, parent.row.id, root.id, parent.row);
+  let idempotencyHash = null;
+  if (requestId) {
+    const hashInput = { ...input };
+    delete hashInput.requestId;
+    delete hashInput.idempotencyKey;
+    idempotencyHash = crypto.createHash('sha256').update(canonicalJson({
+      rootEquipmentId: String(resolvedRootId),
+      input: hashInput
+    })).digest('hex');
+    const replay = await reserveStructureRequest(client, user.id, requestId, idempotencyHash);
+    if (replay) return { ...replay.data, idempotentReplay: true };
+  }
+  const extPatch = structureExt(input, { nodeKind: kind, structureKind: kind, writeRegistryKind: true });
+  await assertInventoryItem(client, extPatch.inventoryItemId);
+  const parent = await parentForNode(client, root.id, parentId, kind);
   // The scope of the addressed equipment was already asserted above. Only when the new node hangs
   // off an internal node do we also verify that node's own equipment, so that no write escapes the
   // user's scope while a grouping row above the root can never veto the operation.
@@ -747,15 +935,22 @@ async function createStructureNode({ client, pool, security, user, rootEquipment
   const { rows } = await client.query(
     `INSERT INTO assets(id,parent,code,name,type,cls,status,crit,maker,model,serial,ext,category_id,sort_order,
        is_active,record_status,updated_by,updated_at)
-     VALUES($1,$2,$3,$4,'eq',$5,'active',$6,$7,$8,$9,$10::jsonb,$11,$12,true,'complete',$13,now()) RETURNING *`,
-    [nodeId, parent.row.id, code, name, text(input.cls, 180), text(input.crit, 20), text(input.maker || input.manufacturer, 180),
-      text(input.model, 180), text(input.serial, 180), JSON.stringify(extPatch), root.category_id || null,
-      Number(input.sortOrder) || 0, user.id]
+     VALUES($1,$2,$3,$4,'eq',$5,$6,$7,$8,$9,$10,$11::jsonb,$12,$13,true,'complete',$14,now()) RETURNING *`,
+    [nodeId, parent.row.id, code, name, text(input.cls, 180), text(input.status, 80) || 'active', text(input.crit, 20),
+      text(input.maker || input.manufacturer, 180), text(input.model, 180), text(input.serial, 180), JSON.stringify(extPatch),
+      root.category_id || null, Number(input.sortOrder) || 0, user.id]
   );
   const parentRowVersion = await bumpParentVersion(client, parent.row, user);
   const data = { ...rows[0], rootEquipmentId: root.id, parentRowVersion };
   await writeAudit(client, user, 'structure-create', nodeId, 'ایجاد جزء ساختاری در پرونده تجهیز', null, data);
   await publishStructureEvent(client, user, [root.id], 'create', rows[0]);
+  if (requestId) {
+    await client.query(
+      `UPDATE idempotency_keys SET response_status=201,response_body=$3::jsonb,expires_at=now()+interval '24 hours'
+       WHERE user_id=$1 AND idempotency_key=$2 AND request_hash=$4`,
+      [user.id, requestId, JSON.stringify({ data, committed: true }), idempotencyHash]
+    );
+  }
   return data;
 }
 
@@ -763,14 +958,21 @@ async function updateStructureNode({ client, pool, security, user, id, input = {
   await assertPermission({ pool, security, user }, 'equipment.structure.update');
   const rowVersion = versionOf(input.rowVersion ?? input.row_version);
   const current = await lockAsset(client, id);
-  const currentKind = kindOf(current);
-  if (!isInternalKind(currentKind)) throw coded(404, 'STRUCTURE_NODE_NOT_FOUND');
-  if (input.nodeKind && String(input.nodeKind) !== currentKind) throw coded(422, 'NODE_KIND_IMMUTABLE');
-  if (input.parentId != null && String(input.parentId) !== String(current.parent || '')) throw coded(422, 'MOVE_ENDPOINT_REQUIRED');
   if (Number(current.row_version) !== rowVersion) throw coded(409, 'VERSION_CONFLICT');
   const root = await rootForAsset(client, user, current.id);
+  const currentDepth = await structureDepth(client, root.id, current.id);
+  if (currentDepth == null || currentDepth === 0) throw coded(404, 'STRUCTURE_NODE_NOT_FOUND');
+  const currentKind = canonicalKindAtDepth(currentDepth);
+  if (!currentKind) throw coded(422, 'STRUCTURE_DEPTH_EXCEEDED');
+  if (input.nodeKind && String(input.nodeKind) !== currentKind) throw coded(422, 'NODE_KIND_IMMUTABLE');
+  if (input.structureKind && String(input.structureKind) !== currentKind) throw coded(422, 'NODE_KIND_IMMUTABLE');
+  if (input.parentId != null && String(input.parentId) !== String(current.parent || '')) throw coded(422, 'MOVE_ENDPOINT_REQUIRED');
   if (input.rootEquipmentId && String(input.rootEquipmentId) !== String(root.id)) throw coded(422, 'ROOT_EQUIPMENT_MISMATCH');
-  const extPatch = structureExt(input, { nodeKind: currentKind, allowNullInventory: true });
+
+  // Canonical type is read-only and derived from the actual placement. PATCH never rewrites either
+  // classification key; only the reviewed migration may backfill structureKind, while registry
+  // nodeKind and unresolved conflicts remain untouched during ordinary field edits.
+  const extPatch = structureExt(input, { allowNullInventory: true, allowNullFields: true });
   if (Object.prototype.hasOwnProperty.call(input, 'inventoryItemId') || Object.prototype.hasOwnProperty.call(jsonObject(input.ext), 'inventoryItemId')) {
     await assertInventoryItem(client, extPatch.inventoryItemId);
   }
@@ -785,9 +987,9 @@ async function updateStructureNode({ client, pool, security, user, id, input = {
     if (!Object.prototype.hasOwnProperty.call(input, key) || seenColumns.has(column)) continue;
     seenColumns.add(column);
     const clean = text(input[key], max);
-    if (clean == null) continue;
+    if (clean == null && !Object.prototype.hasOwnProperty.call(input, key)) continue;
     if (column === 'name' && !clean) throw coded(422, 'NAME_REQUIRED');
-    if (column === 'code') await assertUniqueCode(client, clean, current.id);
+    if (column === 'code' && clean) await assertUniqueCode(client, clean, current.id);
     values.push(clean);
     sets.push(`${column}=$${values.length}`);
   }
@@ -803,8 +1005,8 @@ async function updateStructureNode({ client, pool, security, user, id, input = {
   );
   if (!rows[0]) throw coded(409, 'VERSION_CONFLICT');
   await writeAudit(client, user, 'structure-edit', current.id, 'ویرایش جزء ساختاری', current, rows[0]);
-  await publishStructureEvent(client, user, [root.id], 'edit', rows[0]);
-  return { ...rows[0], rootEquipmentId: root.id };
+  await publishStructureEvent(client, user, [root.id], 'edit', rows[0], currentKind);
+  return { ...rows[0], rootEquipmentId: root.id, nodeKind: currentKind, canonicalKind: currentKind };
 }
 
 async function isDescendant(client, nodeId, possibleAncestorId) {
@@ -826,7 +1028,7 @@ async function moveStructureNode({ client, pool, security, user, id, input = {} 
   const reason = requiredText(input.reason, 'MOVE_REASON_REQUIRED', 500);
   const targetPreview = await client.query('SELECT id,parent,type,ext,category_id FROM assets WHERE id=$1 AND deleted_at IS NULL', [id]);
   const preview = targetPreview.rows[0];
-  if (!preview || !isInternalKind(kindOf(preview))) throw coded(404, 'STRUCTURE_NODE_NOT_FOUND');
+  if (!preview || preview.type !== 'eq') throw coded(404, 'STRUCTURE_NODE_NOT_FOUND');
   const parentId = requiredText(input.parentId, 'PARENT_NOT_FOUND', 120);
   if (String(parentId) === String(id)) throw coded(422, 'TREE_CYCLE');
   const sourceRootPreview = await resolveRootEquipment(client, id);
@@ -849,32 +1051,45 @@ async function moveStructureNode({ client, pool, security, user, id, input = {} 
     throw coded(409, 'STRUCTURE_ROOT_CHANGED');
   }
   const parentRow = await lockAsset(client, parentId);
-  if (await isDescendant(client, parentId, current.id)) throw coded(422, 'TREE_CYCLE');
-  validateParentKind(kindOf(current), effectiveKindOf(parentRow), parentRow);
+  if (parentRow.type !== 'eq') throw coded(422, 'STRUCTURE_PARENT_KIND_INVALID');
+  if (await isDescendant(client, parentRow.id, current.id)) throw coded(422, 'TREE_CYCLE');
   await assertInsideRootBoundary(client, parentRow.id, destinationRoot.id, parentRow);
-  // Inside the same equipment the parent's own root is verified; for an allowed cross-equipment
-  // move the destination parent is the destination root itself, so re-resolving it upwards would
-  // return the source root and wrongly reject the move.
+
+  const sourceDepth = await structureDepth(client, sourceRoot.id, current.id);
+  const sourceKind = canonicalKindAtDepth(sourceDepth);
+  if (sourceDepth == null || sourceDepth === 0) throw coded(404, 'STRUCTURE_NODE_NOT_FOUND');
+  if (!sourceKind) throw coded(422, 'STRUCTURE_DEPTH_EXCEEDED');
+  const parentDepth = await structureDepth(client, destinationRoot.id, parentRow.id);
+  if (parentDepth == null) throw coded(422, 'PARENT_OUTSIDE_ROOT_EQUIPMENT');
+  const expectedKind = canonicalKindAtDepth(parentDepth + 1);
+  if (!expectedKind) throw coded(422, 'STRUCTURE_DEPTH_EXCEEDED');
+  if (expectedKind !== sourceKind) throw coded(422, 'STRUCTURE_PARENT_KIND_INVALID');
+  const subtreeDepth = await maxSubtreeRelativeDepth(client, current.id);
+  if (sourceDepth + subtreeDepth > MAX_STRUCTURE_DEPTH) throw coded(422, 'STRUCTURE_DEPTH_EXCEEDED');
+
+  // The destination's actual placement, not its stored nodeKind, determines whether this move is
+  // valid. The canonical depth check above also guarantees a cross-equipment move stays on the
+  // same structural level and cannot push descendants beyond level three.
   if (!isCrossEquipment) await rootForAsset(client, user, parentRow.id);
-  const parent = { row: parentRow, kind: effectiveKindOf(parentRow) };
   const code = current.code || null;
   await assertUniqueCode(client, code, current.id);
   const { rows } = await client.query(
     `UPDATE assets SET parent=$2,sort_order=$3,category_id=$4,updated_by=$5,row_version=row_version+1,updated_at=now()
      WHERE id=$1 AND row_version=$6 AND deleted_at IS NULL RETURNING *`,
-    [current.id, parent.row.id, Number.isFinite(Number(input.sortOrder)) ? Number(input.sortOrder) : Number(current.sort_order) || 0,
+    [current.id, parentRow.id, Number.isFinite(Number(input.sortOrder)) ? Number(input.sortOrder) : Number(current.sort_order) || 0,
       isCrossEquipment ? destinationRoot.category_id || null : current.category_id || null, user.id, rowVersion]
   );
   if (!rows[0]) throw coded(409, 'VERSION_CONFLICT');
-  if (String(current.parent) !== String(parent.row.id)) {
+  if (String(current.parent) !== String(parentRow.id)) {
     const oldParent = await client.query('SELECT * FROM assets WHERE id=$1 AND deleted_at IS NULL FOR UPDATE', [current.parent]);
     if (oldParent.rows[0]) await bumpParentVersion(client, oldParent.rows[0], user);
-    if (!oldParent.rows[0] || String(oldParent.rows[0].id) !== String(parent.row.id)) await bumpParentVersion(client, parent.row, user);
+    if (!oldParent.rows[0] || String(oldParent.rows[0].id) !== String(parentRow.id)) await bumpParentVersion(client, parentRow, user);
   }
   await writeAudit(client, user, isCrossEquipment ? 'structure-cross-equipment-move' : 'structure-move', current.id,
-    reason, current, { ...rows[0], sourceRootEquipmentId: sourceRoot.id, rootEquipmentId: destinationRoot.id });
-  await publishStructureEvent(client, user, [sourceRoot.id, destinationRoot.id], isCrossEquipment ? 'cross-equipment-move' : 'move', rows[0]);
-  return { ...rows[0], sourceRootEquipmentId: sourceRoot.id, rootEquipmentId: destinationRoot.id, crossEquipment: isCrossEquipment };
+    reason, current, { ...rows[0], sourceRootEquipmentId: sourceRoot.id, rootEquipmentId: destinationRoot.id, nodeKind: sourceKind });
+  await publishStructureEvent(client, user, [sourceRoot.id, destinationRoot.id], isCrossEquipment ? 'cross-equipment-move' : 'move', rows[0], sourceKind);
+  return { ...rows[0], sourceRootEquipmentId: sourceRoot.id, rootEquipmentId: destinationRoot.id,
+    nodeKind: sourceKind, canonicalKind: sourceKind, crossEquipment: isCrossEquipment };
 }
 
 async function archiveStructureNode({ client, pool, security, user, id, input = {} }) {
@@ -882,9 +1097,11 @@ async function archiveStructureNode({ client, pool, security, user, id, input = 
   const reason = requiredText(input.reason, 'ARCHIVE_REASON_REQUIRED', 500);
   const rowVersion = versionOf(input.rowVersion ?? input.row_version);
   const current = await lockAsset(client, id);
-  if (!isInternalKind(kindOf(current))) throw coded(404, 'STRUCTURE_NODE_NOT_FOUND');
   if (Number(current.row_version) !== rowVersion) throw coded(409, 'VERSION_CONFLICT');
   const root = await rootForAsset(client, user, current.id);
+  const currentDepth = await structureDepth(client, root.id, current.id);
+  const currentKind = canonicalKindAtDepth(currentDepth);
+  if (!currentKind || currentDepth === 0) throw coded(422, currentDepth > MAX_STRUCTURE_DEPTH ? 'STRUCTURE_DEPTH_EXCEEDED' : 'STRUCTURE_NODE_NOT_FOUND');
   const children = await client.query('SELECT count(*)::int AS count FROM assets WHERE parent=$1 AND deleted_at IS NULL', [id]);
   if (Number(children.rows[0]?.count) > 0) throw coded(409, 'HAS_ACTIVE_CHILDREN');
   const { rows } = await client.query(
@@ -897,8 +1114,8 @@ async function archiveStructureNode({ client, pool, security, user, id, input = 
   const parent = await client.query('SELECT * FROM assets WHERE id=$1 AND deleted_at IS NULL FOR UPDATE', [current.parent]);
   if (parent.rows[0]) await bumpParentVersion(client, parent.rows[0], user);
   await writeAudit(client, user, 'structure-archive', id, reason, current, rows[0]);
-  await publishStructureEvent(client, user, [root.id], 'archive', rows[0]);
-  return { ...rows[0], rootEquipmentId: root.id, historyPreserved: true };
+  await publishStructureEvent(client, user, [root.id], 'archive', rows[0], currentKind);
+  return { ...rows[0], rootEquipmentId: root.id, nodeKind: currentKind, canonicalKind: currentKind, historyPreserved: true };
 }
 
 async function restoreStructureNode({ client, pool, security, user, id, input = {} }) {
@@ -906,10 +1123,13 @@ async function restoreStructureNode({ client, pool, security, user, id, input = 
   const reason = requiredText(input.reason, 'RESTORE_REASON_REQUIRED', 500);
   const rowVersion = versionOf(input.rowVersion ?? input.row_version);
   const current = await lockAsset(client, id, { includeArchived: true });
-  if (!current.deleted_at || !isInternalKind(kindOf(current))) throw coded(409, 'STRUCTURE_NODE_NOT_ARCHIVED');
+  if (!current.deleted_at) throw coded(409, 'STRUCTURE_NODE_NOT_ARCHIVED');
   if (Number(current.row_version) !== rowVersion) throw coded(409, 'VERSION_CONFLICT');
   const root = await rootForAsset(client, user, current.id);
-  const parent = await parentForNode(client, current.parent, kindOf(current));
+  const currentDepth = await structureDepth(client, root.id, current.id, { includeArchived: true });
+  const currentKind = canonicalKindAtDepth(currentDepth);
+  if (!currentKind || currentDepth === 0) throw coded(422, currentDepth > MAX_STRUCTURE_DEPTH ? 'STRUCTURE_DEPTH_EXCEEDED' : 'STRUCTURE_NODE_NOT_ARCHIVED');
+  const parent = await parentForNode(client, root.id, current.parent, currentKind);
   if (parent.row.deleted_at) throw coded(409, 'PARENT_ARCHIVED');
   await assertUniqueCode(client, current.code, current.id);
   const { rows } = await client.query(
@@ -921,8 +1141,8 @@ async function restoreStructureNode({ client, pool, security, user, id, input = 
   if (!rows[0]) throw coded(409, 'VERSION_CONFLICT');
   await bumpParentVersion(client, parent.row, user);
   await writeAudit(client, user, 'structure-restore', id, reason, current, rows[0]);
-  await publishStructureEvent(client, user, [root.id], 'restore', rows[0]);
-  return { ...rows[0], rootEquipmentId: root.id, historyPreserved: true };
+  await publishStructureEvent(client, user, [root.id], 'restore', rows[0], currentKind);
+  return { ...rows[0], rootEquipmentId: root.id, nodeKind: currentKind, canonicalKind: currentKind, historyPreserved: true };
 }
 
 async function assertDraftScope(pool, user, draft) {
@@ -940,11 +1160,17 @@ module.exports = {
   INTERNAL_KINDS,
   REGISTRY_INTERNAL_KINDS,
   isRegistryEquipment,
+  isLegacyRegistrySubequipment,
   CHILD_KINDS,
   LEVEL_LABELS,
+  STRUCTURE_DEPTH_KINDS,
+  MAX_STRUCTURE_DEPTH,
+  canonicalKindAtDepth,
   isStructureKind,
   isInternalKind,
   kindOf,
+  registryKindOf,
+  storedStructureKindOf,
   effectiveKindOf,
   allowedChildKinds,
   relationStatus,
@@ -961,6 +1187,9 @@ module.exports = {
   assertEquipmentScope,
   assertInsideRootBoundary,
   rootForAsset,
+  isStructureRecord,
+  structureDepth,
+  maxSubtreeRelativeDepth,
   getStructure,
   createStructureNode,
   updateStructureNode,
