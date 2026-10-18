@@ -394,6 +394,33 @@ test('an update verifies a local backup before any migration and records the res
   );
 });
 
+test('migration failures log only the PostgreSQL code and filename and keep the public error generic', async () => {
+  const backup = tempFile();
+  const dir = migrationDir('017_broken_schema.sql', 'SELECT 1 AS force_failure_marker;\n');
+  const failed = scriptPool({ failOn: 'force_failure_marker' });
+  const logged = [];
+  const originalError = console.error;
+  console.error = (...parts) => logged.push(parts.join(' '));
+  try {
+    await assert.rejects(
+      () => updates.applyPending({ pool: failed, migrationsDir: dir, backupPath: backup.file, user: admin }),
+      error => {
+        assert.equal(error.status, 500);
+        assert.equal(error.code, 'MIGRATION_FAILED');
+        assert.equal(error.message, 'MIGRATION_FAILED');
+        return true;
+      }
+    );
+  } finally {
+    console.error = originalError;
+  }
+  assert.match(logged.join('\n'), /filename=017_broken_schema\.sql postgres_code=42601/);
+  assert.doesNotMatch(logged.join('\n'), /sql failed|DATABASE_URL|postgres:\/\/|password|secret/i);
+  assert.equal(failed.audit.some(row => row.action === 'migration_failed' && row.entity === '017'), true);
+  assert.match(read('scripts/apply-update.js'), /console\.error\(error && error\.code \? error\.code : 'UPDATE_FAILED'\)/);
+  assert.doesNotMatch(read('scripts/apply-update.js'), /error\.(message|stack)/);
+});
+
 test('numbered migrations are idempotent and the fresh schema includes the registry', () => {
   const files = updates.listMigrationFiles(path.join(root, 'migrations'));
   assert.deepEqual(files.map(file => file.version), ['002', '003', '004', '005', '006', '007', '008', '009', '010', '011', '012', '013', '014', '015', '016', '017']);
