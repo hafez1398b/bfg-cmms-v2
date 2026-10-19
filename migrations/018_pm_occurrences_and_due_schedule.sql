@@ -34,7 +34,6 @@ CREATE TABLE IF NOT EXISTS pm_occurrences (
   due_at TIMESTAMPTZ NOT NULL,
   due_meter_value NUMERIC,
   status TEXT NOT NULL DEFAULT 'scheduled',
-  work_order_id TEXT,
   generated_at TIMESTAMPTZ,
   started_at TIMESTAMPTZ,
   completed_at TIMESTAMPTZ,
@@ -49,7 +48,6 @@ CREATE TABLE IF NOT EXISTS pm_occurrences (
   updated_by TEXT,
   CONSTRAINT pm_occurrences_pm_plan_fk FOREIGN KEY (pm_plan_id) REFERENCES pm_plans(id),
   CONSTRAINT pm_occurrences_equipment_fk FOREIGN KEY (equipment_id) REFERENCES assets(id),
-  CONSTRAINT pm_occurrences_work_order_fk FOREIGN KEY (work_order_id) REFERENCES work_orders(id),
   CONSTRAINT pm_occurrences_created_by_fk FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
   CONSTRAINT pm_occurrences_updated_by_fk FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL,
   CONSTRAINT pm_occurrences_status_check CHECK (status IN (
@@ -66,7 +64,6 @@ ALTER TABLE pm_occurrences ADD COLUMN IF NOT EXISTS period_key TEXT;
 ALTER TABLE pm_occurrences ADD COLUMN IF NOT EXISTS due_at TIMESTAMPTZ;
 ALTER TABLE pm_occurrences ADD COLUMN IF NOT EXISTS due_meter_value NUMERIC;
 ALTER TABLE pm_occurrences ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'scheduled';
-ALTER TABLE pm_occurrences ADD COLUMN IF NOT EXISTS work_order_id TEXT;
 ALTER TABLE pm_occurrences ADD COLUMN IF NOT EXISTS generated_at TIMESTAMPTZ;
 ALTER TABLE pm_occurrences ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ;
 ALTER TABLE pm_occurrences ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
@@ -124,10 +121,6 @@ BEGIN
     RAISE EXCEPTION 'Migration 018 found duplicate PM plan/period occurrences; inspect them read-only before retrying'
       USING ERRCODE='P0001';
   END IF;
-  IF EXISTS (SELECT 1 FROM pm_occurrences WHERE work_order_id IS NOT NULL GROUP BY work_order_id HAVING count(*) > 1) THEN
-    RAISE EXCEPTION 'Migration 018 found a work order linked to multiple PM occurrences; inspect it read-only before retrying'
-      USING ERRCODE='P0001';
-  END IF;
   IF EXISTS (SELECT 1 FROM work_orders w LEFT JOIN pm_occurrences o ON o.id=w.occurrence_id
              WHERE w.occurrence_id IS NOT NULL AND o.id IS NULL) THEN
     RAISE EXCEPTION 'Migration 018 found work_orders.occurrence_id values without an occurrence; inspect them read-only before retrying'
@@ -144,9 +137,6 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='pm_occurrences'::regclass AND conname='pm_occurrences_equipment_fk') THEN
     ALTER TABLE pm_occurrences ADD CONSTRAINT pm_occurrences_equipment_fk FOREIGN KEY (equipment_id) REFERENCES assets(id);
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='pm_occurrences'::regclass AND conname='pm_occurrences_work_order_fk') THEN
-    ALTER TABLE pm_occurrences ADD CONSTRAINT pm_occurrences_work_order_fk FOREIGN KEY (work_order_id) REFERENCES work_orders(id);
-  END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='pm_occurrences'::regclass AND conname='pm_occurrences_created_by_fk') THEN
     ALTER TABLE pm_occurrences ADD CONSTRAINT pm_occurrences_created_by_fk FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL;
   END IF;
@@ -159,19 +149,17 @@ BEGIN
 END
 $migration_018_occurrence_foreign_keys$;
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_pm_plans_code_unique
-  ON pm_plans(code) WHERE code IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_pm_occurrences_plan_period_unique
   ON pm_occurrences(pm_plan_id,period_key);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_pm_occurrences_work_order_unique
-  ON pm_occurrences(work_order_id) WHERE work_order_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_work_orders_occurrence_unique
   ON work_orders(occurrence_id) WHERE occurrence_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pm_plans_active_asset_code_unique
+  ON pm_plans(asset_id,code)
+  WHERE code IS NOT NULL AND archived_at IS NULL AND deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_pm_occurrences_plan ON pm_occurrences(pm_plan_id);
 CREATE INDEX IF NOT EXISTS idx_pm_occurrences_equipment ON pm_occurrences(equipment_id);
 CREATE INDEX IF NOT EXISTS idx_pm_occurrences_due_at ON pm_occurrences(due_at);
 CREATE INDEX IF NOT EXISTS idx_pm_occurrences_status ON pm_occurrences(status);
-CREATE INDEX IF NOT EXISTS idx_pm_occurrences_work_order ON pm_occurrences(work_order_id);
 CREATE INDEX IF NOT EXISTS idx_pm_plans_archived ON pm_plans(archived_at) WHERE archived_at IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_pm_plans_next_due ON pm_plans(next_due_at) WHERE archived_at IS NULL AND deleted_at IS NULL;
 
@@ -251,8 +239,17 @@ WHERE p.last_completed_at IS NULL
 
 DO $migration_018_pm_code_guard$
 BEGIN
-  IF EXISTS (SELECT 1 FROM pm_plans WHERE code IS NOT NULL GROUP BY code HAVING count(*) > 1) THEN
-    RAISE EXCEPTION 'Migration 018 found duplicate PM codes; inspect pm_plans read-only before retrying'
+  IF EXISTS (
+    SELECT 1
+    FROM pm_plans
+    WHERE asset_id IS NOT NULL
+      AND code IS NOT NULL
+      AND archived_at IS NULL
+      AND deleted_at IS NULL
+    GROUP BY asset_id,code
+    HAVING count(*) > 1
+  ) THEN
+    RAISE EXCEPTION 'Migration 018 found duplicate active PM codes for an asset; inspect pm_plans read-only before retrying'
       USING ERRCODE='P0001';
   END IF;
 END
