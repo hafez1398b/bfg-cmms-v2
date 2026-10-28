@@ -1199,6 +1199,7 @@ async function correctRecord(pool, user, kind, id, input) {
       : { title: 'title', interval: 'interval_days', spec: 'spec' };
   return withTransaction(pool, async client => {
     const current = await lockRow(client, table, id);
+    if (kind === 'pm_plan') await assertEquipmentScope(client, user, current.asset_id);
     if (Number(current.row_version) !== rowVersion) throw coded(409, 'VERSION_CONFLICT');
     const patch = {};
     for (const [key, column] of Object.entries(allowed)) {
@@ -1236,7 +1237,7 @@ async function createPmPlan(pool, user, input) {
   const toleranceDays = nonNegativeInteger(input.toleranceDays ?? input.tolerance_days, 'PM_TOLERANCE_DAYS_INVALID');
   return withTransaction(pool, async client => {
     const assetId = input.assetId || null;
-    await requireEquipment(client, assetId, true);
+    await assertEquipmentScope(client, user, assetId);
     const owner = await requireUser(client, input.owner || null);
     const id = crypto.randomUUID();
     const { rows } = await client.query(
@@ -1255,7 +1256,164 @@ async function createPmPlan(pool, user, input) {
   });
 }
 
-async function listPmPlans(pool, filters = {}) {
+async function readScopedPmPlan(pool, user, id, includeArchived = false) {
+  const { rows } = await pool.query(
+    `SELECT p.*, a.id AS equipment_id, a.code AS equipment_code, a.name AS equipment_name
+     FROM pm_plans p LEFT JOIN assets a ON a.id=p.asset_id
+     WHERE p.id=$1 AND ($2::boolean OR (p.archived_at IS NULL AND p.deleted_at IS NULL))`,
+    [id, includeArchived]
+  );
+  if (!rows[0]) throw coded(404, 'RECORD_NOT_FOUND');
+  await assertEquipmentScope(pool, user, rows[0].asset_id);
+  return rows[0];
+}
+
+async function getPmDue(pool, user, id, input = {}, options = {}) {
+  const evaluatedAt = input.evaluatedAt;
+  if (evaluatedAt == null || evaluatedAt === '') throw coded(422, 'PM_EVALUATED_AT_REQUIRED');
+  const plan = await readScopedPmPlan(pool, user, id, options.includeArchived === true);
+  const due = calculatePmDue(plan, evaluatedAt);
+  return { evaluatedAt:parsePmTimestamp(evaluatedAt, 'PM_EVALUATED_AT_INVALID'), ...due };
+}
+
+async function listPmOccurrences(pool, user, planId, options = {}) {
+  const plan = await readScopedPmPlan(pool, user, planId, options.includeArchived === true);
+  const { rows } = await pool.query(
+    `SELECT o.*, w.id AS linked_work_order_id
+     FROM pm_occurrences o LEFT JOIN work_orders w ON w.occurrence_id=o.id
+     WHERE o.pm_plan_id=$1 ORDER BY o.due_at,o.created_at`,
+    [planId]
+  );
+  if (rows.some(row => String(row.equipment_id) !== String(plan.asset_id))) throw coded(409, 'PM_OCCURRENCE_LINK_MISMATCH');
+  return rows.map(row => occurrenceDto(row));
+}
+
+async function getPmOccurrence(pool, user, planId, occurrenceId, options = {}) {
+  const { rows } = await pool.query(
+    `SELECT o.*, p.asset_id AS plan_asset_id, w.id AS linked_work_order_id
+     FROM pm_occurrences o JOIN pm_plans p ON p.id=o.pm_plan_id
+     LEFT JOIN work_orders w ON w.occurrence_id=o.id
+     WHERE o.id=$1 AND o.pm_plan_id=$2
+       AND ($3::boolean OR (p.archived_at IS NULL AND p.deleted_at IS NULL))`,
+    [occurrenceId, planId, options.includeArchived === true]
+  );
+  if (!rows[0]) throw coded(404, 'RECORD_NOT_FOUND');
+  await assertEquipmentScope(pool, user, rows[0].plan_asset_id);
+  if (String(rows[0].equipment_id) !== String(rows[0].plan_asset_id)) throw coded(409, 'PM_OCCURRENCE_LINK_MISMATCH');
+  return occurrenceDto(rows[0]);
+}
+
+async function createPmOccurrence(pool, user, planId, input = {}) {
+  const rowVersion = versionOf(input.rowVersion);
+  const evaluatedAt = input.evaluatedAt;
+  if (evaluatedAt == null || evaluatedAt === '') throw coded(422, 'PM_EVALUATED_AT_REQUIRED');
+  const evaluationTime = parsePmTimestamp(evaluatedAt, 'PM_EVALUATED_AT_INVALID');
+  const requestedPeriodKey = input.periodKey == null ? null : String(input.periodKey).trim();
+  return withPmTransaction(pool, async client => {
+    const { rows:plans } = await client.query('SELECT * FROM pm_plans WHERE id=$1 FOR UPDATE', [planId]);
+    const current = plans[0];
+    if (!current) throw coded(404, 'RECORD_NOT_FOUND');
+    await assertEquipmentScope(client, user, current.asset_id);
+    if (Number(current.row_version) !== rowVersion) throw coded(409, 'VERSION_CONFLICT');
+    if (current.deleted_at || current.archived_at || LOCKED_PM.has(current.status)) throw coded(409, 'RECORD_LOCKED');
+
+    let existing = null;
+    if (requestedPeriodKey) {
+      const match = requestedPeriodKey.match(/^calendar:(\d{4}-\d{2}-\d{2})$/);
+      if (!match || periodKeyForDueDate(match[1], current.schedule_basis) !== requestedPeriodKey) {
+        throw coded(422, 'PM_PERIOD_KEY_INVALID');
+      }
+      existing = await findPmOccurrence(client, planId, requestedPeriodKey);
+      if (existing) {
+        if (String(existing.equipment_id) !== String(current.asset_id)) throw coded(409, 'PM_OCCURRENCE_LINK_MISMATCH');
+        return { occurrence:occurrenceDto(existing), idempotentReplay:true };
+      }
+    }
+
+    const due = calculatePmDue(current, evaluationTime);
+    if (!due.nextDueAt || due.dueStatus === 'insufficient_data') {
+      throw Object.assign(coded(422, 'PM_SCHEDULE_DATA_REQUIRED'), { reason:due.reason || 'due_date_unavailable' });
+    }
+    const periodKey = periodKeyForDueDate(due.nextDueAt, current.schedule_basis);
+    if (requestedPeriodKey && requestedPeriodKey !== periodKey) throw coded(422, 'PM_PERIOD_KEY_MISMATCH');
+    const occurrence = await findPmOccurrence(client, planId, periodKey);
+    if (occurrence) {
+      if (String(occurrence.equipment_id) !== String(current.asset_id)) throw coded(409, 'PM_OCCURRENCE_LINK_MISMATCH');
+      return { occurrence:occurrenceDto(occurrence), idempotentReplay:true };
+    }
+
+    const id = crypto.randomUUID();
+    const { rows:inserted } = await client.query(
+      `INSERT INTO pm_occurrences(id,pm_plan_id,equipment_id,period_key,due_at,status,provenance_status,row_version,created_by,updated_by)
+       VALUES($1,$2,$3,$4,$5,$6,'verified',1,$7,$7)
+       ON CONFLICT(pm_plan_id,period_key) DO NOTHING RETURNING *`,
+      [id, planId, current.asset_id, periodKey, due.nextDueAt, due.dueStatus, user.id]
+    );
+    const saved = inserted[0] || await findPmOccurrence(client, planId, periodKey);
+    if (!saved) throw coded(409, 'PM_OCCURRENCE_CONFLICT');
+    if (String(saved.equipment_id) !== String(current.asset_id)) throw coded(409, 'PM_OCCURRENCE_LINK_MISMATCH');
+    if (inserted[0]) {
+      await audit(client, user, 'schedule', 'pm_occurrence', saved.id, null, saved, periodKey);
+      await publish(client, user, {
+        type:'pm_occurrence.scheduled', aggregateType:'pm_occurrence', aggregateId:saved.id, permission:'pm.view',
+        equipmentId:current.asset_id, payload:{ id:saved.id, pmPlanId:planId, periodKey, assetId:current.asset_id }
+      });
+    }
+    return { occurrence:occurrenceDto(saved), idempotentReplay:!inserted[0] };
+  });
+}
+
+async function updatePmOccurrenceDueStatus(pool, user, planId, occurrenceId, input = {}) {
+  const rowVersion = versionOf(input.rowVersion);
+  const evaluatedAt = input.evaluatedAt;
+  if (evaluatedAt == null || evaluatedAt === '') throw coded(422, 'PM_EVALUATED_AT_REQUIRED');
+  const evaluationTime = parsePmTimestamp(evaluatedAt, 'PM_EVALUATED_AT_INVALID');
+  return withPmTransaction(pool, async client => {
+    const { rows:refs } = await client.query('SELECT pm_plan_id FROM pm_occurrences WHERE id=$1', [occurrenceId]);
+    if (!refs[0] || String(refs[0].pm_plan_id) !== String(planId)) throw coded(404, 'RECORD_NOT_FOUND');
+    const { rows:plans } = await client.query('SELECT * FROM pm_plans WHERE id=$1 FOR UPDATE', [planId]);
+    const plan = plans[0];
+    if (!plan) throw coded(404, 'RECORD_NOT_FOUND');
+    await assertEquipmentScope(client, user, plan.asset_id);
+    if (plan.deleted_at || plan.archived_at || LOCKED_PM.has(plan.status)) throw coded(409, 'RECORD_LOCKED');
+    const { rows:occurrences } = await client.query(
+      'SELECT * FROM pm_occurrences WHERE id=$1 AND pm_plan_id=$2 FOR UPDATE', [occurrenceId, planId]
+    );
+    const current = occurrences[0];
+    if (!current) throw coded(404, 'RECORD_NOT_FOUND');
+    if (String(current.equipment_id) !== String(plan.asset_id)) throw coded(409, 'PM_OCCURRENCE_LINK_MISMATCH');
+    if (Number(current.row_version) !== rowVersion) throw coded(409, 'VERSION_CONFLICT');
+    if (PM_OCCURRENCE_FINAL_STATES.has(current.status)) throw coded(409, 'PM_OCCURRENCE_FINAL');
+    if (!['scheduled','due','overdue'].includes(current.status)) throw coded(409, 'PM_OCCURRENCE_STATUS_LOCKED');
+    if (periodKeyForDueDate(current.due_at, plan.schedule_basis) !== current.period_key) throw coded(409, 'PM_PERIOD_KEY_MISMATCH');
+
+    const due = calculatePmDue({
+      schedule_basis:plan.schedule_basis, first_due_at:current.due_at,
+      last_completed_at:null, next_due_at:null, tolerance_days:plan.tolerance_days
+    }, evaluationTime);
+    if (!due.nextDueAt || due.dueStatus === 'insufficient_data') {
+      throw Object.assign(coded(422, 'PM_SCHEDULE_DATA_REQUIRED'), { reason:due.reason || 'due_date_unavailable' });
+    }
+    if (current.status === due.dueStatus) {
+      return { occurrence:occurrenceDto(current), evaluatedAt:evaluationTime, idempotentReplay:true };
+    }
+    const { rows:updatedRows } = await client.query(
+      `UPDATE pm_occurrences SET status=$3,updated_at=now(),updated_by=$4,row_version=row_version+1
+       WHERE id=$1 AND row_version=$2 AND status IN ('scheduled','due','overdue') RETURNING *`,
+      [occurrenceId, rowVersion, due.dueStatus, user.id]
+    );
+    const updated = updatedRows[0];
+    if (!updated) throw coded(409, 'VERSION_CONFLICT');
+    await audit(client, user, 'evaluate_due', 'pm_occurrence', occurrenceId, current, updated, evaluationTime);
+    await publish(client, user, {
+      type:'pm_occurrence.due_status_updated', aggregateType:'pm_occurrence', aggregateId:occurrenceId, permission:'pm.view',
+      equipmentId:plan.asset_id, payload:{ id:occurrenceId, pmPlanId:planId, status:due.dueStatus, evaluatedAt:evaluationTime }
+    });
+    return { occurrence:occurrenceDto(updated), evaluatedAt:evaluationTime, idempotentReplay:false };
+  });
+}
+
+async function listPmPlans(pool, user, filters = {}) {
   const { rows } = await pool.query(
     `SELECT p.*, a.id AS equipment_id, a.code AS equipment_code, a.name AS equipment_name
      FROM pm_plans p LEFT JOIN assets a ON a.id=p.asset_id
@@ -1264,10 +1422,19 @@ async function listPmPlans(pool, filters = {}) {
      ORDER BY p.title LIMIT 500`,
     [filters.includeArchived === true, filters.assetId || null]
   );
-  return rows.map(row => pmDto(row));
+  const visible = [];
+  for (const row of rows) {
+    try {
+      await assertEquipmentScope(pool, user, row.asset_id);
+      visible.push(row);
+    } catch (error) {
+      if (!['EQUIPMENT_SCOPE_DENIED','EQUIPMENT_NOT_FOUND'].includes(error.code)) throw error;
+    }
+  }
+  return visible.map(row => pmDto(row));
 }
 
-async function getPmPlan(pool, id, options = {}) {
+async function getPmPlan(pool, user, id, options = {}) {
   const { rows } = await pool.query(
     `SELECT p.*, a.id AS equipment_id, a.code AS equipment_code, a.name AS equipment_name
      FROM pm_plans p LEFT JOIN assets a ON a.id=p.asset_id
@@ -1275,6 +1442,7 @@ async function getPmPlan(pool, id, options = {}) {
     [id, options.includeArchived === true]
   );
   if (!rows[0]) throw coded(404, 'RECORD_NOT_FOUND');
+  await assertEquipmentScope(pool, user, rows[0].asset_id);
   return pmDto(rows[0]);
 }
 
@@ -1282,10 +1450,11 @@ async function updatePmPlan(pool, user, id, input) {
   const rowVersion = versionOf(input.rowVersion);
   return withTransaction(pool, async client => {
     const current = await lockRow(client, 'pm_plans', id);
+    await assertEquipmentScope(client, user, current.asset_id);
     if (current.deleted_at || current.archived_at || LOCKED_PM.has(current.status)) throw coded(409, 'RECORD_LOCKED');
     if (Number(current.row_version) !== rowVersion) throw coded(409, 'VERSION_CONFLICT');
     const assetId = input.assetId || current.asset_id;
-    await requireEquipment(client, assetId, true);
+    if (String(assetId) !== String(current.asset_id)) await assertEquipmentScope(client, user, assetId);
     const title = String(input.title ?? current.title ?? '').trim();
     if (!title) throw coded(422, 'TITLE_REQUIRED');
     const updated = await writeUpdate(client, 'pm_plans', id, rowVersion, user.id, {
@@ -1337,6 +1506,7 @@ async function archivePmPlan(pool, user, id, input = {}) {
   const reason = reasonOf(input.reason, 'ARCHIVE_REASON_REQUIRED');
   return withPmTransaction(pool, async client => {
     const current = await lockPmPlanForArchive(client, id);
+    await assertEquipmentScope(client, user, current.asset_id);
     if (Number(current.row_version) !== rowVersion) throw coded(409, 'VERSION_CONFLICT');
     await requirePmActor(client, user);
     await assertNoActivePmWork(client, id);
@@ -1366,6 +1536,7 @@ async function restorePmPlan(pool, user, id, input = {}) {
   const rowVersion = versionOf(input.rowVersion);
   return withPmTransaction(pool, async client => {
     const current = await lockPmPlanForArchive(client, id);
+    await assertEquipmentScope(client, user, current.asset_id);
     if (Number(current.row_version) !== rowVersion) throw coded(409, 'VERSION_CONFLICT');
     await requirePmActor(client, user);
     const isArchived = Boolean(current.archived_at || current.deleted_at);
@@ -1404,6 +1575,7 @@ async function cancelPmPlan(pool, user, id, input) {
   const reason = reasonOf(input.reason, 'CANCEL_REASON_REQUIRED');
   return withTransaction(pool, async client => {
     const current = await lockRow(client, 'pm_plans', id);
+    await assertEquipmentScope(client, user, current.asset_id);
     if (Number(current.row_version) !== rowVersion) throw coded(409, 'VERSION_CONFLICT');
     if (current.deleted_at || current.archived_at || LOCKED_PM.has(current.status)) throw coded(409, 'RECORD_LOCKED');
     const updated = await writeUpdate(client, 'pm_plans', id, rowVersion, user.id, {
@@ -1424,9 +1596,9 @@ async function generatePmWorkOrder(pool, user, id, input) {
   const rowVersion = versionOf(input.rowVersion);
   return withPmTransaction(pool, async client => {
     const current = await lockRow(client, 'pm_plans', id);
+    await assertEquipmentScope(client, user, current.asset_id);
     if (Number(current.row_version) !== rowVersion) throw coded(409, 'VERSION_CONFLICT');
     if (LOCKED_PM.has(current.status) || current.archived_at || current.deleted_at) throw coded(409, 'RECORD_LOCKED');
-    await requireEquipment(client, current.asset_id, true);
 
     const evaluatedAt = new Date();
     const due = calculatePmDue(current, evaluatedAt);
@@ -1893,6 +2065,11 @@ module.exports = {
   createPmPlan,
   listPmPlans,
   getPmPlan,
+  getPmDue,
+  listPmOccurrences,
+  getPmOccurrence,
+  createPmOccurrence,
+  updatePmOccurrenceDueStatus,
   updatePmPlan,
   archivePmPlan,
   restorePmPlan,

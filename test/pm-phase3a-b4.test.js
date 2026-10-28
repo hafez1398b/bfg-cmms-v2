@@ -35,10 +35,13 @@ function makeFixture(overrides = {}) {
       if (query === 'SELECT * FROM pm_plans WHERE id=$1 FOR UPDATE') {
         return { rows:values[0] === state.plan.id ? [structuredClone(state.plan)] : [] };
       }
+      if (query.startsWith('SELECT id, code, name, deleted_at FROM assets WHERE id=$1')) {
+        return { rows:values[0] === state.plan.asset_id ? [{ id:state.plan.asset_id, code:'EQ-B4', name:'B4 test asset', deleted_at:null }] : [] };
+      }
+      if (query.startsWith('WITH RECURSIVE ancestors')) return { rows:[{ factory_asset_id:null }] };
       if (query === 'SELECT id FROM users WHERE id=$1 AND active=true') {
         return { rows:values[0] === user.id ? [{ id:user.id }] : [] };
       }
-      if (query.startsWith('WITH RECURSIVE ancestors')) return { rows:[{ factory_asset_id:null }] };
       if (query.includes("FROM pm_occurrences o") && query.includes('UNION ALL')) {
         return { rows:state.activeRows.length ? [{ '?column?':1 }] : [] };
       }
@@ -85,6 +88,10 @@ function makeFixture(overrides = {}) {
   const pool = {
     connect:async () => client,
     async query(sql, values = []) {
+      if (sql.startsWith('SELECT id, code, name, deleted_at FROM assets WHERE id=$1')) {
+        return { rows:values[0] === state.plan.asset_id ? [{ id:state.plan.asset_id, code:'EQ-B4', name:'B4 test asset', deleted_at:null }] : [] };
+      }
+      if (sql.startsWith('WITH RECURSIVE ancestors')) return { rows:[{ factory_asset_id:null }] };
       if (sql.includes('FROM pm_plans p LEFT JOIN assets')) {
         const includeArchived = values[sql.includes('WHERE p.id=$1') ? 1 : 0] === true;
         const rowArchived = Boolean(state.plan.archived_at || state.plan.deleted_at);
@@ -261,14 +268,14 @@ test('Plan DTO exposes archive metadata and reads hide archived Plans unless inc
   state.plan.archived_by = user.id;
   state.plan.archive_reason = 'Read DTO test';
   state.plan.deleted_at = ARCHIVE_AT;
-  await assert.rejects(service.getPmPlan(pool, 'plan-b4'), error => error.code === 'RECORD_NOT_FOUND');
-  const dto = await service.getPmPlan(pool, 'plan-b4', { includeArchived:true });
+  await assert.rejects(service.getPmPlan(pool, user, 'plan-b4'), error => error.code === 'RECORD_NOT_FOUND');
+  const dto = await service.getPmPlan(pool, user, 'plan-b4', { includeArchived:true });
   assert.equal(dto.archivedAt, ARCHIVE_AT);
   assert.equal(dto.archivedBy, user.id);
   assert.equal(dto.archiveReason, 'Read DTO test');
   assert.equal(dto.rowVersion, 5);
-  assert.deepEqual(await service.listPmPlans(pool), []);
-  assert.equal((await service.listPmPlans(pool, { includeArchived:true })).length, 1);
+  assert.deepEqual(await service.listPmPlans(pool, user), []);
+  assert.equal((await service.listPmPlans(pool, user, { includeArchived:true })).length, 1);
 });
 
 test('archive and restore require row versions and archive requires a non-empty reason', async () => {

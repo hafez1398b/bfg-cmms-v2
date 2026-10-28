@@ -32,6 +32,7 @@ function splitList(list){
 function valueOf(token, params){
   if (token.startsWith('$')) return params[Number(token.slice(1)) - 1];
   if (token === 'now()') return new Date().toISOString();
+  if (token === 'NULL') return null;
   if (token === 'true') return true;
   if (token === 'false') return false;
   if (/^-?\d+(\.\d+)?$/.test(token)) return Number(token);
@@ -53,7 +54,8 @@ function memoryPool(){
       { id:'u-other', role:'tech', active:true, permissions:['request.view','work_order.view','pm.view'], scopes:[{ scope_type:'factory', scope_id:'other-factory' }] },
       { id:'u-op', role:'op', active:true, permissions:['request.create'], scopes:[{ scope_type:'company', scope_id:'co-1' }] },
       { id:'u-tech', role:'tech', active:true, permissions:['work_order.execute','work_order.view'], scopes:[{ scope_type:'equipment', scope_id:'eq-1' }] }
-    ]
+    ],
+    user_scopes:[{ user_id:'u-mgr', scope_type:'company', scope_id:'co-1' }]
   };
   function table(name){
     if (name === 'requests') return db.requests;
@@ -111,6 +113,7 @@ function memoryPool(){
     }
     if (text.includes('factory_asset_id')) return { rows:db.assets.filter(item => item.id === params[0]).map(item => ({ factory_asset_id:item.factory_asset_id })) };
     if (text.includes('FROM users WHERE id=$1')) return { rows:db.users.filter(item => item.id === params[0] && item.active).map(item => ({ id:item.id })) };
+    if (text.startsWith('SELECT scope_type,scope_id FROM user_scopes')) return { rows:db.user_scopes.filter(item => item.user_id === params[0]).map(({ scope_type,scope_id }) => ({ scope_type,scope_id })) };
     if (text.includes('FROM users u WHERE u.active=true')) return { rows:db.users.filter(item => item.active).map(item => ({ ...item })) };
     if (text.includes('SELECT * FROM')) {
       const tableName = text.match(/FROM (\w+)/)[1];
@@ -167,7 +170,7 @@ test('request, work order and PM stay linked to the same equipment in both direc
   assert.equal(links.workOrders.some(item => item.id === approved.workOrder.id), true);
   const storedRequest = await service.getRequest(pool, request.id);
   const storedOrder = await service.getWorkOrder(pool, approved.workOrder.id);
-  const storedPlan = await service.getPmPlan(pool, plan.id);
+  const storedPlan = await service.getPmPlan(pool, user, plan.id);
   assert.equal(storedRequest.assetId, 'eq-1');
   assert.equal(storedRequest.equipment.id, 'eq-1');
   assert.equal(storedRequest.workOrderId, approved.workOrder.id);
