@@ -6,7 +6,7 @@
 
 - **Branch:** `arena/dab53c60-bfg-cmms-v2`
 - **Commit مبنا:** `c5c99e265fc85a322a04637fb7c8491593b665bb` (`feat(pm): add phase 3a due and occurrence interface`)
-- **Commit E1:** پس از ثبت این گزارش در Commit نهایی جایگزین خواهد شد.
+- **Commit E1:** `5e4f41b` (`test(pm): align regression suite with migration 018`).
 - E1 فقط Assertionهای Regression مربوط به Migration list و ترتیب/قرارداد schema را به قرارداد مصوب 018 همسان کرد. Migration 017 و 018، `schema.sql`، Backend و Frontend تغییر نکرده‌اند.
 
 ## دلیل شکست‌های قبلی
@@ -31,7 +31,7 @@
 | Server-only / localStorage | **5/5 Pass** |
 | Regressionهای Migration 017 و Module Registry اصلاح‌شده | **16/16 Pass** |
 | `npm test` کامل | **268 Pass, 0 Fail, 0 Skip** |
-| Syntax فایل‌های JavaScript تغییرکرده و اسکریپت‌های inline صفحه | **Pass**؛ 55 اسکریپت inline بررسی شد |
+| Syntax فایل‌های JavaScript تغییرکرده در E1 | **Pass**؛ هر سه فایل تست با `node --check` بررسی شدند |
 | `git diff --check` | **Pass** |
 
 هیچ PostgreSQL runtime در محیط Arena در دسترس نبود: `DATABASE_URL` و `PGHOST` تنظیم نیستند؛ `pg_isready`، `psql` و Docker نیز موجود نیستند. بنابراین این نتایج تست‌های خودکار/قراردادی‌اند و به‌تنهایی اجرای واقعی Migration روی PostgreSQL را اثبات نمی‌کنند.
