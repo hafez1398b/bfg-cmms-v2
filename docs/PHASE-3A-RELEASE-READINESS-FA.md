@@ -1,13 +1,14 @@
 # گزارش آمادگی انتشار Phase 3-A
 
-**وضعیت موقت انتشار: Not Ready** — آزمون‌های Regression همسان شدند و کل مجموعه تست پاس است؛ اما ممیزی وابستگی‌ها Critical/High گزارش می‌کند و تأیید PostgreSQL، Load Test و نسخهٔ Backup ویندوزی از Arena ممکن نیست.
+**Security Gate: PASS** — آسیب‌پذیری‌های Critical و High صفر شده‌اند و آزمون‌های Regression/احراز هویت پاس هستند. **وضعیت کلی انتشار: Not Ready** تا تأیید PostgreSQL واقعی، Load Test و Backup ویندوزی خارج از Arena.
 
-## مبنا و تغییرات E1
+## مبنا و تغییرات E1 / E1-S
 
 - **Branch:** `arena/dab53c60-bfg-cmms-v2`
-- **Commit مبنا:** `c5c99e265fc85a322a04637fb7c8491593b665bb` (`feat(pm): add phase 3a due and occurrence interface`)
+- **Commit مبنای E1-S:** `c3b87b558b538c5c8e2c5c0ca3a30e0ecb2f0e0f` (`docs(pm): finalize release readiness report`)
 - **Commit E1:** `5e4f41b` (`test(pm): align regression suite with migration 018`).
 - E1 فقط Assertionهای Regression مربوط به Migration list و ترتیب/قرارداد schema را به قرارداد مصوب 018 همسان کرد. Migration 017 و 018، `schema.sql`، Backend و Frontend تغییر نکرده‌اند.
+- E1-S فقط `package.json`، `package-lock.json` و همین گزارش را تغییر می‌دهد؛ قابلیت محصول، route، scripts، Docker و دادهٔ عملیاتی دست‌نخورده‌اند.
 
 ## دلیل شکست‌های قبلی
 
@@ -31,20 +32,26 @@
 | Server-only / localStorage | **5/5 Pass** |
 | Regressionهای Migration 017 و Module Registry اصلاح‌شده | **16/16 Pass** |
 | `npm test` کامل | **268 Pass, 0 Fail, 0 Skip** |
-| Syntax فایل‌های JavaScript تغییرکرده در E1 | **Pass**؛ هر سه فایل تست با `node --check` بررسی شدند |
+| `npm ci` پس از به‌روزرسانی هدفمند | **Pass**؛ نصب پاک و همسان با lockfile |
+| Syntax سرور | **Pass**؛ `server.js` و 32 فایل `server/*.js` |
 | `git diff --check` | **Pass** |
 
 هیچ PostgreSQL runtime در محیط Arena در دسترس نبود: `DATABASE_URL` و `PGHOST` تنظیم نیستند؛ `pg_isready`، `psql` و Docker نیز موجود نیستند. بنابراین این نتایج تست‌های خودکار/قراردادی‌اند و به‌تنهایی اجرای واقعی Migration روی PostgreSQL را اثبات نمی‌کنند.
 
-## ممیزی وابستگی‌های تولید
+## ممیزی و ارتقای هدفمند Dependencyهای تولید (E1-S)
 
-فرمان `npm audit --omit=dev` اجرا شد و با Exit Code 1، **4 آسیب‌پذیری** گزارش کرد:
+`npm audit --omit=dev` پس از تغییر با Exit Code 0 تمام شد: **0 آسیب‌پذیری** (Critical 0، High 0، Moderate 0، Low 0). `npm ci` نیز نصب تمیز را با 0 آسیب‌پذیری گزارش کرد.
 
-- **Critical: 1** — `proxy-addr`، GHSA-jqcg-44mw-7w3h (IP spoofing در trust subnetهای IPv4-mapped IPv6)
-- **High: 1** — `body-parser`، GHSA-27r3-jxmh-p828 (Denial of Service پس از بایت‌های انتهایی بدنهٔ فشرده)
-- **Moderate: 2** — `qs` و زنجیرهٔ وابستگی مصرف‌کنندهٔ آن (`express`)
+| Package | پیش از E1-S | پس از E1-S | Dependency path / اقدام |
+|---|---:|---:|---|
+| `express` (direct) | 4.22.3 | 4.22.3 | نسخهٔ 4.22.3 موجود در Registry رسمی از بازهٔ آسیب‌پذیر Express خارج است؛ در شاخهٔ 4 نسخهٔ Patch جدیدتری در Registry نبود، پس Major ارتقا انجام نشد. مسیرهای transitive آن تازه شدند. |
+| `body-parser` (transitive) | 1.20.6 | 1.20.9 | `express → body-parser`; نسخهٔ 1.20.9 در بازهٔ سازگار Express (`~1.20.5`) است و GHSA-27r3-jxmh-p828 را رفع می‌کند. |
+| `proxy-addr` (transitive) | 2.0.7 | 2.0.8 | `express → proxy-addr`; نسخهٔ 2.0.8 در بازهٔ سازگار (`~2.0.7`) است و GHSA-jqcg-44mw-7w3h را رفع می‌کند. |
+| `qs` (transitive / override موجود) | 6.16.0 | 6.16.2 | `express → qs` و `express → body-parser → qs`; override از قبل موجود بود و فقط به Patch امن‌تر ارتقا یافت. 6.16.2 با `~6.16.0` سازگار است و GHSA-6pq8-jhm2-2vcw را رفع می‌کند. |
 
-`npm audit fix` اجرا نشده است. رفع آسیب‌پذیری‌ها نیازمند بررسی و تغییر وابستگی در کار جداگانه است؛ تا آن زمان تصمیم موقت انتشار **Not Ready** باقی می‌ماند.
+نسخه‌های Patch و محدوده‌های سازگاری با metadata از `registry.npmjs.org` بررسی شدند. Dependency transitive جدیدی به `dependencies` اضافه نشد؛ `express` مستقیم و scripts ثابت ماندند. `npm audit fix` و Force نصب/ارتقا اجرا نشدند.
+
+قبل از ارتقا، مسیرهای آسیب‌پذیر این‌ها بودند: `express@4.22.3 → body-parser@1.20.6 → qs@6.16.0`، `express@4.22.3 → proxy-addr@2.0.7` و `express@4.22.3 → qs@6.16.0`. بعد از ارتقا، به‌ترتیب `body-parser@1.20.9 → qs@6.16.2` و `proxy-addr@2.0.8` نصب‌اند؛ audit خروجی آسیب‌پذیری ندارد.
 
 ## PostgreSQL، بار و Backup
 
@@ -54,10 +61,9 @@
 
 ## تصمیم و مراحل باقی‌ماندهٔ E2
 
-تصمیم موقت: **Not Ready for Release** تا رفع موارد زیر:
+**Security Gate: PASS** برای Dependency audit و Regressionهای خودکار. تصمیم کلی: **Not Ready for Release** تا تکمیل بررسی‌های عملیاتی زیر:
 
 1. تأیید Backup واقعی روی Windows، ثبت مسیر و checksum، و Restore آزمایشی در مقصد امن.
 2. اجرای Migration 018 و تست Route/Permission/Scope روی PostgreSQL آزمایشی پس از Backup و ثبت نتیجهٔ rollback.
 3. اجرای Load Test روی محیط نزدیک به عملیاتی و ثبت معیارها/خطاها.
-4. بررسی و رفع جداگانهٔ Critical/Highهای `npm audit --omit=dev` بدون اجرای خودکار `npm audit fix` و سپس ممیزی مجدد.
-5. بازبینی Release Readiness و تصمیم نهایی انتشار. **E2 در این مرحله شروع نشده است.**
+4. بازبینی نهایی Release Readiness و تصمیم انتشار. **E2 در این مرحله شروع نشده است.**
