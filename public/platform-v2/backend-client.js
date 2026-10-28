@@ -18,6 +18,7 @@
   async function api(path, options={}, allowRefresh=true){
     const expectedStatus=Number(options.expectedStatus)||null,requestOptions={...options};delete requestOptions.expectedStatus;
     const headers = { ...(requestOptions.headers || {}) };
+    if (window.BFG_CLIENT_VERSION) headers['x-client-version'] = window.BFG_CLIENT_VERSION;
     const method = String(requestOptions.method || 'GET').toUpperCase();
     if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) headers['x-csrf-token'] = csrfToken();
     if (requestOptions.body && !(requestOptions.body instanceof FormData) && !headers['content-type']) headers['content-type'] = 'application/json';

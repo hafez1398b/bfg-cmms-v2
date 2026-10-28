@@ -1,0 +1,18 @@
+.pm-na-card .k-val{font-size:clamp(15px,2vw,21px);line-height:1.55;white-space:normal;color:var(--text-2)}
+.pm-detail-grid,.pm-occurrence-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:10px;margin-bottom:14px}
+.pm-detail-grid>div,.pm-occurrence-grid>div{display:flex;flex-direction:column;gap:4px;min-width:0;padding:9px 10px;border:1px solid var(--border);border-radius:var(--radius-sm,8px);background:var(--surface-2)}
+.pm-detail-grid b,.pm-occurrence-grid b{font-size:11px;color:var(--text-2)}
+.pm-detail-grid span,.pm-occurrence-grid span{overflow-wrap:anywhere;font-size:12px}
+.pm-due-panel{display:grid;grid-template-columns:minmax(130px,1fr) minmax(150px,2fr);gap:7px 14px;align-items:center;padding:12px 14px;margin:12px 0;border:1px solid var(--border);border-inline-start:3px solid var(--accent);border-radius:var(--radius-sm,8px);background:var(--surface-2)}
+.pm-due-panel h4{margin:0}.pm-due-panel small{grid-column:1/-1;color:var(--text-2)}
+.pm-toolbar{display:flex;flex-wrap:wrap;gap:7px;align-items:center;margin:12px 0}
+.pm-toolbar .muted{margin-inline-start:auto;font-size:11px}
+.pm-occurrence-card{padding:12px;margin:9px 0;border:1px solid var(--border);border-radius:var(--radius-sm,8px);background:var(--surface)}
+.pm-occurrence-card>header{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px}
+.pm-table{min-width:790px}.pm-plan-row{cursor:pointer}.pm-plan-row:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.pm-link{border:0;padding:0;background:transparent;color:var(--accent);font:inherit;text-decoration:underline;cursor:pointer}
+.pm-form-field{display:block;margin:10px 0;font-size:12px;color:var(--text-2)}
+.pm-form-field input,.pm-form-field select,.pm-form-field textarea{display:block;width:100%;margin-top:5px;padding:9px 10px;border:1px solid var(--border);border-radius:var(--radius-sm,8px);background:var(--surface);color:var(--text);font:inherit}
+.pm-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.pm-error{display:flex;gap:12px;align-items:center;justify-content:space-between;color:var(--red)}
+@media(max-width:620px){.pm-due-panel{grid-template-columns:1fr}.pm-due-panel small{grid-column:auto}.pm-form-grid{grid-template-columns:1fr}.pm-toolbar .muted{width:100%;margin:0}}

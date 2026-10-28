@@ -456,7 +456,7 @@ function setupSocket() {
       <p>پلتفرم یکپارچه CMMS/EAM سازمانی — دستورکار، PM، انبار فنی، کالیبراسیون، مجوز کار، پروژه‌ها و تحلیل‌های هوش مصنوعی در یک نقطه.</p>
       <div class="lh-stats">
         <div class="lh-stat"><b>٪۹۳.۶</b><span>Availability</span></div>
-        <div class="lh-stat"><b>٪۹۱</b><span>PM Compliance</span></div>
+        <div class="lh-stat"><b>N/A</b><span>PM Compliance — داده کافی ثبت نشده است</span></div>
         <div class="lh-stat"><b>۲۱۲h</b><span>MTBF</span></div>
         <div class="lh-stat"><b>۲۴/۷</b><span>پایش لحظه‌ای</span></div>
       </div>
@@ -539,6 +539,9 @@ function toJalali(gy,gm,gd){let g_d_m=[0,31,59,90,120,151,181,212,243,273,304,33
 const JM=['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
 function jDate(d){d=d?new Date(d):new Date();const [y,m,dd]=toJalali(d.getFullYear(),d.getMonth()+1,d.getDate());return fa(y)+'/'+fa(String(m).padStart(2,'0'))+'/'+fa(String(dd).padStart(2,'0'));}
 function jDateTime(d){d=d?new Date(d):new Date();return jDate(d)+' — '+fa(String(d.getHours()).padStart(2,'0'))+':'+fa(String(d.getMinutes()).padStart(2,'0'));}
+const PM_DUE_NA='N/A — داده کافی ثبت نشده است';
+function pmDueText(plan){return plan&&plan.nextDueAt&&plan.dueStatus!=='insufficient_data'?jDate(plan.nextDueAt):PM_DUE_NA;}
+function pmDueStatusText(status){return ({scheduled:'برنامه‌ریزی‌شده',due:'سررسیدشده',overdue:'عقب‌افتاده',work_order_generated:'دستورکار ایجاد شده',in_progress:'در حال اجرا',completed:'تکمیل‌شده',cancelled:'لغوشده',skipped:'ردشده/انجام‌نشده'})[status]||PM_DUE_NA;}
 function jMonth(d){d=new Date(d);const [y,m]=toJalali(d.getFullYear(),d.getMonth()+1,d.getDate());return JM[m-1];}
 function daysAgo(n){const d=new Date();d.setDate(d.getDate()-n);return d.toISOString();}
 function daysAhead(n){const d=new Date();d.setDate(d.getDate()+n);return d.toISOString();}
@@ -587,17 +590,10 @@ requests:[
 ],
 wos:[
  {id:'w1',no:'WO-1404-0231',type:'BD',assetId:'a6',desc:'رفع نشتی مکانیکال‌سیل پمپ تزریق ایزوسیانات و تعویض سیل',priority:'critical',assignee:'u3',status:'doing',reqId:'r1',ptw:true,ptwId:'p1',times:{seen:daysAgo(2),start:daysAgo(2)},stopAt:daysAgo(3),parts:[{itemId:'i2',qty:1}],createdAt:daysAgo(2),est:4},
- {id:'w2',no:'WO-1404-0228',type:'PM',assetId:'a9',desc:'PM ماهانه کمپرسور: تعویض فیلتر هوا، بازدید تسمه، ثبت دما و فشار',priority:'normal',assignee:'u3',status:'done',times:{seen:daysAgo(5),start:daysAgo(5),end:daysAgo(5)},report:{text:'فیلتر هوا تعویض شد، تسمه‌ها سالم، دمای خروجی ۷۸ درجه — نرمال. پیشنهاد: تعویض روغن در سرویس بعدی.',by:'u3',at:daysAgo(5)},parts:[{itemId:'i1',qty:2}],createdAt:daysAgo(6),est:3},
- {id:'w3',no:'WO-1404-0225',type:'PM',assetId:'a5',desc:'PM هفتگی میکسر: گریس‌کاری یاتاقان‌ها و کنترل لرزش',priority:'normal',assignee:'u3',status:'closed',times:{seen:daysAgo(9),start:daysAgo(9),end:daysAgo(9)},report:{text:'گریس‌کاری انجام شد. لرزش 2.1mm/s — در محدوده مجاز.',by:'u3',at:daysAgo(9)},parts:[],createdAt:daysAgo(10),est:2},
  {id:'w4',no:'WO-1404-0233',type:'CM',assetId:'a7',desc:'تنظیم کشش تسمه نقاله و تعویض دو عدد رولیک معیوب',priority:'high',assignee:'u4',status:'assigned',parts:[{itemId:'i4',qty:2}],times:{},createdAt:daysAgo(1),est:3},
  {id:'w5',no:'WO-1404-0234',type:'PdM',assetId:'a8',desc:'بازرسی اسپیندل CNC — روند افزایشی ارتعاش (پیشنهاد سیستم هوشمند)',priority:'high',assignee:'u4',status:'open',parts:[],times:{},createdAt:daysAgo(0),est:2,ai:true},
 ],
-pms:[
- {id:'m1',assetId:'a9',title:'PM ماهانه کمپرسور GA-75',interval:30,last:daysAgo(5),spec:'مکانیک',checklist:['تعویض فیلتر هوا','بازدید تسمه و کوپلینگ','ثبت دما و فشار کارکرد','تخلیه درین سپراتور']},
- {id:'m2',assetId:'a5',title:'PM هفتگی میکسر پلی‌اول',interval:7,last:daysAgo(9),spec:'مکانیک',checklist:['گریس‌کاری یاتاقان','کنترل لرزش','بازدید آب‌بندی']},
- {id:'m3',assetId:'a8',title:'PM فصلی دستگاه برش CNC',interval:90,last:daysAgo(70),spec:'برق',checklist:['کالیبراسیون محورها','بازدید سروو درایوها','تمیزکاری تابلو برق']},
- {id:'m4',assetId:'a10',title:'سرویس شش‌ماهه چیلر',interval:180,last:daysAgo(150),spec:'تأسیسات',checklist:['کنترل شارژ مبرد','شستشوی کندانسور','تست ترموستات‌ها']},
-],
+pms:[],
 items:[
  {id:'i1',code:'SP-FLT-001',name:'فیلتر هوای کمپرسور GA-75',unit:'عدد',stock:4,min:3,price:8500000,loc:'A-12',cat:'فیلتر'},
  {id:'i2',code:'SP-SEL-014',name:'مکانیکال‌سیل پمپ CR-32',unit:'عدد',stock:1,min:2,price:22000000,loc:'B-03',cat:'آب‌بندی'},
@@ -852,11 +848,11 @@ function pgDash(){
  const calDue=DB.instruments.filter(n=>{const due=new Date(n.last);due.setDate(due.getDate()+n.period);return due<new Date();});
  // Preview baseline for KPIs that do not yet have a production telemetry source.
  // Inventory, safety and equipment distribution use the current in-browser dataset when available.
- const preview={oee:78.4,availability:93.6,pmCompliance:91,safety:88};
+ const preview={oee:78.4,availability:93.6,safety:88};
  const hseOrders=DB.wos.filter(w=>w.type==='HSE'||w.ptw===true);
  const safetyScore=hseOrders.length?100*hseOrders.filter(w=>['done','closed'].includes(w.status)).length/hseOrders.length:preview.safety;
  const inventoryScore=DB.items.length?100*DB.items.filter(i=>Number(i.stock)>=Number(i.min??i.minStock??0)).length/DB.items.length:84;
- const factoryRadar=[preview.oee,preview.availability,preview.pmCompliance,safetyScore,inventoryScore];
+ const factoryRadar=[preview.oee,preview.availability,safetyScore,inventoryScore];
  const equipment=DB.assets.filter(a=>a.type==='eq'&&!a.deleted&&a.isActive!==false);
  const equipmentStatus=[
   {l:'فعال',v:equipment.filter(a=>a.status==='active').length},
@@ -876,7 +872,7 @@ function pgDash(){
   ${kpiCard('MTTR',fa('3.2')+' ساعت','<span class="up">▼ ۰.۴h</span> بهبود','⏱️','var(--orange-bg)','var(--orange)')}
   ${kpiCard('MTBF',fa('212')+' ساعت','<span class="up">▲ ۱۸h</span> بهبود','🔧','var(--purple-bg)','var(--purple)')}
   ${kpiCard('دستورکارهای باز',fa(openWo),fa(DB.wos.filter(w=>w.status==='doing').length)+' مورد در حال انجام','🛠️','var(--blue-bg)','var(--blue)')}
-  ${kpiCard('PM Compliance','٪'+fa(preview.pmCompliance),'ماه جاری — '+jMonth(new Date()),'🔁','var(--green-bg)','var(--green)')}
+  ${kpiCard('PM Compliance','N/A — داده کافی ثبت نشده است','دادهٔ معتبر از Backend برای محاسبه در دسترس نیست','🔁','var(--gray-bg)','var(--gray)')}
   ${kpiCard('اقلام زیر نقطه سفارش',fa(lowStock.length),lowStock.map(i=>i.name.split(' ')[0]).slice(0,2).join('، ')||'—','📦',lowStock.length?'var(--red-bg)':'var(--green-bg)',lowStock.length?'var(--red)':'var(--green)')}
   ${kpiCard('کالیبراسیون سررسید',fa(calDue.length),'نیازمند اقدام فوری','🎯',calDue.length?'var(--red-bg)':'var(--green-bg)',calDue.length?'var(--red)':'var(--green)')}
  </div>
@@ -886,7 +882,7 @@ function pgDash(){
   <div class="card dashboard-chart-card"><h3><span class="ic">🧮</span>دستورکارها به تفکیک نوع</h3>
    <div class="dashboard-donut-layout">${donut(woByType)}<div class="legend dashboard-vertical-legend">${woByType.map(p=>`<span><i style="background:${p.c}"></i>${p.l==='PM'?'پیشگیرانه':p.l==='CM'?'اصلاحی':p.l==='BD'?'اضطراری':'پیش‌بینانه'} (${fa(p.v)})</span>`).join('')}</div></div></div>
   <div class="card dashboard-chart-card factory-overview-card"><h3><span class="ic">◎</span>وضعیت کلی کارخانه</h3>
-   <div class="factory-overview-grid"><div class="factory-chart-panel"><b>شاخص‌های عملکرد</b>${radarChart(['OEE','Availability','PM','ایمنی','انبار'],factoryRadar,'var(--accent)')}</div>
+   <div class="factory-overview-grid"><div class="factory-chart-panel"><b>شاخص‌های عملکرد</b>${radarChart(['OEE','Availability','ایمنی','انبار'],factoryRadar,'var(--accent)')}</div>
    <div class="factory-chart-panel"><b>وضعیت تجهیزات</b>${pieChart(equipmentStatus,equipmentColors)}<div class="legend dashboard-vertical-legend">${equipmentStatus.map((segment,i)=>`<span><i style="background:${equipmentColors[i]}"></i>${segment.l} (${fa(segment.v)})</span>`).join('')}</div></div></div>
   </div>
  </div>
@@ -1303,10 +1299,10 @@ function renderDossier(){
   </div>`;
  if(dossierTab==='hist')body=woHist.length?`<div class="timeline">${woHist.map(w=>`<div class="tl-item"><div class="tl-time">${jDate(w.createdAt)} — ${WO_TYPE[w.type]}</div><div class="tl-txt"><a onclick="openWO('${w.id}')" style="cursor:pointer"><b>${w.no}</b></a> — ${esc(w.desc)} <span class="badge ${WO_ST[w.status][1]}" style="font-size:10px">${WO_ST[w.status][0]}</span></div></div>`).join('')}</div>`:'<div class="empty">سابقه‌ای ثبت نشده</div>';
  if(dossierTab==='pm')body=pms.length?pms.map(p=>{
-   const next=new Date(p.last);next.setDate(next.getDate()+p.interval);const overdue=next<new Date();
+   const status=p.dueStatus==='overdue'?'b-red':p.dueStatus==='due'?'b-orange':'b-blue';
    return `<div class="list-row"><div class="list-ic" style="background:var(--green-bg);color:var(--green)">🔁</div>
-   <div style="flex:1"><b>${esc(p.title)}</b><div class="muted">هر ${fa(p.interval)} روز — تخصص: ${p.spec} — آخرین اجرا: ${jDate(p.last)}</div></div>
-   <span class="badge ${overdue?'b-red':'b-green'}">${overdue?'سررسید گذشته':'سررسید: '+jDate(next)}</span></div>`;}).join(''):'<div class="empty">برنامه PM ندارد</div>';
+   <div style="flex:1"><b>${esc(p.title)}</b><div class="muted">${esc(p.scheduleBasis||'مبنای ثبت‌نشده')} — تخصص: ${esc(p.requiredSkill||p.spec||'ثبت نشده')}</div></div>
+   <span class="badge ${status}">${esc(pmDueStatusText(p.dueStatus))}: ${pmDueText(p)}</span></div>`;}).join(''):'<div class="empty">برنامه PM از Backend دریافت نشد</div>';
  if(dossierTab==='kpi')body=`
   <div class="grid g2" style="gap:12px">
    ${kpiCard('MTBF تجهیز',fa(a.crit==='A'?'186':'240')+' h','بر اساس سوابق خرابی','🔧','var(--purple-bg)','var(--purple)')}
@@ -1354,64 +1350,16 @@ function saveAsset(){
 
 /* ================= PM ================= */
 function pgPM(){
- const rows=DB.pms.map(p=>{
-  const a=asset(p.assetId);const next=new Date(p.last);next.setDate(next.getDate()+p.interval);
-  const days=Math.ceil((next-new Date())/864e5);const overdue=days<0;
-  return {p,a,next,days,overdue};
- }).sort((x,y)=>x.days-y.days);
- return head('نگهداری پیشگیرانه (PM)','PM',
- `<button class="btn btn-primary" onclick="openPMForm()">＋ برنامه PM جدید</button>`)+`
- <div class="grid g3" style="margin-bottom:16px">
-  ${kpiCard('برنامه‌های فعال',fa(DB.pms.length),'کل برنامه‌های PM','🔁','var(--blue-bg)','var(--blue)')}
-  ${kpiCard('سررسیدگذشته',fa(rows.filter(r=>r.overdue).length),'نیاز به صدور فوری دستورکار','⚠️',rows.some(r=>r.overdue)?'var(--red-bg)':'var(--green-bg)',rows.some(r=>r.overdue)?'var(--red)':'var(--green)')}
-  ${kpiCard('PM Compliance','٪'+fa('91'),'ماه جاری','✅','var(--green-bg)','var(--green)')}
- </div>
- <div class="tbl-wrap"><table><thead><tr><th>برنامه</th><th>تجهیز</th><th>تناوب</th><th>تخصص</th><th>آخرین اجرا</th><th>سررسید بعدی</th><th>وضعیت</th><th></th></tr></thead><tbody>
- ${rows.map(({p,a,next,days,overdue})=>`<tr onclick="openPM('${p.id}')">
-  <td><b>${esc(p.title)}</b></td><td>${esc(a.name)}</td><td>هر ${fa(p.interval)} روز</td><td>${p.spec}</td>
-  <td>${jDate(p.last)}</td><td>${jDate(next)}</td>
-  <td><span class="badge ${overdue?'b-red':days<=3?'b-orange':'b-green'}">${overdue?fa(-days)+' روز تأخیر':days===0?'امروز':fa(days)+' روز مانده'}</span></td>
-  <td><button class="btn btn-sm btn-accent" onclick="event.stopPropagation();genPMWO('${p.id}')">صدور WO</button></td></tr>`).join('')}
- </tbody></table></div>`;
+ if(window.BFGRuntime&&window.BFGRuntime.isServerOnly()&&window.BFGMaintenance&&window.BFGMaintenance.pmUi)return window.BFGMaintenance.pmUi.renderPage();
+ return head('نگهداری پیشگیرانه (PM)','PM')+
+  '<div class="card kpi pm-na-card"><div class="k-title">PM Compliance</div><div class="k-val">N/A — داده کافی ثبت نشده است</div><div class="k-sub">تا دریافت دادهٔ معتبر از Backend، محاسبهٔ این شاخص ممکن نیست.</div></div>'+
+  '<div class="card empty">نمایش و عملیات PM فقط با نشست Backend و دادهٔ سرور در دسترس است؛ دادهٔ نمونه یا محلی به‌عنوان سابقهٔ واقعی نمایش داده نمی‌شود.</div>';
 }
-function openPM(id){
- const p=DB.pms.find(x=>x.id===id);const a=asset(p.assetId);
- modal(mhead(p.title)+`
- <div class="m-body">
-  <div class="spec"><div><b>تجهیز</b>${esc(a.name)}</div><div><b>تناوب</b>هر ${fa(p.interval)} روز</div><div><b>تخصص</b>${p.spec}</div><div><b>آخرین اجرا</b>${jDate(p.last)}</div></div>
-  <h3 style="font-size:13.5px;margin:15px 0 9px">چک‌لیست فعالیت‌ها (FR-PM-02)</h3>
-  ${p.checklist.map(c=>`<div class="checkline"><input type="checkbox"> ${esc(c)}</div>`).join('')}
- </div>
- <div class="m-foot"><button class="btn btn-accent" onclick="genPMWO('${p.id}')">🛠️ صدور دستورکار PM</button><button class="btn btn-ghost" onclick="closeModal()">بستن</button></div>`);
-}
-function genPMWO(id){
- const p=DB.pms.find(x=>x.id===id);
- DB.seq.wo++;
- const w={id:uid(),no:'WO-1404-0'+DB.seq.wo,type:'PM',assetId:p.assetId,desc:p.title+' — چک‌لیست: '+p.checklist.join('، '),priority:'normal',assignee:null,status:'open',parts:[],times:{},createdAt:new Date().toISOString(),est:2};
- DB.wos.unshift(w);p.last=new Date().toISOString();
- save();audit('تولید دستورکار PM: '+w.no);notify('🔁 دستورکار PM '+w.no+' تولید و به صف تخصیص رفت');
- closeModal();toast('دستورکار '+w.no+' تولید شد ✅');go('wos');
-}
-function openPMForm(){
- modal(mhead('برنامه PM جدید')+`
- <div class="m-body">
-  <div class="field"><label>عنوان *</label><input id="pmTitle"></div>
-  <div class="frow">
-   <div class="field"><label>تجهیز *</label><select id="pmAsset">${DB.assets.filter(a=>a.type==='eq').map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select></div>
-   <div class="field"><label>تناوب (روز) *</label><input id="pmInt" type="number" value="30"></div>
-  </div>
-  <div class="frow">
-   <div class="field"><label>تخصص</label><select id="pmSpec"><option>مکانیک</option><option>برق</option><option>ابزار دقیق</option><option>تأسیسات</option></select></div>
-  </div>
-  <div class="field"><label>چک‌لیست (هر خط یک فعالیت)</label><textarea id="pmChk" rows="4" placeholder="بازدید تسمه&#10;گریس‌کاری یاتاقان"></textarea></div>
- </div>
- <div class="m-foot"><button class="btn btn-primary" onclick="savePM()">ثبت برنامه</button><button class="btn btn-ghost" onclick="closeModal()">انصراف</button></div>`);
-}
-function savePM(){
- const title=$('#pmTitle').value.trim();if(!title){toast('عنوان الزامی است',1);return;}
- DB.pms.push({id:uid(),assetId:$('#pmAsset').value,title,interval:+$('#pmInt').value||30,last:new Date().toISOString(),spec:$('#pmSpec').value,checklist:$('#pmChk').value.split('\n').map(s=>s.trim()).filter(Boolean)});
- save();audit('تعریف برنامه PM: '+title);closeModal();toast('برنامه PM ثبت شد ✅');go('pm');
-}
+function openPM(){toast('برای مشاهدهٔ برنامه PM به نشست معتبر Backend نیاز است.',1);}
+function genPMWO(){toast('Work Order از دادهٔ محلی تولید نمی‌شود؛ نشست Backend لازم است.',1);}
+function openPMForm(){toast('ثبت PM فقط از مسیر API مرکزی انجام می‌شود.',1);}
+function savePM(){toast('ثبت PM فقط از مسیر API مرکزی انجام می‌شود.',1);}
+
 </script>
 <script>
 /* ================= Inventory ================= */
@@ -3876,47 +3824,10 @@ LAB.forEach((r,i)=>{
   DB.instruments.push({id:'cal-'+id,code:sc,name:name+' ('+model+')',asset:id,period:365,last:daysAgo(40+i*9),type:calType,cls:fe});
 });
 
-/* ---------- standard PM programs (industry best practice / ISO 55000) ---------- */
-const mkPM=(assetId,title,interval,spec,checklist)=>{
- if(!DB.pms.find(p=>p.assetId===assetId))
-  DB.pms.push({id:'pm-'+assetId,assetId,title,interval,last:daysAgo(Math.floor(Math.random()*15)+3),spec,checklist});
-};
-DB.assets.filter(a=>a.id.startsWith('mfc')).forEach(a=>{
- mkPM(a.id,'PM ماهانه '+a.name+' ('+a.ext.idNo+')',30,'مکانیک',[
-  '[روزانه] بازدید چشمی نوار/رولیک و گوش‌دادن به صدای غیرعادی (اپراتور)',
-  '[روزانه] تست دکمه استاپ اضطراری',
-  '[هفتگی] کنترل کشش و انحراف نوار (Tracking) و تنظیم در صورت نیاز',
-  '[هفتگی] تمیزکاری بدنه، رولیک‌ها و محل تجمع پرز فوم',
-  '[ماهانه] گریس‌کاری بیرینگ‌ها و یاتاقان‌های درام محرک/متحرک',
-  '[ماهانه] بازدید گیربکس و الکتروموتور: نشتی روغن، دما، لرزش، جریان مصرفی',
-  '[ماهانه] کنترل سفتی پیچ‌های شاسی و گاردهای ایمنی',
-  '[۶ماهه] بررسی سطح روغن گیربکس / تعویض طبق دستور سازنده',
-  '[سالانه] بازرسی کامل درام‌ها، تعویض رولیک‌های معیوب و تست عایقی موتور']);
-});
-DB.assets.filter(a=>a.id.startsWith('mfk')).forEach(a=>{
- mkPM(a.id,'PM ماهانه '+a.name+' ('+a.ext.idNo+')',30,'تأسیسات',[
-  '[هفتگی] کنترل سطح آب تشتک و عملکرد شناور',
-  '[هفتگی] بازدید پوشال‌ها و آب‌پخش‌کن',
-  '[ماهانه] کنترل کشش و سلامت تسمه و بالانس فن',
-  '[ماهانه] روغن‌کاری یاتاقان‌های فن و بررسی صدای الکتروموتور',
-  '[ماهانه] تمیزکاری پمپ آب و صافی',
-  '[فصلی] شستشوی تشتک و تعویض پوشال در صورت رسوب',
-  '[سالانه] سرویس کامل پیش از فصل گرما: تعویض پوشال، رنگ ضدزنگ تشتک، تست جریان موتور']);
-});
-DB.assets.filter(a=>a.id.startsWith('mfl')).forEach(a=>{
- const cal='[سالانه] کالیبراسیون '+a.ext.calType+' طبق برنامه (کد '+a.ext.pmCode+') و الصاق برچسب';
- let items;
- if(a.name.includes('تست کشش'))items=['[روزانه] بازدید چشمی فک‌ها و حرکت آزاد کراس‌هد','[هفتگی] تمیزکاری ریل و فک‌ها','[ماهانه] روانکاری پیچ‌های محرک (Ball Screw)','[ماهانه] تست صحت با نمونه مرجع و کنترل لودسل','[۶ماهه] کنترل سفتی اتصالات و کابل‌ها',cal];
- else if(a.name.includes('ترازو'))items=['[روزانه] کنترل تراز حبابی و صفر دستگاه','[هفتگی] تمیزکاری کفه با برس ضدالکتریسیته','[ماهانه] تست با وزنه استاندارد و ثبت انحراف','[۶ماهه] بررسی محیط (لرزش/جریان هوا)',cal];
- else if(a.name.includes('آون'))items=['[هفتگی] تمیزکاری محفظه و درزگیر درب','[ماهانه] کنترل یکنواختی دما با ترمومتر مرجع','[ماهانه] بازدید المنت و فن سیرکولاسیون','[۶ماهه] تست ترموستات ایمنی',cal];
- else if(a.name.includes('هات پلیت')||a.name.includes('شوف'))items=['[روزانه] بازدید کابل و دوشاخه (ایمنی برق)','[هفتگی] تمیزکاری صفحه/المنت از مواد شیمیایی','[ماهانه] تست کنترل دما و دور همزن با مرجع','[۶ماهه] بررسی اتصال ارت',cal];
- else if(a.name.includes('عبور هوا')||a.name.includes('ارتجاعی'))items=['[هفتگی] تمیزکاری محفظه تست و اوریفیس','[ماهانه] تست با نمونه مرجع آزمایشگاه و ثبت نتیجه','[ماهانه] کنترل درزبندی و شیلنگ‌ها','[۶ماهه] بازدید سنسور فشار/ارتفاع',cal];
- else items=['[روزانه] بازدید چشمی و تمیزکاری','[ماهانه] تست عملکرد با مرجع و ثبت نتیجه','[۶ماهه] بازدید کابل، باتری و اتصالات',cal];
- mkPM(a.id,'PM دوره‌ای '+a.name+' ('+a.ext.idNo+')',30,'ابزار دقیق',items);
-});
+/* PM schedules are not generated from demo assets. PM is populated only from Backend. */
 
 DB.__mfSeed=1;
-DB.audit.unshift({t:new Date().toISOString(),u:'سیستم',x:'ورود گروهی ۲۹ تجهیز کارخانه مموری فوم + تولید خودکار ۲۹ برنامه PM استاندارد + ثبت ۱۲ ابزار در کالیبراسیون'});
+DB.audit.unshift({t:new Date().toISOString(),u:'سیستم',x:'ورود گروهی تجهیزات نمونه کارخانه مموری فوم + ثبت ۱۲ ابزار در کالیبراسیون'});
 save();
 })();
 
@@ -4342,12 +4253,6 @@ function kpiCalc(){
  const mtbf=bds.length?periodH/bds.length:periodH;
  const downtime=bds.reduce((s,w)=>s+(w.times.start&&w.times.end?(new Date(w.times.end)-new Date(w.times.start))/36e5:2),0);
  const avail=Math.max(0,100-(downtime/periodH*100));
- const pms=wos.filter(w=>w.type==='PM');
- const pmClosed=pms.filter(w=>['closed','done'].includes(w.status));
- const pmComp=pms.length?pmClosed.length/pms.length*100:100;
- const pmOver=DB.pms.filter(p=>{const d=new Date(p.last);d.setDate(d.getDate()+p.interval);return d<new Date();}).length;
- const cmH=wos.filter(w=>['CM','BD'].includes(w.type)).length;
- const ratio=wos.length?pms.length/Math.max(1,cmH):0;
  const cost={parts:0,labor:0,contractor:0};
  DB.costEntries.forEach(e=>{if(e.kind==='قطعات')cost.parts+=e.amount;else if(e.kind==='دستمزد')cost.labor+=e.amount;else cost.contractor+=e.amount;});
  const invVal=DB.items.reduce((s,i)=>s+i.stock*i.price,0);
@@ -4355,7 +4260,6 @@ function kpiCalc(){
  const repeat=(()=>{const m={};bds.forEach(w=>{if(w.assetId)m[w.assetId]=(m[w.assetId]||0)+1;});return Object.values(m).filter(v=>v>1).length;})();
  return {mttr,mtbf,mdt:mttr*1.25,mttf:mtbf-mttr,avail,rel:Math.max(60,avail-4),maint:Math.min(99,100-mttr*2),
   frate:(bds.length/periodH*1000),oee:avail*0.96*0.98/100*100*0.86,opAvail:avail-1.6,
-  pmComp,pmEff:Math.min(100,pmComp*1.02),pmOver,pmDone:pmClosed.length,pmTotal:pms.length,ratio,
   fails:bds.length,emerg:bds.filter(w=>w.priority==='critical').length,repeat,
   cost,invVal,low,turn:2.4,
   wosAll:wos.length,closedAll:closed.length};
@@ -4387,10 +4291,10 @@ function pgKPI(){
  </div>
  <h3 style="margin:6px 0 10px">🔁 شاخص‌های PM</h3>
  <div class="grid g4" style="margin-bottom:16px">
-  ${kpiBox('PM Compliance','٪'+h(K.pmComp),fa(K.pmDone)+' از '+fa(K.pmTotal)+' انجام‌شده',()=>go('pm'))}
-  ${kpiBox('PM Effectiveness','٪'+h(K.pmEff),'اثربخشی پیشگیرانه')}
-  ${kpiBox('PM Overdue',fa(K.pmOver),'برنامه سررسیدگذشته',()=>go('pm'))}
-  ${kpiBox('PM/CM Ratio',fa(K.ratio.toFixed(1)),'نسبت پیشگیرانه به اصلاحی')}
+  ${kpiBox('PM Compliance','N/A — داده کافی ثبت نشده است','دادهٔ معتبر و کافی از Backend برای محاسبه ارائه نشده است',()=>go('pm'))}
+  ${kpiBox('PM Effectiveness','N/A — داده کافی ثبت نشده است','محاسبهٔ محلی یا نمونه برای PM انجام نمی‌شود',()=>go('pm'))}
+  ${kpiBox('PM Overdue','N/A — داده کافی ثبت نشده است','وضعیت موعد فقط از پاسخ Due در Backend',()=>go('pm'))}
+  ${kpiBox('PM/CM Ratio','N/A — داده کافی ثبت نشده است','دادهٔ کافی و مستند از Backend در دسترس نیست',()=>go('pm'))}
  </div>
  <div class="grid g2" style="margin-bottom:16px">
   <div class="card"><h3><span class="ic">📉</span>شاخص‌های خرابی + پارتو علل</h3>
@@ -4709,7 +4613,7 @@ renderDossier=function(){
  try{
   const K=kpiCalc();
   DB.__kpiSnapshot={t:new Date().toISOString(),mttr:+K.mttr.toFixed(1),mtbf:+K.mtbf.toFixed(0),
-   avail:+K.avail.toFixed(1),pmComp:+K.pmComp.toFixed(0),src:'محاسبه واقعی از '+DB.wos.length+' دستورکار'};
+   avail:+K.avail.toFixed(1),src:'محاسبه از دستورکارهای ثبت‌شده'};
   save();
  }catch(e){}
 })();
@@ -4723,8 +4627,7 @@ pgDash=function(){
   html=html.replace('٪'+fa('78.4'),'٪'+fa(K.oee.toFixed(1)))
            .replace('٪'+fa('93.6'),'٪'+fa(K.avail.toFixed(1)))
            .replace(fa('3.2')+' ساعت',fa(K.mttr.toFixed(1))+' ساعت')
-           .replace(fa('212')+' ساعت',fa(K.mtbf.toFixed(0))+' ساعت')
-           .replace('٪'+fa('91'),'٪'+fa(K.pmComp.toFixed(0)));
+           .replace(fa('212')+' ساعت',fa(K.mtbf.toFixed(0))+' ساعت');
  }catch(e){}
  return html;
 };
@@ -5286,7 +5189,7 @@ function costCat(e){
 function costSplit(){
  let mnt=0,rep=0;
  DB.costEntries.forEach(e=>{if(costCat(e)==='نگهداری')mnt+=e.amount;else rep+=e.amount;});
- return {mnt,rep,ratio:mnt?rep/mnt:0};
+ return {mnt,rep};
 }
 /* manual cost entry with explicit category */
 function addCostEntry(){
@@ -5318,7 +5221,7 @@ pgCosts=function(){
   <div class="grid g3" style="gap:12px">
    <div class="card kpi" style="box-shadow:none;cursor:pointer" onclick="RB.ent='costs';go('reports')"><div class="k-title">🛡️ هزینه نگهداری (PM/PdM/سرویس)</div><div class="k-val" style="font-size:19px">${money(s.mnt)}</div><div class="k-sub">ریال — پیشگیرانه</div></div>
    <div class="card kpi" style="box-shadow:none;cursor:pointer" onclick="RB.ent='costs';go('reports')"><div class="k-title">🔧 هزینه تعمیرات (CM/BD)</div><div class="k-val" style="font-size:19px">${money(s.rep)}</div><div class="k-sub">ریال — اصلاحی و اضطراری</div></div>
-   <div class="card kpi" style="box-shadow:none;border:1.5px solid ${s.ratio>1.5?'var(--red)':'var(--gold)'}"><div class="k-title">📐 نسبت تعمیرات به نگهداری (R/M Ratio)</div><div class="k-val" style="font-size:22px">${fa(s.ratio.toFixed(2))}</div><div class="k-sub">${s.ratio>1.5?'⚠️ بالا — PM را تقویت کنید':s.ratio>0.8?'قابل قبول':'✅ مطلوب — نت پیشگیرانه غالب'}</div></div>
+   <div class="card kpi pm-na-card" style="box-shadow:none;border:1.5px solid var(--border)"><div class="k-title">📐 نسبت تعمیرات به نگهداری (R/M Ratio)</div><div class="k-val">${PM_DUE_NA}</div><div class="k-sub">دادهٔ مالی مستند از Backend برای این شاخص در دسترس نیست.</div></div>
   </div></div>`;
  html=html.replace('<div class="grid g2" style="margin-bottom:16px">',split+'<div class="grid g2" style="margin-bottom:16px">');
  /* add category column to detail table */
@@ -5336,7 +5239,7 @@ pgKPI=function(){
  let html=_pgKPIV13();
  const s=costSplit();
  const marker='هزینه پیمانکار';
- const card=kpiBox('نسبت تعمیرات/نگهداری',fa(s.ratio.toFixed(2)),s.ratio>1.5?'⚠️ نیاز به تقویت PM':'در محدوده مطلوب',()=>go('costs'));
+ const card=kpiBox('نسبت تعمیرات/نگهداری',PM_DUE_NA,'دادهٔ کافی و مستند از Backend در دسترس نیست',()=>go('costs'));
  const idx=html.indexOf(marker);
  if(idx>-1){
   const cardEnd=html.indexOf('</div>',html.indexOf('k-sub',idx));
@@ -10313,6 +10216,7 @@ function wzPlanSet(sbId,pid,f,v){
 
 /* ---------- FINISH: persist the whole structure ---------- */
 function wzFinish(){
+ if(window.BFGRuntime&&window.BFGRuntime.isServerOnly()){toast('ثبت ساختار شامل برنامه PM فقط از API مرکزی پشتیبانی می‌شود؛ عملیات محلی انجام نشد.',1);return;}
  if(!wzValidate(1)){WZ.step=1;wzRender();return;}
  wzCollect();
  const m=WZ.main;
@@ -10757,6 +10661,7 @@ function panelCfgSave(){
  };
 })();
 function panelNewWO(assetId){
+ if(window.BFGRuntime&&window.BFGRuntime.isServerOnly()){toast('صدور دستورکار PM باید از Occurrence ثبت‌شده در Backend انجام شود.',1);return;}
  if(typeof need==='function'&&!need('wos','create'))return;
  const a=asset(assetId);
  const seq=String(DB.wos.length+1).padStart(4,'0');
@@ -11504,10 +11409,9 @@ function ddAsset(id){
    <div class="list-ic" style="background:var(--surface-2)">${k.nodeKind==='sys'?(k.sysIcon||'🧩'):k.nodeKind==='sub'?'🔩':k.panel?'⚡':'⚙️'}</div>
    <div style="flex:1"><b>${esc(k.name)}</b><div class="muted mono" style="font-size:10px">${esc(k.code)}</div></div><span class="rb-open">🔍</span></div>`).join('')}</div>`:''}
  ${pms.length?`<div class="card" style="box-shadow:none;margin-top:10px"><b style="font-size:12.4px">🔁 برنامه‌های نگهداری مستقل (${fa(pms.length)})</b>
-  ${pms.map(p=>{const nx=new Date(p.last);nx.setDate(nx.getDate()+p.interval);const od=nx<new Date();
-   return `<div class="list-row"><div class="list-ic" style="background:var(--green-bg)">🔁</div>
-    <div style="flex:1"><b>${esc(p.title)}</b><div class="muted">هر ${fa(p.interval)} روز — ${esc(p.spec)}</div></div>
-    <span class="badge ${od?'b-red':'b-green'}">${od?'سررسید گذشته':jDate(nx)}</span></div>`;}).join('')}</div>`:''}
+  ${pms.map(p=>`<div class="list-row"><div class="list-ic" style="background:var(--green-bg)">🔁</div>
+    <div style="flex:1"><b>${esc(p.title)}</b><div class="muted">${esc(p.scheduleBasis||'مبنای ثبت‌نشده')} — ${esc(p.requiredSkill||p.spec||'')}</div></div>
+    <span class="badge ${p.dueStatus==='overdue'?'b-red':p.dueStatus==='due'?'b-orange':'b-blue'}">${esc(pmDueStatusText(p.dueStatus))}: ${pmDueText(p)}</span></div>`).join('')}</div>`:''}
  ${wos.length?`<div class="card" style="box-shadow:none;margin-top:10px"><b style="font-size:12.4px">🕓 سوابق نت (${fa(wos.length)})</b>
   ${wos.slice(0,8).map(w=>`<div class="list-row" style="cursor:pointer" onclick="rbOpen('wos','${w.id}')">
    <div class="list-ic" style="background:var(--surface-2)">${w.type==='PM'?'🔁':w.type==='BD'?'🚨':'🔧'}</div>
@@ -11698,10 +11602,7 @@ if(!DB.__structSeed){
     subs.forEach(([nm,owner],i)=>{
      const sub=mk({parent:sys.id,code:sys.code+String(i+1).padStart(2,'0'),name:nm,cls:k,
       crit:i===0?'A':'B',nodeKind:'sub',sysKey:k,tech:owner,sup,respUnit:'سیستم '+k,mntPrio:i===0?'A':'B'});
-     const chk=(typeof SYS_CHK!=='undefined'&&SYS_CHK[k])?SYS_CHK[k]:['بازدید عمومی','تمیزکاری'];
-     DB.pms.push({id:uid(),assetId:sub.id,title:'PM دوره‌ای — '+nm,interval:k==='ابزار دقیق'?180:30,
-      last:now,spec:k==='برق'?'برق':k==='هیدرولیک'?'هیدرولیک':k==='ابزار دقیق'?'ابزار دقیق':'مکانیک',
-      checklist:chk.slice(),kind:k==='ابزار دقیق'?'CAL':'PM',owner,sup});
+     /* PM plans are fetched from Backend; demo equipment never receives synthetic plans. */
     });
    });
    /* electrical panel with unique code */
@@ -11719,14 +11620,7 @@ if(!DB.__structSeed){
      volt:'400V AC',amp:'۴۰۰A',feeders:9,maker:'صنعت برق کرمانشاه',year:'1400',
      dwg:'DWG-EL-0518',panelNo:'P-02',ops:'در سرویس'}});
    if(typeof DB.panelCfg==='object')DB.panelCfg.seq=3;
-   /* one open inspection WO on the main panel with the standard checklist */
-   const w={id:uid(),no:'WO-'+String(DB.wos.length+1).padStart(4,'0')+'-PNL',type:'PM',assetId:pnl.id,
-    desc:'بازرسی دوره‌ای تابلو برق اصلی سالن PU — چک‌لیست استاندارد',
-    priority:'normal',assignee:tech2,status:'assigned',parts:[],times:{},createdAt:now,est:3};
-   DB.wos.push(w);
-   if(typeof attachPanelChk==='function')attachPanelChk(w);
-   DB.pms.push({id:uid(),assetId:pnl.id,title:'بازرسی سه‌ماهه تابلو برق اصلی',interval:90,last:now,
-    spec:'برق',checklist:['بررسی اتصال ارت','کنترل فیوزها','سفت بودن اتصالات','دمای تابلو','عملکرد فن'],kind:'INSP',owner:tech2,sup});
+   /* No synthetic PM plan or work-order history is attached to demo equipment. */
    DB.__structSeed=1;save();
   }
  }catch(e){DB.__structSeed=1;save();}
@@ -12221,12 +12115,11 @@ const ENT={
  /* ---------- PM PROGRAM ---------- */
  pms:{t:'برنامه نگهداری (PM)',ic:'🔁',mod:'pm',all:()=>DB.pms,find:id=>DB.pms.find(x=>x.id===id),
   title:p=>p.title,sub:p=>'هر '+fa(p.interval)+' روز — '+(p.spec||''),
-  badge:p=>{const n=new Date(p.last);n.setDate(n.getDate()+p.interval);const od=n<new Date();
-   return `<span class="badge ${od?'b-red':'b-green'}">${od?'سررسید گذشته':'سررسید: '+ircJd(n)}</span>`;},
-  info:p=>{const a=p.assetId?asset(p.assetId):null;const n=new Date(p.last);n.setDate(n.getDate()+p.interval);
+  badge:p=>`<span class="badge ${p.dueStatus==='overdue'?'b-red':p.dueStatus==='due'?'b-orange':'b-blue'}">${esc(pmDueStatusText(p.dueStatus))}: ${pmDueText(p)}</span>`,
+  info:p=>{const a=p.assetId?asset(p.assetId):null;
    return [['عنوان برنامه',esc(p.title)],['تجهیز',a?esc(a.name)+' <span class="mono muted">('+esc(a.code)+')</span>':'—'],
-    ['نوع برنامه',esc(p.kind||'PM')],['تناوب','هر '+fa(p.interval)+' روز'],['تخصص',esc(p.spec||'—')],
-    ['آخرین اجرا',ircJd(p.last)],['سررسید بعدی',ircJd(n)],
+    ['کد',esc(p.code||'—')],['مبنای زمان‌بندی',esc(p.scheduleBasis||'ثبت نشده')],['Tolerance (روز)',esc(p.toleranceDays??'—')],['تخصص',esc(p.requiredSkill||p.spec||'—')],
+    ['آخرین تکمیل',p.lastCompletedAt?ircJd(p.lastCompletedAt):'ثبت نشده'],['سررسید بعدی',esc(pmDueText(p))],['وضعیت Due',esc(pmDueStatusText(p.dueStatus))],
     ['مالک برنامه',p.owner?esc(_pget(ircUser(p.owner),'name')||''):'—'],
     ['سرپرست',p.sup?esc(_pget(ircUser(p.sup),'name')||''):'—'],
     ['تعداد آیتم چک‌لیست',fa((p.checklist||[]).length)]];},
@@ -12240,13 +12133,9 @@ const ENT={
    if(a)ircWosOf(a.id).filter(w=>w.type==='PM').slice(0,8).forEach(w=>o.push({e:'wos',id:w.id,ic:'🔁',t:w.no,s:'دستورکار PM — '+ircJd(w.createdAt)}));
    if(p.owner){const u=ircUser(p.owner);if(u)o.push({e:'users',id:u.id,ic:'👤',t:u.name,s:'مالک برنامه'});}
    return o;},
-  kpi:p=>{const a=p.assetId?asset(p.assetId):null;
-   const ws=a?ircWosOf(a.id).filter(w=>w.type==='PM'):[];
-   const n=new Date(p.last);n.setDate(n.getDate()+p.interval);
-   const days=Math.ceil((n-new Date())/864e5);
-   return [['اجراهای ثبت‌شده',fa(ws.length),'مورد'],['تا سررسید',days<0?fa(-days)+' روز تأخیر':fa(days)+' روز','مانده'],
-    ['هزینه تجمعی',money(ws.reduce((s,w)=>s+ircWoCost(w),0)),'ریال'],
-    ['آیتم چک‌لیست',fa((p.checklist||[]).length),'مورد']];},
+  kpi:p=>[['PM Compliance',PM_DUE_NA,'دادهٔ کافی و مستند از Backend ارائه نشده است'],
+   ['موعد بعدی',pmDueText(p),pmDueStatusText(p.dueStatus)],['Tolerance (روز)',p.toleranceDays==null?'ثبت نشده':fa(p.toleranceDays),'مقدار Backend'],
+   ['آیتم چک‌لیست',fa((p.checklist||[]).length),'بر اساس Plan دریافت‌شده از سرور']],
   extra:p=>(p.checklist||[]).length?`<div class="card" style="box-shadow:none;margin-top:11px"><b style="font-size:12.4px">📋 آیتم‌های چک‌لیست</b>
    ${p.checklist.map(c=>`<div class="checkline" style="margin:3px 0"><input type="checkbox" disabled> ${esc(c)}</div>`).join('')}</div>`:''},
 
@@ -13520,21 +13409,18 @@ save();
  /* --- new entity: PM programs --- */
  if(!ADV.pms)ADV.pms={t:'برنامه‌های نگهداری (PM)',rows:()=>DB.pms,
   cols:[['عنوان',p=>esc(p.title)],['تجهیز',p=>p.assetId&&asset(p.assetId)?esc(asset(p.assetId).name):'—'],
-   ['نوع',p=>esc(p.kind||'PM')],['تناوب',p=>'هر '+fa(p.interval)+' روز'],['تخصص',p=>esc(p.spec||'—')],
-   ['آخرین اجرا',p=>jDate(p.last)],
-   ['سررسید',p=>{const n=new Date(p.last);n.setDate(n.getDate()+p.interval);return jDate(n);}],
-   ['وضعیت',p=>{const n=new Date(p.last);n.setDate(n.getDate()+p.interval);
-    return n<new Date()?'<span class="badge b-red">سررسیدگذشته</span>':'<span class="badge b-green">در برنامه</span>';}]],
+   ['مبنای زمان‌بندی',p=>esc(p.scheduleBasis||'ثبت نشده')],['Tolerance (روز)',p=>p.toleranceDays==null?'ثبت نشده':fa(p.toleranceDays)],['تخصص',p=>esc(p.requiredSkill||p.spec||'—')],
+   ['آخرین تکمیل',p=>p.lastCompletedAt?jDate(p.lastCompletedAt):'ثبت نشده'],
+   ['سررسید',p=>pmDueText(p)],
+   ['وضعیت',p=>`<span class="badge ${p.dueStatus==='overdue'?'b-red':p.dueStatus==='due'?'b-orange':'b-blue'}">${esc(pmDueStatusText(p.dueStatus))}</span>`]],
   filters:[
-   {k:'spec',l:'تخصص',type:'select',opts:()=>[...new Set(DB.pms.map(p=>p.spec).filter(Boolean))].map(s=>[s,s]),test:(r,v)=>r.spec===v},
-   {k:'kind',l:'نوع برنامه',type:'select',opts:()=>[...new Set(DB.pms.map(p=>p.kind||'PM'))].map(s=>[s,s]),test:(r,v)=>(r.kind||'PM')===v},
-   {k:'due',l:'وضعیت سررسید',type:'select',opts:()=>[['over','سررسیدگذشته'],['ok','در برنامه']],
-    test:(r,v)=>{const n=new Date(r.last);n.setDate(n.getDate()+r.interval);return v==='over'?n<new Date():n>=new Date();}},
+   {k:'spec',l:'تخصص',type:'select',opts:()=>[...new Set(DB.pms.map(p=>p.requiredSkill||p.spec).filter(Boolean))].map(s=>[s,s]),test:(r,v)=>(r.requiredSkill||r.spec)===v},
+   {k:'due',l:'وضعیت سررسید',type:'select',opts:()=>[['over','عقب‌افتاده'],['due','سررسیدشده'],['scheduled','برنامه‌ریزی‌شده']],
+    test:(r,v)=>r.dueStatus===v},
    {k:'asset',l:'تجهیز',type:'select',opts:()=>DB.assets.filter(a=>a.type==='eq'&&!a.deleted).map(a=>[a.id,a.name]),test:(r,v)=>r.assetId===v},
    {k:'q',l:'جستجو',type:'text',test:(r,v)=>(r.title+' '+(r.spec||'')).includes(v)}],
-  kpis:rows=>[['برنامه‌ها',fa(rows.length)],['سررسیدگذشته',fa(rows.filter(p=>{const n=new Date(p.last);n.setDate(n.getDate()+p.interval);return n<new Date();}).length)],
-   ['میانگین تناوب',fa(Math.round(rows.reduce((s,p)=>s+p.interval,0)/Math.max(1,rows.length)))+' روز'],
-   ['تجهیزات تحت پوشش',fa(new Set(rows.map(p=>p.assetId)).size)]],
+  kpis:rows=>[['PM Compliance',PM_DUE_NA],['دادهٔ معتبر برای شاخص',PM_DUE_NA],
+   ['برنامه‌های دریافت‌شده',fa(rows.length)],['تجهیزات دارای برنامه',fa(new Set(rows.map(p=>p.assetId).filter(Boolean)).size)]],
   chart:rows=>{const st={};rows.forEach(r=>{const k=r.spec||'سایر';st[k]=(st[k]||0)+1;});
    return Object.entries(st).map(([l,v])=>({l:l.slice(0,9),v,c:'#0E7C7B'}));}};
  /* --- new entity: personnel --- */
@@ -17413,6 +17299,7 @@ setTimeout(()=>{try{const t=runQA();console.log('BFG CMMS v'+BFG_VERSION_40+' �
 <link rel="stylesheet" href="/equipment-v2/selene-chat.css?v=20261004.9">
 <link rel="stylesheet" href="/design-system/enterprise-compact.css?v=20260930.2">
 <link rel="stylesheet" href="/platform-v2/step-wizard.css?v=20261006.1">
+<link rel="stylesheet" href="/platform-v2/maintenance-pm-ui.css?v=20261028.1">
 <script src="/equipment-v2/equipment-adapter.js?v=20261012.1"></script>
 <script src="/equipment-v2/structure-drawer-controller.js?v=20261012.1"></script>
 <script src="/equipment-v2/equipment-v2.js?v=20261012.1"></script>
@@ -17425,6 +17312,7 @@ setTimeout(()=>{try{const t=runQA();console.log('BFG CMMS v'+BFG_VERSION_40+' �
 <script src="/platform-v2/step-wizard.js?v=20261012.1"></script>
 <script src="/platform-v2/equipment-wizard-adapter.js?v=20261012.1"></script>
 <script src="/platform-v2/maintenance-wizards.js?v=20261006.1"></script>
-<script src="/platform-v2/maintenance-client.js?v=20261006.1"></script>
+<script src="/platform-v2/maintenance-client.js?v=20261028.1"></script>
+<script src="/platform-v2/maintenance-pm-ui.js?v=20261028.1"></script>
 <script src="/platform-v2/inventory-client.js?v=20261004.4"></script>
 </body></html>

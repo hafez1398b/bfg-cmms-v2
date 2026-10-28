@@ -2,7 +2,10 @@
    PostgreSQL is the only store. The arrays below are a non-persistent view. */
 (function(){
   'use strict';
-  const state = window.BFGMaintenance = { installed:false, writing:false, originals:{} };
+  const state = window.BFGMaintenance = {
+    installed:false, writing:false, originals:{},
+    pm:{ includeArchived:false, selectedId:null, loading:false, loaded:false, error:null, busy:new Set(), details:null, occurrenceDetails:null }
+  };
   const MESSAGES = {
     INVALID_STATUS_TRANSITION:'تغییر وضعیت با گردش کار مجاز نیست.',
     RECORD_LOCKED:'رکورد بسته یا تأییدشده بدون گردش اصلاح بازنویسی نمی‌شود.',
@@ -28,14 +31,36 @@
     PART_NOT_FOUND:'قلم انتخاب‌شده در Master Data موجود نیست.',
     WIZARD_DRAFT_NOT_FOUND:'پیش‌نویس در Backend پیدا نشد.',
     WIZARD_DRAFT_TOO_LARGE:'حجم پیش‌نویس از حد مجاز بیشتر است.',
-    EQUIPMENT_SCOPE_DENIED:'برای مشاهدهٔ اطلاعات این تجهیز دسترسی مکانی ندارید.'
+    EQUIPMENT_SCOPE_DENIED:'برای مشاهدهٔ اطلاعات این تجهیز دسترسی مکانی ندارید.',
+    PM_SCHEDULE_DATA_REQUIRED:'دادهٔ معتبر زمان‌بندی برای این برنامه کافی نیست.',
+    PM_EVALUATED_AT_REQUIRED:'زمان ارزیابی سررسید الزامی است.',
+    PM_EVALUATED_AT_INVALID:'زمان ارزیابی سررسید معتبر نیست.',
+    PM_PERIOD_KEY_INVALID:'دورهٔ انتخاب‌شده برای این برنامه معتبر نیست.',
+    PM_PERIOD_KEY_MISMATCH:'دوره با موعد ثبت‌شده در سرور هم‌خوانی ندارد.',
+    PM_OCCURRENCE_FINAL:'وضعیت نهایی Occurrence قابل تغییر نیست.',
+    PM_OCCURRENCE_NOT_GENERATABLE:'برای این وضعیت امکان صدور دستورکار وجود ندارد.',
+    PM_CODE_CONFLICT:'کد این برنامه برای تجهیز فعال دیگری ثبت شده است؛ پس از بررسی تعارض دوباره تلاش کنید.',
+    INCLUDE_ARCHIVED_INVALID:'گزینهٔ نمایش برنامه‌های آرشیوشده معتبر نیست.'
   };
 
   function serverOnly(){ return !!(window.BFGRuntime && window.BFGRuntime.isServerOnly()); }
+  function apiBasePath(){
+    const config = window.BFGRuntime && window.BFGRuntime.state && window.BFGRuntime.state.config
+      || window.BFGBackend && window.BFGBackend.config || {};
+    return String(config.apiBasePath || '/api').replace(/\/$/, '');
+  }
   function api(path, options){ return window.bfgApi(path, options); }
   function say(error){
     const code = error && (error.payload?.error || error.message);
-    if (typeof toast === 'function') toast(MESSAGES[code] || 'عملیات در سرور مرکزی انجام نشد.', 1);
+    const status = Number(error && error.status);
+    const fallback = status === 401 ? 'نشست شما معتبر نیست؛ دوباره وارد شوید.'
+      : status === 403 ? 'مجوز لازم برای این عملیات را ندارید.'
+      : status === 404 ? 'رکورد موردنظر در سرور پیدا نشد.'
+      : status === 409 ? 'رکورد هم‌زمان تغییر کرده یا با وضعیت فعلی تعارض دارد؛ داده را تازه کنید.'
+      : status === 422 ? 'اطلاعات واردشده معتبر نیست؛ موارد لازم را بررسی کنید.'
+      : 'عملیات در سرور مرکزی انجام نشد.';
+    if (typeof toast === 'function') toast(MESSAGES[code] || fallback, 1);
+    return MESSAGES[code] || fallback;
   }
   function record(collection, id){ return (DB[collection] || []).find(item => item.id === id); }
   function reason(message){ const value = prompt(message || 'دلیل این عملیات را وارد کنید:'); return value && value.trim() ? value.trim() : null; }
@@ -90,15 +115,26 @@
 
   async function sync(options){
     if (!serverOnly() || !window.bfgApi) return;
-    const [requests, orders, plans] = await Promise.all([
-      optionalModule('/api/requests'), optionalModule('/api/work-orders'), optionalModule('/api/pm-plans')
-    ]);
-    replace('requests', requests.data || []);
-    replace('wos', orders.data || []);
-    replace('pms', plans.data || []);
-    try { mergeAssets((await api('/api/equipment?limit=200')).data); } catch (_) {}
-    try { mergeUsers(await api('/api/data/users')); } catch (_) {}
-    if (!(options && options.quiet) && typeof go === 'function' && ['requests','wos','pm'].includes(window.CUR)) go(window.CUR);
+    state.pm.loading = true; state.pm.loaded = false; state.pm.error = null;
+    const plansPath = apiBasePath() + '/pm-plans' + (state.pm.includeArchived ? '?includeArchived=true' : '');
+    try {
+      const [requests, orders, plans] = await Promise.all([
+        optionalModule('/api/requests'), optionalModule('/api/work-orders'), optionalModule(plansPath)
+      ]);
+      replace('requests', requests.data || []);
+      replace('wos', orders.data || []);
+      replace('pms', plans.data || []);
+      state.pm.loaded = true;
+      try { mergeAssets((await api(apiBasePath() + '/equipment?limit=200')).data); } catch (_) {}
+      try { mergeUsers(await api(apiBasePath() + '/data/users')); } catch (_) {}
+      if (!(options && options.quiet) && typeof go === 'function' && ['requests','wos','pm'].includes(window.CUR)) go(window.CUR);
+      return plans.data || [];
+    } catch (error) {
+      state.pm.error = error;
+      throw error;
+    } finally {
+      state.pm.loading = false;
+    }
   }
 
   function wrap(name, serverFn){

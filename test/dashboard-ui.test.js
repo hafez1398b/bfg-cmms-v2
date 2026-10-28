@@ -11,7 +11,8 @@ test('dashboard provides dependency-free radar and doughnut SVG charts',()=>{
   assert.match(html,/function radarChart\(labels,values,color=/);
   assert.match(html,/function pieChart\(segments,colors=/);
   assert.match(html,/وضعیت کلی کارخانه/);
-  assert.match(html,/radarChart\(\['OEE','Availability','PM','ایمنی','انبار'\]/);
+  assert.match(html,/radarChart\(\['OEE','Availability','ایمنی','انبار'\]/);
+  assert.match(html,/PM Compliance','N\/A — داده کافی ثبت نشده است'/);
   assert.match(html,/pieChart\(equipmentStatus,equipmentColors\)/);
   assert.doesNotMatch(html,/chart\.js|new Chart\(/i);
 });
