@@ -88,6 +88,117 @@ test('periodKeyForDueDate is UTC-stable and rejects invalid dates', () => {
   assert.throws(() => service.periodKeyForDueDate('2026-02-30'), error => error.code === 'PM_DUE_DATE_INVALID');
 });
 
+// In-memory unit fixture only: this pool is never connected to a database.
+function createPmGenerationTestPool(planOverrides = {}) {
+  const plan = {
+    id:'plan-test', asset_id:'asset-test', title:'PM test fixture', interval_days:30,
+    last_run:null, schedule_basis:'calendar', first_due_at:'2000-01-01T00:00:00.000Z',
+    next_due_at:'2000-01-01T00:00:00.000Z', last_completed_at:null, tolerance_days:0,
+    checklist:[], status:'active', row_version:1, estimated_duration_minutes:null,
+    ...planOverrides
+  };
+  const state = { occurrence:null, workOrder:null, idempotency:new Map(), occurrenceInserts:0, workOrderInserts:0 };
+  const client = {
+    async query(sql, values = []) {
+      const query = sql.trim();
+      if (['BEGIN','COMMIT','ROLLBACK'].includes(query)) return { rows:[] };
+      if (query.startsWith('SELECT * FROM pm_plans')) return { rows:[plan] };
+      if (query.startsWith('SELECT id, code, name, deleted_at FROM assets')) {
+        return { rows:[{ id:'asset-test', code:'EQ-TEST', name:'Test-only asset', deleted_at:null }] };
+      }
+      if (query.startsWith('WITH RECURSIVE ancestors')) return { rows:[{ factory_asset_id:null }] };
+      if (query.startsWith('DELETE FROM idempotency_keys')) return { rows:[] };
+      if (query.startsWith('INSERT INTO idempotency_keys')) {
+        const key = `${values[0]}:${values[1]}`;
+        if (state.idempotency.has(key)) return { rows:[] };
+        state.idempotency.set(key, { request_hash:values[2], response_status:null, response_body:null });
+        return { rows:[{ idempotency_key:values[1] }] };
+      }
+      if (query.startsWith('SELECT request_hash,response_status,response_body FROM idempotency_keys')) {
+        return { rows:[state.idempotency.get(`${values[0]}:${values[1]}`)].filter(Boolean) };
+      }
+      if (query.startsWith('UPDATE idempotency_keys SET response_status=201')) {
+        const entry = state.idempotency.get(`${values[0]}:${values[1]}`);
+        Object.assign(entry, { response_status:201, response_body:JSON.parse(values[2]), request_hash:values[3] });
+        return { rows:[] };
+      }
+      if (query.startsWith('INSERT INTO pm_occurrences')) {
+        state.occurrenceInserts += 1;
+        if (state.occurrence) return { rows:[] };
+        const [id, pmPlanId, equipmentId, periodKey, dueAt, status, createdBy] = values;
+        state.occurrence = {
+          id, pm_plan_id:pmPlanId, equipment_id:equipmentId, period_key:periodKey, due_at:dueAt,
+          status, provenance_status:'verified', row_version:1, created_by:createdBy, updated_by:createdBy
+        };
+        return { rows:[state.occurrence] };
+      }
+      if (query.startsWith('SELECT o.*, w.id AS linked_work_order_id')) {
+        if (!state.occurrence) return { rows:[] };
+        return { rows:[{ ...state.occurrence, linked_work_order_id:state.workOrder && state.workOrder.id }] };
+      }
+      if (query.startsWith('INSERT INTO maintenance_counters')) return { rows:[{ value:1 }] };
+      if (query.startsWith('INSERT INTO work_orders')) {
+        state.workOrderInserts += 1;
+        const [id, no, assetId, descr, assignee, status, pmId, occurrenceId, dueAt, sourceRef, est] = values;
+        state.workOrder = {
+          id, no, type:'PM', asset_id:assetId, descr, priority:'normal', assignee, status,
+          pm_id:pmId, occurrence_id:occurrenceId, due_at:dueAt, source_ref:sourceRef, est,
+          times:{}, parts:[], report:{}, row_version:1
+        };
+        return { rows:[state.workOrder] };
+      }
+      if (query.startsWith('SELECT w.*, a.id AS equipment_id')) {
+        return { rows:state.workOrder ? [{ ...state.workOrder, equipment_id:'asset-test', equipment_code:'EQ-TEST', equipment_name:'Test-only asset' }] : [] };
+      }
+      if (query.startsWith('INSERT INTO work_order_assets')) return { rows:[] };
+      if (query.startsWith('UPDATE pm_occurrences SET status=')) {
+        if (!state.occurrence || Number(state.occurrence.row_version) !== Number(values[1])) return { rows:[] };
+        Object.assign(state.occurrence, {
+          status:'work_order_generated', generated_at:new Date().toISOString(), updated_by:values[2],
+          row_version:state.occurrence.row_version + 1
+        });
+        return { rows:[state.occurrence] };
+      }
+      if (query.startsWith('INSERT INTO audit_x') || query.startsWith('INSERT INTO event_outbox')) return { rows:[] };
+      if (query.startsWith('SELECT u.id, u.role')) return { rows:[] };
+      throw new Error(`Unexpected fixture query: ${query}`);
+    },
+    release() {}
+  };
+  return { pool:{ connect:async () => client }, state };
+}
+
+test('PM generation with insufficient schedule data writes no occurrence or work order', async () => {
+  const { pool, state } = createPmGenerationTestPool({ first_due_at:null, next_due_at:null, last_completed_at:null });
+  const user = { id:'user-test', name:'B2 test actor', username:'b2-test', role:'admin' };
+  await assert.rejects(
+    service.generatePmWorkOrder(pool, user, 'plan-test', { rowVersion:1 }),
+    error => error.code === 'PM_SCHEDULE_DATA_REQUIRED'
+  );
+  assert.equal(state.occurrenceInserts, 0);
+  assert.equal(state.workOrderInserts, 0);
+  assert.equal(state.idempotency.size, 0);
+});
+
+test('explicit PM generation creates one linked occurrence/work order and safely replays retries', async () => {
+  const { pool, state } = createPmGenerationTestPool();
+  const user = { id:'user-test', name:'B2 test actor', username:'b2-test', role:'admin' };
+  const input = { rowVersion:1 };
+  const first = await service.generatePmWorkOrder(pool, user, 'plan-test', input);
+  const replay = await service.generatePmWorkOrder(pool, user, 'plan-test', input);
+  const sameOccurrenceWithDifferentRequestKey = await service.generatePmWorkOrder(
+    pool, user, 'plan-test', { ...input, idempotencyKey:'second-test-key' }
+  );
+  assert.equal(state.occurrenceInserts, 1);
+  assert.equal(state.workOrderInserts, 1);
+  assert.equal(first.occurrence.status, 'work_order_generated');
+  assert.equal(first.workOrder.occurrenceId, first.occurrence.id);
+  assert.equal(replay.idempotentReplay, true);
+  assert.equal(replay.workOrder.id, first.workOrder.id);
+  assert.equal(sameOccurrenceWithDifferentRequestKey.workOrder.id, first.workOrder.id);
+  assert.equal(state.workOrder.due_at, first.occurrence.dueAt);
+});
+
 test('regression: PM generation cannot update last_run and must link an occurrence', () => {
   const source = read('server/maintenance-service.js');
   const generate = source.slice(source.indexOf('async function generatePmWorkOrder'), source.indexOf('async function equipmentLinks'));

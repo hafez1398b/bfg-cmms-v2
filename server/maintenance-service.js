@@ -251,6 +251,7 @@ function workOrderDto(row) {
     desc: row.descr, descr: row.descr, priority: row.priority, assignee: row.assignee,
     status: row.status, reqId: row.req_id, pmId: row.pm_id, ptw: row.ptw === true,
     ptwId: row.ptw_id || null, permitStatus: row.permit_status || (row.ptw ? 'pending_issuance' : 'not_required'),
+    occurrenceId:row.occurrence_id || null, dueAt:row.due_at || null,
     failureType: row.failure_type || null, probableCauses: asArray(row.probable_causes),
     confirmedRootCause: row.confirmed_root_cause || null, recommendedAction: row.recommended_action || null,
     performedAction: row.performed_action || null, requiredParts: asArray(row.required_parts),
@@ -318,6 +319,51 @@ async function withPmTransaction(pool, work) {
   } catch (error) {
     throw mapPmDatabaseError(error);
   }
+}
+
+async function reservePmGenerationRequest(client, userId, idempotencyKey, requestHash) {
+  await client.query(
+    `DELETE FROM idempotency_keys WHERE user_id=$1 AND idempotency_key=$2 AND expires_at<=now()`,
+    [userId, idempotencyKey]
+  );
+  const inserted = await client.query(
+    `INSERT INTO idempotency_keys(user_id,idempotency_key,request_hash,expires_at)
+     VALUES($1,$2,$3,now()+interval '24 hours')
+     ON CONFLICT(user_id,idempotency_key) DO NOTHING RETURNING idempotency_key`,
+    [userId, idempotencyKey, requestHash]
+  );
+  if (inserted.rows[0]) return null;
+  const existing = await client.query(
+    `SELECT request_hash,response_status,response_body FROM idempotency_keys
+     WHERE user_id=$1 AND idempotency_key=$2 FOR UPDATE`, [userId, idempotencyKey]
+  );
+  const row = existing.rows[0];
+  if (!row) throw coded(409, 'DUPLICATE_REQUEST_PENDING');
+  if (row.request_hash !== requestHash) throw coded(409, 'IDEMPOTENCY_KEY_REUSED');
+  if (Number(row.response_status) !== 201 || !row.response_body) throw coded(409, 'DUPLICATE_REQUEST_PENDING');
+  const body = typeof row.response_body === 'string' ? JSON.parse(row.response_body) : row.response_body;
+  if (!body || !body.occurrence || !body.workOrder) throw coded(409, 'DUPLICATE_REQUEST_PENDING');
+  return body;
+}
+
+async function findPmOccurrence(client, planId, periodKey) {
+  const { rows } = await client.query(
+    `SELECT o.*, w.id AS linked_work_order_id
+     FROM pm_occurrences o LEFT JOIN work_orders w ON w.occurrence_id=o.id
+     WHERE o.pm_plan_id=$1 AND o.period_key=$2 FOR UPDATE OF o`,
+    [planId, periodKey]
+  );
+  return rows[0] || null;
+}
+
+async function findPmWorkOrder(client, occurrenceId) {
+  const { rows } = await client.query(
+    `SELECT w.*, a.id AS equipment_id, a.code AS equipment_code, a.name AS equipment_name
+     FROM work_orders w LEFT JOIN assets a ON a.id=w.asset_id
+     WHERE w.occurrence_id=$1 ORDER BY w.created_at LIMIT 1 FOR UPDATE OF w`,
+    [occurrenceId]
+  );
+  return rows[0] || null;
 }
 
 async function nextNumber(client, name, prefix) {
@@ -1148,33 +1194,106 @@ async function cancelPmPlan(pool, user, id, input) {
 
 async function generatePmWorkOrder(pool, user, id, input) {
   const rowVersion = versionOf(input.rowVersion);
-  return withTransaction(pool, async client => {
+  return withPmTransaction(pool, async client => {
     const current = await lockRow(client, 'pm_plans', id);
     if (Number(current.row_version) !== rowVersion) throw coded(409, 'VERSION_CONFLICT');
-    if (LOCKED_PM.has(current.status)) throw coded(409, 'RECORD_LOCKED');
+    if (LOCKED_PM.has(current.status) || current.archived_at) throw coded(409, 'RECORD_LOCKED');
     await requireEquipment(client, current.asset_id, true);
-    const workOrderId = crypto.randomUUID();
-    const no = await nextNumber(client, 'work_order', 'WO');
-    const checklist = asArray(current.checklist);
-    const descr = `${current.title}${checklist.length ? ' — ' + checklist.join('، ') : ''}`;
-    const created = await client.query(
-      `INSERT INTO work_orders(id,no,type,asset_id,descr,priority,assignee,status,pm_id,times,parts,report,est)
-       VALUES($1,$2,'PM',$3,$4,'normal',$5,$6,$7,'{}'::jsonb,'[]'::jsonb,'{}'::jsonb,2) RETURNING *`,
-      [workOrderId, no, current.asset_id, descr, current.owner || null, current.owner ? 'assigned' : 'open', current.id]
+
+    const evaluatedAt = new Date();
+    const due = calculatePmDue(current, evaluatedAt);
+    if (!due.nextDueAt || due.dueStatus === 'insufficient_data') {
+      throw Object.assign(coded(422, 'PM_SCHEDULE_DATA_REQUIRED'), { reason:due.reason || 'due_date_unavailable' });
+    }
+    const periodKey = periodKeyForDueDate(due.nextDueAt, current.schedule_basis);
+    const requestedKey = String(input.idempotencyKey || input.requestId || `pm-generate:${id}:${periodKey}`).trim();
+    if (!requestedKey || requestedKey.length > 240) throw coded(422, 'PM_IDEMPOTENCY_KEY_INVALID');
+    const requestHash = crypto.createHash('sha256').update(JSON.stringify({ planId:String(id), periodKey })).digest('hex');
+    const replay = await reservePmGenerationRequest(client, user.id, requestedKey, requestHash);
+    if (replay) return { ...replay, idempotentReplay:true };
+
+    let occurrence = await findPmOccurrence(client, id, periodKey);
+    if (!occurrence) {
+      const occurrenceId = crypto.randomUUID();
+      const inserted = await client.query(
+        `INSERT INTO pm_occurrences(id,pm_plan_id,equipment_id,period_key,due_at,status,provenance_status,row_version,created_by,updated_by)
+         VALUES($1,$2,$3,$4,$5,$6,'verified',1,$7,$7)
+         ON CONFLICT(pm_plan_id,period_key) DO NOTHING RETURNING *`,
+        [occurrenceId, id, current.asset_id, periodKey, due.nextDueAt, due.dueStatus, user.id]
+      );
+      occurrence = inserted.rows[0] || await findPmOccurrence(client, id, periodKey);
+      if (!occurrence) throw coded(409, 'PM_OCCURRENCE_CONFLICT');
+    }
+    if (PM_OCCURRENCE_FINAL_STATES.has(occurrence.status)) throw coded(409, 'PM_OCCURRENCE_NOT_GENERATABLE');
+
+    let workOrder = occurrence.linked_work_order_id
+      ? await findPmWorkOrder(client, occurrence.id)
+      : null;
+    if (occurrence.linked_work_order_id && !workOrder) throw coded(409, 'PM_OCCURRENCE_WORK_ORDER_INCONSISTENT');
+    let updatedOccurrence = occurrence;
+    if (workOrder) {
+      if (occurrence.status !== 'work_order_generated') {
+        const { rows } = await client.query(
+          `UPDATE pm_occurrences SET status='work_order_generated',generated_at=COALESCE(generated_at,now()),
+             updated_at=now(),updated_by=$3,row_version=row_version+1
+           WHERE id=$1 AND row_version=$2 RETURNING *`,
+          [occurrence.id, Number(occurrence.row_version), user.id]
+        );
+        if (!rows[0]) throw coded(409, 'VERSION_CONFLICT');
+        updatedOccurrence = rows[0];
+        await audit(client, user, 'reconcile', 'pm_occurrence', occurrence.id, occurrence, updatedOccurrence, 'بازیابی اتصال دستورکار موجود');
+      }
+    } else {
+      if (occurrence.status === 'work_order_generated') throw coded(409, 'PM_OCCURRENCE_WORK_ORDER_INCONSISTENT');
+      if (!PM_OCCURRENCE_STATES.has(occurrence.status) || !['scheduled','due','overdue'].includes(occurrence.status)) {
+        throw coded(409, 'PM_OCCURRENCE_NOT_GENERATABLE');
+      }
+      const workOrderId = crypto.randomUUID();
+      const no = await nextNumber(client, 'work_order', 'WO');
+      const checklist = asArray(current.checklist);
+      const descr = `${current.title}${checklist.length ? ' — ' + checklist.join('، ') : ''}`;
+      const estimatedHours = Number(current.estimated_duration_minutes) > 0
+        ? Number(current.estimated_duration_minutes) / 60 : null;
+      const created = await client.query(
+        `INSERT INTO work_orders(id,no,type,asset_id,descr,priority,assignee,status,pm_id,occurrence_id,due_at,source_ref,times,parts,report,est)
+         VALUES($1,$2,'PM',$3,$4,'normal',$5,$6,$7,$8,$9,$10,'{}'::jsonb,'[]'::jsonb,'{}'::jsonb,$11) RETURNING *`,
+        [workOrderId, no, current.asset_id, descr, current.owner || null, current.owner ? 'assigned' : 'open',
+          current.id, occurrence.id, occurrence.due_at, `pm:${id}:${periodKey}`, estimatedHours]
+      );
+      workOrder = created.rows[0];
+      await linkWorkOrderAsset(client, workOrderId, current.asset_id);
+      const { rows } = await client.query(
+        `UPDATE pm_occurrences SET status='work_order_generated',generated_at=now(),updated_at=now(),
+           updated_by=$3,row_version=row_version+1
+         WHERE id=$1 AND row_version=$2 RETURNING *`,
+        [occurrence.id, Number(occurrence.row_version), user.id]
+      );
+      if (!rows[0]) throw coded(409, 'VERSION_CONFLICT');
+      updatedOccurrence = rows[0];
+      await audit(client, user, 'create', 'pm_occurrence', occurrence.id, null, updatedOccurrence, periodKey);
+      await audit(client, user, 'generate', 'pm_plan', id, current, current, no);
+      await audit(client, user, 'create', 'work_order', workOrderId, null, workOrder, `صدور از PM ${current.title}`);
+      await publish(client, user, {
+        type:'pm_plan.generated', aggregateType:'pm_plan', aggregateId:id, permission:'pm.view',
+        equipmentId:current.asset_id, payload:{ id, workOrderId, occurrenceId:occurrence.id, periodKey, assetId:current.asset_id }
+      });
+      await publish(client, user, {
+        type:'work_order.created', aggregateType:'work_order', aggregateId:workOrderId, permission:'work_order.view',
+        equipmentId:current.asset_id, payload:{ id:workOrderId, no, assetId:current.asset_id, pmId:id, occurrenceId:occurrence.id }
+      });
+    }
+
+    const result = {
+      plan:pmDto(current, evaluatedAt),
+      occurrence:occurrenceDto({ ...updatedOccurrence, linked_work_order_id:workOrder.id }),
+      workOrder:workOrderDto(workOrder)
+    };
+    await client.query(
+      `UPDATE idempotency_keys SET response_status=201,response_body=$3::jsonb,expires_at=now()+interval '24 hours'
+       WHERE user_id=$1 AND idempotency_key=$2 AND request_hash=$4`,
+      [user.id, requestedKey, JSON.stringify(result), requestHash]
     );
-    await linkWorkOrderAsset(client, workOrderId, current.asset_id);
-    const updated = await writeUpdate(client, 'pm_plans', id, rowVersion, user.id, { last_run: new Date().toISOString() });
-    await audit(client, user, 'generate', 'pm_plan', id, current, updated, no);
-    await audit(client, user, 'create', 'work_order', workOrderId, null, created.rows[0], `صدور از PM ${current.title}`);
-    await publish(client, user, {
-      type: 'pm_plan.generated', aggregateType: 'pm_plan', aggregateId: id, permission: 'pm.view',
-      equipmentId: current.asset_id, payload: { id, workOrderId, assetId: current.asset_id }
-    });
-    await publish(client, user, {
-      type: 'work_order.created', aggregateType: 'work_order', aggregateId: workOrderId, permission: 'work_order.view',
-      equipmentId: current.asset_id, payload: { id: workOrderId, no, assetId: current.asset_id, pmId: id }
-    });
-    return { plan: pmDto(updated), workOrder: workOrderDto(created.rows[0]) };
+    return result;
   });
 }
 
