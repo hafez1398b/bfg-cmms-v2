@@ -25,6 +25,8 @@ const WORK_ORDER_FLOW = {
 const LOCKED_REQUEST = new Set(['approved', 'wo', 'closed', 'rejected', 'cancelled']);
 const LOCKED_WORK_ORDER = new Set(['done', 'closed', 'cancel']);
 const LOCKED_PM = new Set(['cancelled']);
+const PM_OCCURRENCE_STATES = new Set(['scheduled', 'due', 'overdue', 'work_order_generated', 'in_progress', 'completed', 'cancelled', 'skipped']);
+const PM_OCCURRENCE_FINAL_STATES = new Set(['completed', 'cancelled', 'skipped']);
 const CANCELLABLE_WORK_ORDER = new Set(['draft', 'open', 'assigned', 'seen', 'doing', 'hold']);
 
 function coded(status, code) {
@@ -122,28 +124,40 @@ function nextDueAtForPlan(plan = {}) {
   const basis = String(plan.schedule_basis || plan.scheduleBasis || '').toLowerCase();
   if (basis !== 'calendar') return null;
   const lastCompletedAt = timestampIso(plan.last_completed_at ?? plan.lastCompletedAt);
+  const storedNextDueAt = timestampIso(plan.next_due_at ?? plan.nextDueAt);
   const firstDueAt = timestampIso(plan.first_due_at ?? plan.firstDueAt);
   const interval = plan.interval_days ?? plan.intervalDays ?? plan.interval;
-  if (lastCompletedAt) return calendarDaysFrom(lastCompletedAt, interval);
-  return firstDueAt;
+  if (lastCompletedAt) {
+    if (storedNextDueAt && Date.parse(storedNextDueAt) > Date.parse(lastCompletedAt)) return storedNextDueAt;
+    return calendarDaysFrom(lastCompletedAt, interval);
+  }
+  return storedNextDueAt || firstDueAt;
 }
 
-function calculatePmDue(plan = {}, now = new Date()) {
+function calculatePmDue(plan = {}, evaluatedAt) {
+  const insufficient = reason => ({ nextDueAt:null, dueStatus:'insufficient_schedule_data', reason });
+  const basis = String(plan.schedule_basis || plan.scheduleBasis || '').toLowerCase();
+  if (!basis) return insufficient('schedule_basis_missing');
+  if (basis !== 'calendar') return insufficient('unsupported_schedule_basis');
   const nextDueAt = nextDueAtForPlan(plan);
+  if (!nextDueAt) {
+    const completed = timestampIso(plan.last_completed_at ?? plan.lastCompletedAt);
+    return insufficient(completed ? 'calendar_interval_missing_or_invalid' : 'first_or_next_due_at_missing');
+  }
   const archived = Boolean(plan.archived_at || plan.archivedAt || plan.deleted_at || plan.deletedAt);
+  if (archived) return { nextDueAt, dueStatus:'archived', reason:null };
   const state = String(plan.status || 'active').toLowerCase();
-  if (archived) return { nextDueAt, dueStatus:'archived' };
-  if (state === 'paused' || state === 'cancelled' || state === 'inactive') return { nextDueAt, dueStatus:'paused' };
-  if (!nextDueAt) return { nextDueAt:null, dueStatus:'insufficient_schedule_data' };
-  const dueTime = Date.parse(nextDueAt);
-  const currentTime = now instanceof Date ? now.getTime() : Date.parse(now);
-  if (!Number.isFinite(dueTime) || !Number.isFinite(currentTime)) return { nextDueAt:null, dueStatus:'insufficient_schedule_data' };
-  const toleranceDays = Math.max(0, Number(plan.tolerance_days ?? plan.toleranceDays) || 0);
-  const dueDay = Math.floor(dueTime / 86400000);
-  const currentDay = Math.floor(currentTime / 86400000);
-  if (currentDay < dueDay) return { nextDueAt, dueStatus:'scheduled' };
-  if (currentDay <= dueDay + toleranceDays) return { nextDueAt, dueStatus:'due' };
-  return { nextDueAt, dueStatus:'overdue' };
+  if (state === 'paused' || state === 'cancelled' || state === 'inactive') return { nextDueAt, dueStatus:'paused', reason:null };
+  const evaluationIso = timestampIso(evaluatedAt);
+  if (!evaluationIso) return insufficient(evaluatedAt == null ? 'evaluation_time_required' : 'evaluation_time_invalid');
+  const toleranceValue = Number(plan.tolerance_days ?? plan.toleranceDays ?? 0);
+  if (!Number.isInteger(toleranceValue) || toleranceValue < 0) return insufficient('tolerance_days_invalid');
+  const dueDay = Math.floor(Date.parse(nextDueAt) / 86400000);
+  const currentDay = Math.floor(Date.parse(evaluationIso) / 86400000);
+  if (!Number.isFinite(dueDay) || !Number.isFinite(currentDay)) return insufficient('schedule_date_invalid');
+  if (currentDay < dueDay) return { nextDueAt, dueStatus:'scheduled', reason:null };
+  if (currentDay <= dueDay + toleranceValue) return { nextDueAt, dueStatus:'due', reason:null };
+  return { nextDueAt, dueStatus:'overdue', reason:null };
 }
 
 function periodKeyForDueDate(value, basis = 'calendar') {
@@ -156,7 +170,7 @@ function occurrenceDto(row) {
   return {
     id:row.id, pmPlanId:row.pm_plan_id, equipmentId:row.equipment_id, periodKey:row.period_key,
     dueAt:row.due_at, dueMeterValue:row.due_meter_value == null ? null : Number(row.due_meter_value),
-    status:row.status, workOrderId:row.work_order_id || null, generatedAt:row.generated_at || null,
+    status:row.status, workOrderId:row.linked_work_order_id || null, generatedAt:row.generated_at || null,
     startedAt:row.started_at || null, completedAt:row.completed_at || null, cancelledAt:row.cancelled_at || null,
     cancellationReason:row.cancellation_reason || null, completionSource:row.completion_source || null,
     provenanceStatus:row.provenance_status || 'verified', rowVersion:Number(row.row_version),
@@ -224,13 +238,13 @@ function workOrderDto(row) {
   };
 }
 
-function pmDto(row) {
+function pmDto(row, evaluatedAt) {
   const checklist = asArray(row.checklist).map(item => typeof item === 'string' ? item : (item.text || item.item || item.title || '')).filter(Boolean);
-  const due = calculatePmDue(row);
+  const due = calculatePmDue(row, evaluatedAt);
   return {
     id:row.id, code:row.code || null, assetId:row.asset_id, equipment:equipmentOf(row), title:row.title,
     interval:row.interval_days, intervalDays:row.interval_days, scheduleBasis:row.schedule_basis || null,
-    firstDueAt:row.first_due_at || null, nextDueAt:due.nextDueAt, dueStatus:due.dueStatus,
+    firstDueAt:row.first_due_at || null, nextDueAt:due.nextDueAt, dueStatus:due.dueStatus, dueReason:due.reason || null,
     periodKey:due.nextDueAt && String(row.schedule_basis || '').toLowerCase() === 'calendar' ? `calendar:${due.nextDueAt.slice(0, 10)}` : null,
     toleranceDays:Number(row.tolerance_days || 0), last:row.last_completed_at || null,
     lastCompletedAt:row.last_completed_at || null, provenanceStatus:row.provenance_status || 'legacy_unverified',
@@ -259,6 +273,26 @@ async function withTransaction(pool, work) {
     throw error;
   } finally {
     client.release();
+  }
+}
+
+function mapPmDatabaseError(error) {
+  if (error && error.code === '23505') {
+    const constraint = String(error.constraint || '');
+    if (constraint.includes('pm_plans_active_asset_code')) return coded(409, 'PM_CODE_CONFLICT');
+    if (constraint.includes('pm_occurrences_plan_period')) return coded(409, 'PM_OCCURRENCE_CONFLICT');
+    if (constraint.includes('work_orders_occurrence')) return coded(409, 'PM_OCCURRENCE_WORK_ORDER_CONFLICT');
+    return coded(409, 'PM_UNIQUE_CONFLICT');
+  }
+  if (error && error.code === '23503') return coded(409, 'PM_REFERENCE_CONFLICT');
+  return error;
+}
+
+async function withPmTransaction(pool, work) {
+  try {
+    return await withTransaction(pool, work);
+  } catch (error) {
+    throw mapPmDatabaseError(error);
   }
 }
 
