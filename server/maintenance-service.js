@@ -310,6 +310,8 @@ function mapPmDatabaseError(error) {
     return coded(409, 'PM_UNIQUE_CONFLICT');
   }
   if (error && error.code === '23503') return coded(409, 'PM_REFERENCE_CONFLICT');
+  if (error && ['40P01','40001'].includes(error.code)) return coded(409, 'VERSION_CONFLICT');
+  if (error && /^[0-9A-Z]{5}$/.test(String(error.code))) return coded(500, 'PM_TRANSACTION_FAILED');
   return error;
 }
 
@@ -319,6 +321,59 @@ async function withPmTransaction(pool, work) {
   } catch (error) {
     throw mapPmDatabaseError(error);
   }
+}
+
+async function lockPmWorkOrderContext(client, workOrder) {
+  if (!workOrder.occurrence_id) return null;
+  if (!workOrder.pm_id) throw coded(409, 'PM_OCCURRENCE_LINK_MISMATCH');
+  const { rows:plans } = await client.query('SELECT * FROM pm_plans WHERE id=$1 FOR UPDATE', [workOrder.pm_id]);
+  const plan = plans[0];
+  if (!plan || plan.deleted_at) throw coded(409, 'PM_PLAN_NOT_FOUND');
+  const { rows:occurrences } = await client.query('SELECT * FROM pm_occurrences WHERE id=$1 FOR UPDATE', [workOrder.occurrence_id]);
+  const occurrence = occurrences[0];
+  if (!occurrence) throw coded(409, 'PM_OCCURRENCE_NOT_FOUND');
+  if (String(occurrence.pm_plan_id) !== String(workOrder.pm_id)
+    || String(occurrence.equipment_id) !== String(workOrder.asset_id)
+    || String(plan.id) !== String(workOrder.pm_id)
+    || String(plan.asset_id) !== String(occurrence.equipment_id)) {
+    throw coded(409, 'PM_OCCURRENCE_LINK_MISMATCH');
+  }
+  if (!PM_OCCURRENCE_STATES.has(occurrence.status)) throw coded(409, 'PM_OCCURRENCE_STATUS_INVALID');
+  return { plan, occurrence };
+}
+
+function assertPmStartConsistency(workOrder, occurrence) {
+  if (occurrence.status !== 'in_progress') throw coded(409, 'PM_START_INCONSISTENT');
+  const workStart = parsePmTimestamp(asObject(workOrder.times).start, 'PM_START_INCONSISTENT');
+  const occurrenceStart = parsePmTimestamp(occurrence.started_at, 'PM_START_INCONSISTENT');
+  if (!workStart || !occurrenceStart || Date.parse(workStart) !== Date.parse(occurrenceStart)) {
+    throw coded(409, 'PM_START_INCONSISTENT');
+  }
+}
+
+function assertPmCompletionConsistency(workOrder, context) {
+  const { plan, occurrence } = context;
+  if (occurrence.status !== 'completed' || occurrence.completion_source !== 'work_order') {
+    throw coded(409, 'PM_COMPLETION_INCONSISTENT');
+  }
+  assertPmStartConsistency(workOrder, { ...occurrence, status:'in_progress' });
+  const workEnd = parsePmTimestamp(asObject(workOrder.times).end, 'PM_COMPLETION_INCONSISTENT');
+  const occurrenceEnd = parsePmTimestamp(occurrence.completed_at, 'PM_COMPLETION_INCONSISTENT');
+  const planLastCompleted = parsePmTimestamp(plan.last_completed_at, 'PM_COMPLETION_INCONSISTENT');
+  const planNextDue = parsePmTimestamp(plan.next_due_at, 'PM_COMPLETION_INCONSISTENT');
+  if (!workEnd || !occurrenceEnd || !planLastCompleted
+    || Date.parse(workEnd) !== Date.parse(occurrenceEnd)
+    || Date.parse(planLastCompleted) < Date.parse(occurrenceEnd)) {
+    throw coded(409, 'PM_COMPLETION_INCONSISTENT');
+  }
+  const expected = calculatePmDue({
+    schedule_basis:plan.schedule_basis,
+    interval_days:plan.interval_days,
+    last_completed_at:planLastCompleted,
+    next_due_at:null,
+    tolerance_days:plan.tolerance_days
+  }, planLastCompleted);
+  if (expected.nextDueAt !== planNextDue) throw coded(409, 'PM_COMPLETION_INCONSISTENT');
 }
 
 async function reservePmGenerationRequest(client, userId, idempotencyKey, requestHash) {
@@ -360,7 +415,7 @@ async function findPmWorkOrder(client, occurrenceId) {
   const { rows } = await client.query(
     `SELECT w.*, a.id AS equipment_id, a.code AS equipment_code, a.name AS equipment_name
      FROM work_orders w LEFT JOIN assets a ON a.id=w.asset_id
-     WHERE w.occurrence_id=$1 ORDER BY w.created_at LIMIT 1 FOR UPDATE OF w`,
+     WHERE w.occurrence_id=$1 ORDER BY w.created_at LIMIT 1`,
     [occurrenceId]
   );
   return rows[0] || null;
@@ -945,10 +1000,19 @@ async function linkWorkOrderPermit(pool, user, id, input) {
 async function transitionWorkOrder(pool, user, id, input) {
   const rowVersion = versionOf(input.rowVersion);
   const status = String(input.status || '');
-  return withTransaction(pool, async client => {
+  return withPmTransaction(pool, async client => {
     const current = await lockRow(client, 'work_orders', id);
-    if (Number(current.row_version) !== rowVersion) throw coded(409, 'VERSION_CONFLICT');
+    const currentVersion = Number(current.row_version);
+    const samePmRetry = current.occurrence_id && current.status === status && ['doing','done'].includes(status);
+    if (samePmRetry && currentVersion >= rowVersion && currentVersion - rowVersion <= 1) {
+      const context = await lockPmWorkOrderContext(client, current);
+      if (status === 'doing') assertPmStartConsistency(current, context.occurrence);
+      else assertPmCompletionConsistency(current, context);
+      return workOrderDto(current);
+    }
+    if (currentVersion !== rowVersion) throw coded(409, 'VERSION_CONFLICT');
     assertTransition(WORK_ORDER_FLOW, current.status, status);
+
     let permitStatus = current.permit_status || (current.ptw ? 'pending_issuance' : 'not_required');
     if (status === 'doing' && current.ptw === true) {
       if (!current.ptw_id) throw coded(409, 'WORK_PERMIT_REQUIRED');
@@ -956,34 +1020,118 @@ async function transitionWorkOrder(pool, user, id, input) {
       if (!permitIsIssued(permit)) throw coded(409, 'WORK_PERMIT_REQUIRED');
       permitStatus = 'issued';
     }
+
+    const existingStart = Boolean(asObject(current.times).start);
     const times = asObject(current.times);
     const report = asObject(current.report);
-    if (status === 'seen' && !times.seen) times.seen = new Date().toISOString();
-    if (status === 'doing' && !times.start) times.start = new Date().toISOString();
+    const transitionAt = ['doing','done'].includes(status) ? new Date().toISOString() : null;
+    if (status === 'seen' && !times.seen) times.seen = transitionAt || new Date().toISOString();
+    if (status === 'doing' && !times.start) times.start = transitionAt;
     if (status === 'hold') current.hold_reason = reasonOf(input.reason, 'HOLD_REASON_REQUIRED');
     if (status === 'done') {
       const text = String(input.report?.text || '').trim();
       if (!text) throw coded(422, 'REPORT_REQUIRED');
-      times.end = new Date().toISOString();
+      if (current.occurrence_id && times.end) throw coded(409, 'WORK_ORDER_COMPLETION_INCONSISTENT');
+      times.end = transitionAt;
       report.text = text;
       report.cause = input.report.cause || null;
       current.performed_action = text;
       report.by = user.id;
-      report.at = times.end;
+      report.at = transitionAt;
     }
     if (status === 'closed' && !hasExecutionHistory({ ...current, times, report })) throw coded(409, 'WORK_ORDER_NOT_EXECUTED');
+
+    let pmContext = null;
+    if (current.occurrence_id && ['doing','done','closed'].includes(status)) {
+      pmContext = await lockPmWorkOrderContext(client, current);
+      const occurrence = pmContext.occurrence;
+      if (status === 'doing') {
+        if (PM_OCCURRENCE_FINAL_STATES.has(occurrence.status)) throw coded(409, 'PM_OCCURRENCE_NOT_STARTABLE');
+        if (occurrence.status === 'work_order_generated') {
+          if (occurrence.started_at || existingStart) throw coded(409, 'PM_START_INCONSISTENT');
+        } else if (occurrence.status === 'in_progress') {
+          if (current.status !== 'hold') throw coded(409, 'PM_START_INCONSISTENT');
+          assertPmStartConsistency(current, occurrence);
+        } else {
+          throw coded(409, 'PM_OCCURRENCE_NOT_STARTABLE');
+        }
+      } else if (status === 'done') {
+        if (occurrence.status === 'completed' || PM_OCCURRENCE_FINAL_STATES.has(occurrence.status)) {
+          throw coded(409, 'PM_OCCURRENCE_ALREADY_FINAL');
+        }
+        if (occurrence.status !== 'in_progress') throw coded(409, 'PM_OCCURRENCE_NOT_IN_PROGRESS');
+        assertPmStartConsistency(current, occurrence);
+      } else {
+        assertPmCompletionConsistency(current, pmContext);
+      }
+    }
+
     const updated = await writeUpdate(client, 'work_orders', id, rowVersion, user.id, {
       status,
       times: JSON.stringify(times),
       report: JSON.stringify(report),
-      performed_action: status === 'done' ? current.performed_action : current.performed_action,
+      performed_action: current.performed_action,
       permit_status: permitStatus,
-      hold_reason: status === 'hold' ? current.hold_reason : current.hold_reason
+      hold_reason: current.hold_reason
     });
+
+    let updatedOccurrence = null;
+    let updatedPlan = null;
+    if (status === 'doing' && pmContext?.occurrence.status === 'work_order_generated') {
+      const { rows } = await client.query(
+        `UPDATE pm_occurrences SET status='in_progress',started_at=$3,updated_at=now(),updated_by=$4,row_version=row_version+1
+         WHERE id=$1 AND row_version=$2 AND status='work_order_generated' RETURNING *`,
+        [pmContext.occurrence.id, Number(pmContext.occurrence.row_version), transitionAt, user.id]
+      );
+      if (!rows[0]) throw coded(409, 'VERSION_CONFLICT');
+      updatedOccurrence = rows[0];
+      await audit(client, user, 'start', 'pm_occurrence', updatedOccurrence.id, pmContext.occurrence, updatedOccurrence, 'شروع دستورکار');
+      await publish(client, user, {
+        type:'pm_occurrence.started', aggregateType:'pm_occurrence', aggregateId:updatedOccurrence.id, permission:'pm.view',
+        equipmentId:updatedOccurrence.equipment_id, payload:{ id:updatedOccurrence.id, pmPlanId:updatedOccurrence.pm_plan_id,
+          workOrderId:id, status:updatedOccurrence.status, startedAt:updatedOccurrence.started_at }
+      });
+    }
+
+    if (status === 'done' && pmContext) {
+      const completionAt = parsePmTimestamp(asObject(updated.times).end, 'WORK_ORDER_COMPLETION_INCONSISTENT');
+      if (!completionAt) throw coded(409, 'WORK_ORDER_COMPLETION_INCONSISTENT');
+      const nextDue = calculatePmDue({
+        schedule_basis:pmContext.plan.schedule_basis,
+        interval_days:pmContext.plan.interval_days,
+        last_completed_at:completionAt,
+        next_due_at:null,
+        tolerance_days:pmContext.plan.tolerance_days
+      }, completionAt);
+      const { rows:occurrenceRows } = await client.query(
+        `UPDATE pm_occurrences SET status='completed',completed_at=$3,completion_source='work_order',
+           updated_at=now(),updated_by=$4,row_version=row_version+1
+         WHERE id=$1 AND row_version=$2 AND status='in_progress' RETURNING *`,
+        [pmContext.occurrence.id, Number(pmContext.occurrence.row_version), completionAt, user.id]
+      );
+      if (!occurrenceRows[0]) throw coded(409, 'VERSION_CONFLICT');
+      updatedOccurrence = occurrenceRows[0];
+      const { rows:planRows } = await client.query(
+        `UPDATE pm_plans SET last_completed_at=$3,next_due_at=$4,updated_at=now(),updated_by=$5,row_version=row_version+1
+         WHERE id=$1 AND row_version=$2 AND deleted_at IS NULL RETURNING *`,
+        [pmContext.plan.id, Number(pmContext.plan.row_version), completionAt, nextDue.nextDueAt, user.id]
+      );
+      if (!planRows[0]) throw coded(409, 'VERSION_CONFLICT');
+      updatedPlan = planRows[0];
+      await audit(client, user, 'complete', 'pm_occurrence', updatedOccurrence.id, pmContext.occurrence, updatedOccurrence, 'تکمیل مستند Work Order');
+      await audit(client, user, 'complete', 'pm_plan', updatedPlan.id, pmContext.plan, updatedPlan, id);
+      await publish(client, user, {
+        type:'pm_occurrence.completed', aggregateType:'pm_occurrence', aggregateId:updatedOccurrence.id, permission:'pm.view',
+        equipmentId:updatedOccurrence.equipment_id, payload:{ id:updatedOccurrence.id, pmPlanId:updatedOccurrence.pm_plan_id,
+          workOrderId:id, status:updatedOccurrence.status, completedAt:updatedOccurrence.completed_at,
+          completionSource:updatedOccurrence.completion_source, nextDueAt:updatedPlan.next_due_at }
+      });
+    }
+
     await audit(client, user, 'transition', 'work_order', id, current, updated, status);
     await publish(client, user, {
-      type: 'work_order.transitioned', aggregateType: 'work_order', aggregateId: id, permission: 'work_order.view',
-      equipmentId: current.asset_id, payload: { id, status, assetId: current.asset_id, rowVersion: Number(updated.row_version) }
+      type:'work_order.transitioned', aggregateType:'work_order', aggregateId:id, permission:'work_order.view',
+      equipmentId:current.asset_id, payload:{ id, status, assetId:current.asset_id, rowVersion:Number(updated.row_version) }
     });
     return workOrderDto(updated);
   });
