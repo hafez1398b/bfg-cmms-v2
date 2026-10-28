@@ -27,6 +27,7 @@ const LOCKED_WORK_ORDER = new Set(['done', 'closed', 'cancel']);
 const LOCKED_PM = new Set(['cancelled']);
 const PM_OCCURRENCE_STATES = new Set(['scheduled', 'due', 'overdue', 'work_order_generated', 'in_progress', 'completed', 'cancelled', 'skipped']);
 const PM_OCCURRENCE_FINAL_STATES = new Set(['completed', 'cancelled', 'skipped']);
+const PM_ACTIVE_WORK_ORDER_STATES = new Set(['draft', 'open', 'assigned', 'seen', 'doing', 'hold']);
 const CANCELLABLE_WORK_ORDER = new Set(['draft', 'open', 'assigned', 'seen', 'doing', 'hold']);
 
 function coded(status, code) {
@@ -294,7 +295,11 @@ async function withTransaction(pool, work) {
     await client.query('COMMIT');
     return result;
   } catch (error) {
-    await client.query('ROLLBACK').catch(() => {});
+    try {
+      await client.query('ROLLBACK');
+    } catch (rollbackError) {
+      if (error && typeof error === 'object') error.rollbackError = rollbackError;
+    }
     throw error;
   } finally {
     client.release();
@@ -1254,19 +1259,20 @@ async function listPmPlans(pool, filters = {}) {
   const { rows } = await pool.query(
     `SELECT p.*, a.id AS equipment_id, a.code AS equipment_code, a.name AS equipment_name
      FROM pm_plans p LEFT JOIN assets a ON a.id=p.asset_id
-     WHERE p.deleted_at IS NULL AND ($1::text IS NULL OR p.asset_id=$1)
+     WHERE ($1::boolean OR (p.archived_at IS NULL AND p.deleted_at IS NULL))
+       AND ($2::text IS NULL OR p.asset_id=$2)
      ORDER BY p.title LIMIT 500`,
-    [filters.assetId || null]
+    [filters.includeArchived === true, filters.assetId || null]
   );
-  return rows.map(pmDto);
+  return rows.map(row => pmDto(row));
 }
 
-async function getPmPlan(pool, id) {
+async function getPmPlan(pool, id, options = {}) {
   const { rows } = await pool.query(
     `SELECT p.*, a.id AS equipment_id, a.code AS equipment_code, a.name AS equipment_name
      FROM pm_plans p LEFT JOIN assets a ON a.id=p.asset_id
-     WHERE p.id=$1 AND p.deleted_at IS NULL`,
-    [id]
+     WHERE p.id=$1 AND ($2::boolean OR (p.archived_at IS NULL AND p.deleted_at IS NULL))`,
+    [id, options.includeArchived === true]
   );
   if (!rows[0]) throw coded(404, 'RECORD_NOT_FOUND');
   return pmDto(rows[0]);
@@ -1276,7 +1282,7 @@ async function updatePmPlan(pool, user, id, input) {
   const rowVersion = versionOf(input.rowVersion);
   return withTransaction(pool, async client => {
     const current = await lockRow(client, 'pm_plans', id);
-    if (current.deleted_at || LOCKED_PM.has(current.status)) throw coded(409, 'RECORD_LOCKED');
+    if (current.deleted_at || current.archived_at || LOCKED_PM.has(current.status)) throw coded(409, 'RECORD_LOCKED');
     if (Number(current.row_version) !== rowVersion) throw coded(409, 'VERSION_CONFLICT');
     const assetId = input.assetId || current.asset_id;
     await requireEquipment(client, assetId, true);
@@ -1298,24 +1304,98 @@ async function updatePmPlan(pool, user, id, input) {
   });
 }
 
-async function archivePmPlan(pool, user, id, input) {
+async function lockPmPlanForArchive(client, id) {
+  const { rows } = await client.query('SELECT * FROM pm_plans WHERE id=$1 FOR UPDATE', [id]);
+  if (!rows[0]) throw coded(404, 'RECORD_NOT_FOUND');
+  return rows[0];
+}
+
+async function requirePmActor(client, user) {
+  if (!user || !user.id) throw coded(422, 'ACTOR_REQUIRED');
+  const { rows } = await client.query('SELECT id FROM users WHERE id=$1 AND active=true', [user.id]);
+  if (!rows[0]) throw coded(403, 'ACTOR_INVALID');
+  return rows[0].id;
+}
+
+async function assertNoActivePmWork(client, planId) {
+  const { rows } = await client.query(
+    `SELECT 1 FROM pm_occurrences o
+     WHERE o.pm_plan_id=$1 AND o.status='in_progress'
+     UNION ALL
+     SELECT 1 FROM work_orders w
+     LEFT JOIN pm_occurrences o ON o.id=w.occurrence_id
+     WHERE w.deleted_at IS NULL AND (w.pm_id=$1 OR o.pm_plan_id=$1)
+       AND w.status=ANY($2::text[])
+     LIMIT 1`,
+    [planId, [...PM_ACTIVE_WORK_ORDER_STATES]]
+  );
+  if (rows[0]) throw coded(409, 'PM_HAS_ACTIVE_WORK');
+}
+
+async function archivePmPlan(pool, user, id, input = {}) {
   const rowVersion = versionOf(input.rowVersion);
   const reason = reasonOf(input.reason, 'ARCHIVE_REASON_REQUIRED');
-  return withTransaction(pool, async client => {
-    const current = await lockRow(client, 'pm_plans', id);
+  return withPmTransaction(pool, async client => {
+    const current = await lockPmPlanForArchive(client, id);
     if (Number(current.row_version) !== rowVersion) throw coded(409, 'VERSION_CONFLICT');
+    await requirePmActor(client, user);
+    await assertNoActivePmWork(client, id);
+    if (current.archived_at || current.deleted_at) return { archived:true, historyPreserved:true, idempotent:true };
+    const { rows:clockRows } = await client.query('SELECT clock_timestamp() AS archived_at');
+    const archivedAt = clockRows[0]?.archived_at;
+    if (!archivedAt) throw coded(500, 'PM_ARCHIVE_TIMESTAMP_UNAVAILABLE');
     const { rows } = await client.query(
-      `UPDATE pm_plans SET deleted_at=now(), updated_at=now(), updated_by=$3, row_version=row_version+1
-       WHERE id=$1 AND row_version=$2 AND deleted_at IS NULL RETURNING *`,
-      [id, rowVersion, user.id]
+      `UPDATE pm_plans
+       SET archived_at=$3, archived_by=$4, archive_reason=$5, deleted_at=$3,
+           updated_at=$3, updated_by=$4, row_version=row_version+1
+       WHERE id=$1 AND row_version=$2 AND archived_at IS NULL AND deleted_at IS NULL
+       RETURNING *`,
+      [id, rowVersion, archivedAt, user.id, reason]
     );
     if (!rows[0]) throw coded(409, 'VERSION_CONFLICT');
     await audit(client, user, 'archive', 'pm_plan', id, current, rows[0], reason);
     await publish(client, user, {
-      type: 'pm_plan.archived', aggregateType: 'pm_plan', aggregateId: id, permission: 'pm.view',
-      equipmentId: current.asset_id, payload: { id, archived: true, assetId: current.asset_id }
+      type:'pm_plan.archived', aggregateType:'pm_plan', aggregateId:id, permission:'pm.view',
+      equipmentId:current.asset_id, payload:{ id, archived:true, assetId:current.asset_id, archivedAt }
     });
-    return { archived: true, historyPreserved: true };
+    return { archived:true, historyPreserved:true };
+  });
+}
+
+async function restorePmPlan(pool, user, id, input = {}) {
+  const rowVersion = versionOf(input.rowVersion);
+  return withPmTransaction(pool, async client => {
+    const current = await lockPmPlanForArchive(client, id);
+    if (Number(current.row_version) !== rowVersion) throw coded(409, 'VERSION_CONFLICT');
+    await requirePmActor(client, user);
+    const isArchived = Boolean(current.archived_at || current.deleted_at);
+    if (!isArchived) return { restored:true, historyPreserved:true, idempotent:true };
+
+    if (current.code != null) {
+      const { rows:conflicts } = await client.query(
+        `SELECT id FROM pm_plans
+         WHERE id<>$1 AND asset_id=$2 AND code=$3
+           AND archived_at IS NULL AND deleted_at IS NULL
+         LIMIT 1`,
+        [id, current.asset_id, current.code]
+      );
+      if (conflicts[0]) throw coded(409, 'PM_CODE_CONFLICT');
+    }
+    const { rows } = await client.query(
+      `UPDATE pm_plans
+       SET archived_at=NULL, archived_by=NULL, archive_reason=NULL, deleted_at=NULL,
+           updated_at=clock_timestamp(), updated_by=$3, row_version=row_version+1
+       WHERE id=$1 AND row_version=$2 AND (archived_at IS NOT NULL OR deleted_at IS NOT NULL)
+       RETURNING *`,
+      [id, rowVersion, user.id]
+    );
+    if (!rows[0]) throw coded(409, 'VERSION_CONFLICT');
+    await audit(client, user, 'restore', 'pm_plan', id, current, rows[0], 'بازیابی برنامه PM');
+    await publish(client, user, {
+      type:'pm_plan.restored', aggregateType:'pm_plan', aggregateId:id, permission:'pm.view',
+      equipmentId:current.asset_id, payload:{ id, restored:true, assetId:current.asset_id }
+    });
+    return { restored:true, historyPreserved:true };
   });
 }
 
@@ -1325,7 +1405,7 @@ async function cancelPmPlan(pool, user, id, input) {
   return withTransaction(pool, async client => {
     const current = await lockRow(client, 'pm_plans', id);
     if (Number(current.row_version) !== rowVersion) throw coded(409, 'VERSION_CONFLICT');
-    if (LOCKED_PM.has(current.status)) throw coded(409, 'RECORD_LOCKED');
+    if (current.deleted_at || current.archived_at || LOCKED_PM.has(current.status)) throw coded(409, 'RECORD_LOCKED');
     const updated = await writeUpdate(client, 'pm_plans', id, rowVersion, user.id, {
       status: 'cancelled',
       cancel_reason: reason,
@@ -1345,7 +1425,7 @@ async function generatePmWorkOrder(pool, user, id, input) {
   return withPmTransaction(pool, async client => {
     const current = await lockRow(client, 'pm_plans', id);
     if (Number(current.row_version) !== rowVersion) throw coded(409, 'VERSION_CONFLICT');
-    if (LOCKED_PM.has(current.status) || current.archived_at) throw coded(409, 'RECORD_LOCKED');
+    if (LOCKED_PM.has(current.status) || current.archived_at || current.deleted_at) throw coded(409, 'RECORD_LOCKED');
     await requireEquipment(client, current.asset_id, true);
 
     const evaluatedAt = new Date();
@@ -1815,6 +1895,7 @@ module.exports = {
   getPmPlan,
   updatePmPlan,
   archivePmPlan,
+  restorePmPlan,
   cancelPmPlan,
   generatePmWorkOrder,
   equipmentLinks,
