@@ -423,7 +423,9 @@ test('migration failures log only the PostgreSQL code and filename and keep the 
 
 test('numbered migrations are idempotent and the fresh schema includes the registry', () => {
   const files = updates.listMigrationFiles(path.join(root, 'migrations'));
-  assert.deepEqual(files.map(file => file.version), ['002', '003', '004', '005', '006', '007', '008', '009', '010', '011', '012', '013', '014', '015', '016', '017']);
+  assert.deepEqual(files.map(file => file.version), ['002', '003', '004', '005', '006', '007', '008', '009', '010', '011', '012', '013', '014', '015', '016', '017', '018']);
+  assert.equal(files.at(-1).filename, '018_pm_occurrences_and_due_schedule.sql');
+  assert.equal(files.at(-1).version, '018');
   const structureMigration = read('migrations/015_digital_equipment_structure.sql');
   assert.match(structureMigration, /equipment\.structure\.view/);
   assert.match(structureMigration, /ON CONFLICT \(role, permission\) DO NOTHING/);

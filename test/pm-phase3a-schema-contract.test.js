@@ -46,11 +46,16 @@ test('legacy last_run alone is not accepted as completion evidence', () => {
   assert.match(migration, /Do not infer a completion from legacy last_run/i);
 });
 
-test('schema.sql contains exactly one contract block identical to Migration 018', () => {
+test('schema.sql contains exactly one contract block identical to Migration 018, after unchanged Migration 017', () => {
   const markerCount = schema.split(phase3aMarker).length - 1;
   assert.equal(markerCount, 1, 'schema.sql must not retain duplicate old/new Phase 3-A blocks');
   const start = schema.lastIndexOf(phase3aMarker);
   assert.notEqual(start, -1);
+  const migration017 = fs.readFileSync(path.join(root, 'migrations/017_canonical_equipment_structure_kind.sql'), 'utf8');
+  const migration017Marker = '-- Repair canonical structure kinds for the unique B1BT equipment tree.';
+  const migration017Start = schema.indexOf(migration017Marker);
+  assert.ok(migration017Start >= 0 && migration017Start < start, 'Migration 017 must precede Migration 018 in schema.sql');
+  assert.equal(schema.slice(migration017Start, start).trim(), migration017.trim(), 'Migration 017 schema contract must remain exact and unchanged');
   const contractBlock = schema.slice(start).trim();
   assert.equal(contractBlock, migration.trim());
 
