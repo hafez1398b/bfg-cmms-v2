@@ -111,6 +111,31 @@ function timestampIso(value) {
   return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
 }
 
+function parsePmTimestamp(value, code = 'PM_DATE_INVALID') {
+  if (value == null || value === '') return null;
+  if (value instanceof Date) {
+    if (!Number.isFinite(value.getTime())) throw coded(422, code);
+    return value.toISOString();
+  }
+  if (typeof value !== 'string') throw coded(422, code);
+  const text = value.trim();
+  const match = text.match(/^([0-9]{4})-([0-9]{2})-([0-9]{2})(.*)$/);
+  if (!match) throw coded(422, code);
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (month < 1 || month > 12 || day < 1 || day > daysInMonth[month - 1]) throw coded(422, code);
+  const suffix = match[4];
+  if (suffix && !/^T[0-9]{2}:[0-9]{2}(?::[0-9]{2}(?:[.][0-9]+)?)?(?:Z|[+-][0-9]{2}:?[0-9]{2})$/i.test(suffix)) {
+    throw coded(422, code);
+  }
+  const parsed = Date.parse(text);
+  if (!Number.isFinite(parsed)) throw coded(422, code);
+  return new Date(parsed).toISOString();
+}
+
 function calendarDaysFrom(value, days) {
   const start = timestampIso(value);
   const amount = Number(days);
@@ -121,11 +146,11 @@ function calendarDaysFrom(value, days) {
 }
 
 function nextDueAtForPlan(plan = {}) {
-  const basis = String(plan.schedule_basis || plan.scheduleBasis || '').toLowerCase();
+  const basis = String(plan.schedule_basis || plan.scheduleBasis || '').trim().toLowerCase();
   if (basis !== 'calendar') return null;
-  const lastCompletedAt = timestampIso(plan.last_completed_at ?? plan.lastCompletedAt);
-  const storedNextDueAt = timestampIso(plan.next_due_at ?? plan.nextDueAt);
-  const firstDueAt = timestampIso(plan.first_due_at ?? plan.firstDueAt);
+  const lastCompletedAt = parsePmTimestamp(plan.last_completed_at ?? plan.lastCompletedAt, 'PM_LAST_COMPLETED_AT_INVALID');
+  const storedNextDueAt = parsePmTimestamp(plan.next_due_at ?? plan.nextDueAt, 'PM_NEXT_DUE_AT_INVALID');
+  const firstDueAt = parsePmTimestamp(plan.first_due_at ?? plan.firstDueAt, 'PM_FIRST_DUE_AT_INVALID');
   const interval = plan.interval_days ?? plan.intervalDays ?? plan.interval;
   if (lastCompletedAt) {
     if (storedNextDueAt && Date.parse(storedNextDueAt) > Date.parse(lastCompletedAt)) return storedNextDueAt;
@@ -135,34 +160,33 @@ function nextDueAtForPlan(plan = {}) {
 }
 
 function calculatePmDue(plan = {}, evaluatedAt) {
-  const insufficient = reason => ({ nextDueAt:null, dueStatus:'insufficient_schedule_data', reason });
-  const basis = String(plan.schedule_basis || plan.scheduleBasis || '').toLowerCase();
+  const insufficient = reason => ({ nextDueAt:null, dueStatus:'insufficient_data', reason });
+  const basis = String(plan.schedule_basis || plan.scheduleBasis || '').trim().toLowerCase();
+  const lastCompletedAt = parsePmTimestamp(plan.last_completed_at ?? plan.lastCompletedAt, 'PM_LAST_COMPLETED_AT_INVALID');
+  parsePmTimestamp(plan.first_due_at ?? plan.firstDueAt, 'PM_FIRST_DUE_AT_INVALID');
+  parsePmTimestamp(plan.next_due_at ?? plan.nextDueAt, 'PM_NEXT_DUE_AT_INVALID');
+  const evaluationIso = parsePmTimestamp(evaluatedAt, 'PM_EVALUATED_AT_INVALID');
   if (!basis) return insufficient('schedule_basis_missing');
   if (basis !== 'calendar') return insufficient('unsupported_schedule_basis');
   const nextDueAt = nextDueAtForPlan(plan);
   if (!nextDueAt) {
-    const completed = timestampIso(plan.last_completed_at ?? plan.lastCompletedAt);
-    return insufficient(completed ? 'calendar_interval_missing_or_invalid' : 'first_or_next_due_at_missing');
+    return insufficient(lastCompletedAt ? 'calendar_interval_missing_or_invalid' : 'first_or_next_due_at_missing');
   }
-  const archived = Boolean(plan.archived_at || plan.archivedAt || plan.deleted_at || plan.deletedAt);
-  if (archived) return { nextDueAt, dueStatus:'archived', reason:null };
-  const state = String(plan.status || 'active').toLowerCase();
-  if (state === 'paused' || state === 'cancelled' || state === 'inactive') return { nextDueAt, dueStatus:'paused', reason:null };
-  const evaluationIso = timestampIso(evaluatedAt);
-  if (!evaluationIso) return insufficient(evaluatedAt == null ? 'evaluation_time_required' : 'evaluation_time_invalid');
+  if (!evaluationIso) return insufficient('evaluation_time_required');
   const toleranceValue = Number(plan.tolerance_days ?? plan.toleranceDays ?? 0);
-  if (!Number.isInteger(toleranceValue) || toleranceValue < 0) return insufficient('tolerance_days_invalid');
+  if (!Number.isInteger(toleranceValue) || toleranceValue < 0) throw coded(422, 'PM_TOLERANCE_DAYS_INVALID');
   const dueDay = Math.floor(Date.parse(nextDueAt) / 86400000);
   const currentDay = Math.floor(Date.parse(evaluationIso) / 86400000);
-  if (!Number.isFinite(dueDay) || !Number.isFinite(currentDay)) return insufficient('schedule_date_invalid');
+  if (!Number.isFinite(dueDay) || !Number.isFinite(currentDay)) throw coded(422, 'PM_SCHEDULE_DATE_INVALID');
   if (currentDay < dueDay) return { nextDueAt, dueStatus:'scheduled', reason:null };
   if (currentDay <= dueDay + toleranceValue) return { nextDueAt, dueStatus:'due', reason:null };
   return { nextDueAt, dueStatus:'overdue', reason:null };
 }
 
 function periodKeyForDueDate(value, basis = 'calendar') {
-  const iso = timestampIso(value);
-  if (!iso || String(basis).toLowerCase() !== 'calendar') throw coded(422, 'PM_SCHEDULE_DATA_REQUIRED');
+  const iso = parsePmTimestamp(value, 'PM_DUE_DATE_INVALID');
+  if (!iso) throw coded(422, 'PM_DUE_DATE_REQUIRED');
+  if (String(basis).trim().toLowerCase() !== 'calendar') throw coded(422, 'PM_SCHEDULE_BASIS_UNSUPPORTED');
   return `calendar:${iso.slice(0, 10)}`;
 }
 
@@ -238,7 +262,7 @@ function workOrderDto(row) {
   };
 }
 
-function pmDto(row, evaluatedAt) {
+function pmDto(row, evaluatedAt = new Date()) {
   const checklist = asArray(row.checklist).map(item => typeof item === 'string' ? item : (item.text || item.item || item.title || '')).filter(Boolean);
   const due = calculatePmDue(row, evaluatedAt);
   return {
@@ -1004,16 +1028,24 @@ async function correctRecord(pool, user, kind, id, input) {
 async function createPmPlan(pool, user, input) {
   const title = String(input.title || '').trim();
   if (!title) throw coded(422, 'TITLE_REQUIRED');
+  const scheduleBasis = String(input.scheduleBasis ?? input.schedule_basis ?? 'calendar').trim().toLowerCase();
+  if (scheduleBasis !== 'calendar') throw coded(422, 'PM_SCHEDULE_BASIS_UNSUPPORTED');
+  const firstDueAt = parsePmTimestamp(input.firstDueAt ?? input.first_due_at, 'PM_FIRST_DUE_AT_INVALID');
+  const suppliedNextDueAt = parsePmTimestamp(input.nextDueAt ?? input.next_due_at, 'PM_NEXT_DUE_AT_INVALID');
+  const nextDueAt = suppliedNextDueAt || firstDueAt;
+  const intervalDays = positiveInteger(input.intervalDays ?? input.interval, 'PM_INTERVAL_DAYS_INVALID') || 30;
+  const toleranceDays = nonNegativeInteger(input.toleranceDays ?? input.tolerance_days, 'PM_TOLERANCE_DAYS_INVALID');
   return withTransaction(pool, async client => {
     const assetId = input.assetId || null;
     await requireEquipment(client, assetId, true);
     const owner = await requireUser(client, input.owner || null);
     const id = crypto.randomUUID();
     const { rows } = await client.query(
-      `INSERT INTO pm_plans(id,asset_id,title,interval_days,last_run,spec,owner,kind,checklist,status)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'active') RETURNING *`,
-      [id, assetId, title, Number(input.intervalDays || input.interval) || 30, input.lastRun || new Date().toISOString(),
-        input.spec || null, owner, input.kind || 'PM', JSON.stringify(input.checklist || [])]
+      `INSERT INTO pm_plans(id,asset_id,title,interval_days,last_run,spec,owner,kind,checklist,status,
+         schedule_basis,first_due_at,next_due_at,last_completed_at,tolerance_days)
+       VALUES($1,$2,$3,$4,NULL,$5,$6,$7,$8,'active',$9,$10,$11,NULL,$12) RETURNING *`,
+      [id, assetId, title, intervalDays, input.spec || null, owner, input.kind || 'PM', JSON.stringify(input.checklist || []),
+        scheduleBasis, firstDueAt, nextDueAt, toleranceDays]
     );
     await audit(client, user, 'create', 'pm_plan', id, null, rows[0], 'ثبت برنامه PM');
     await publish(client, user, {
@@ -1493,6 +1525,8 @@ module.exports = {
   requestDto,
   workOrderDto,
   pmDto,
+  calculatePmDue,
+  periodKeyForDueDate,
   createRequest,
   listRequests,
   getRequest,
