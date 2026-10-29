@@ -17,7 +17,7 @@ function createUi({ plans = [], can = () => true, confirm = () => true, prompt =
       installed:false,
       pm:{ includeArchived:false, selectedId:null, loading:false, loaded:true, error:null, busy:new Set(), details:null, occurrenceDetails:null },
       getCollection(name){
-        const allowed=['pms','assets'];
+        const allowed=['pms','assets','wos'];
         if(!allowed.includes(name)) return [];
         if(!Array.isArray(DB[name])) return [];
         return DB[name].slice();

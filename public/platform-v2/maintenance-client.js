@@ -97,7 +97,7 @@
   }
 
   function getCollection(name){
-    const allowed = ['pms','assets'];
+    const allowed = ['pms','assets','wos'];
     if (!allowed.includes(name)) return [];
     if (!Array.isArray(DB[name])) return [];
     return DB[name].slice();
