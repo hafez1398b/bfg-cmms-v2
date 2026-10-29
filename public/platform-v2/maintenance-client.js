@@ -96,6 +96,13 @@
     });
   }
 
+  function getCollection(name){
+    const allowed = ['pms','assets'];
+    if (!allowed.includes(name)) return [];
+    if (!Array.isArray(DB[name])) return [];
+    return DB[name].slice();
+  }
+
   function mergeUsers(rows){
     if (!Array.isArray(DB.users)) DB.users = [];
     (Array.isArray(rows) ? rows : []).forEach(row => {
@@ -450,5 +457,6 @@
   state.activate = async function(){ install(); await sync({ quiet:true }); };
   state.sync = sync;
   state.install = install;
+  state.getCollection = getCollection;
   if (window.BFGBackend && window.BFGBackend.user) state.activate().catch(() => {});
 })();

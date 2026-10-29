@@ -84,7 +84,7 @@
     ].map(([label,value])=>field(label,value)).join('');
   }
   function occurrenceCard(item){
-    const wo=item.workOrderId&&(root.DB?.wos||[]).find(row=>row.id===item.workOrderId);
+    const wo=item.workOrderId&&(maintenance.getCollection?.('wos')||[]).find(row=>row.id===item.workOrderId);
     const workOrder=item.workOrderId?(wo?`<button type="button" class="pm-link" onclick="openWO('${esc(wo.id)}')">${esc(wo.no||wo.id)}</button>`:`<span class="mono">${esc(item.workOrderId)}</span>`):'—';
     return `<article class="pm-occurrence-card"><header><b class="mono">${esc(item.periodKey||'—')}</b>${badge(item.status)}</header>
       <div class="pm-occurrence-grid">${field('موعد',item.dueAt?date(item.dueAt):null)}${htmlField('دستورکار مرتبط',workOrder)}
@@ -120,13 +120,13 @@
   function renderPage(){
     if(!allowed('view'))return `${root.head('نگهداری پیشگیرانه (PM)','PM')}<div class="card empty">مجوز مشاهدهٔ PM برای این حساب فعال نیست.</div>`;
     if(!pm.loaded)return `${root.head('نگهداری پیشگیرانه (PM)','PM')}<div class="card empty" role="status">${pm.loading?'در حال دریافت دادهٔ PM از Backend…':'دادهٔ PM از Backend بارگذاری نشده است.'}${pm.error?`<p>${esc(errorText(pm.error))}</p><button type="button" class="btn btn-sm btn-ghost" onclick="BFGMaintenance.pmUi.retry()">تلاش دوباره</button>`:''}</div>`;
-    const plans=asList(root.DB?.pms).filter(plan=>pm.includeArchived?isArchived(plan):!isArchived(plan));
+    const plans=asList(maintenance.getCollection?.('pms')).filter(plan=>pm.includeArchived?isArchived(plan):!isArchived(plan));
     const create=allowed('create')?'<button type="button" class="btn btn-primary" onclick="openPMForm()">＋ برنامه PM جدید</button>':'';
     const archiveToggle=allowed('restore')?`<button type="button" class="btn btn-ghost" aria-pressed="${pm.includeArchived}" onclick="BFGMaintenance.pmUi.toggleArchived()">${pm.includeArchived?'نمایش برنامه‌های فعال':'نمایش برنامه‌های آرشیوشده'}</button>`:'';
     const compliance=`<div class="card kpi pm-na-card"><div class="k-title">PM Compliance</div><div class="k-val">${NA}</div><div class="k-sub">دادهٔ کافی و معتبر برای محاسبهٔ این شاخص از Backend ارائه نشده است.</div></div>`;
     const error=pm.error?`<div class="card pm-error" role="alert">${esc(errorText(pm.error))}<button type="button" class="btn btn-sm btn-ghost" onclick="BFGMaintenance.pmUi.retry()">تلاش دوباره</button></div>`:'';
     const rows=plans.map(plan=>{
-      const equipment=(root.DB?.assets||[]).find(row=>row.id===plan.assetId);
+      const equipment=(maintenance.getCollection?.('assets')||[]).find(row=>row.id===plan.assetId);
       const busy=pm.busy.has(String(plan.id));
       const due=plan.nextDueAt&&plan.dueStatus!=='insufficient_data'?date(plan.nextDueAt):NA;
       return `<tr tabindex="0" class="pm-plan-row" onclick="openPM('${esc(plan.id)}')" onkeydown="if(event.key==='Enter'){event.preventDefault();openPM('${esc(plan.id)}')}">
@@ -158,10 +158,10 @@
     catch(error){showError(error);}
   }
   function editPlan(id,preselectedAssetId){
-    const plan=id?((pm.details&&pm.details.plan)||root.DB.pms.find(row=>row.id===id)):null;
+    const plan=id?((pm.details&&pm.details.plan)||(maintenance.getCollection?.('pms')||[]).find(row=>row.id===id)):null;
     const selectedAssetId=plan?.assetId||preselectedAssetId||'';
     if(plan&&!allowed('edit')){showError(Object.assign(new Error('PERMISSION_DENIED'),{status:403,payload:{error:'PERMISSION_DENIED'}}));return;}
-    const assets=(root.DB.assets||[]).filter(row=>row.type==='eq'&&!row.deleted);
+    const assets=(maintenance.getCollection?.('assets')||[]).filter(row=>row.type==='eq'&&!row.deleted);
     const checks=(plan?.checklist||[]).map(item=>typeof item==='string'?item:(item.text||'')).filter(Boolean).join('\n');
     const readDate=value=>value&&Number.isFinite(Date.parse(value))&&typeof root.jDate==='function'?root.jDate(value):'';
     root.modal(`${root.mhead(plan?'ویرایش برنامه PM':'برنامه PM جدید')}<div class="m-body"><form data-pm-editor data-pm-dirty="false" onsubmit="event.preventDefault();BFGMaintenance.pmUi.save('${esc(id||'')}')">
@@ -183,7 +183,7 @@
     const title=val('title').trim(),assetId=val('assetId'),intervalDays=Number(val('intervalDays'));
     if(!title||!assetId||!Number.isInteger(intervalDays)||intervalDays<1)throw Object.assign(new Error('PM_FORM_INVALID'),{status:422,payload:{error:'TITLE_REQUIRED'}});
     const body={title,assetId,intervalDays,spec:val('spec').trim()||null,checklist:val('checklist').split('\n').map(line=>line.trim()).filter(Boolean)};
-    if(id){body.rowVersion=Number((pm.details&&pm.details.plan&&pm.details.plan.rowVersion)||root.DB.pms.find(row=>row.id===id)?.rowVersion);return body;}
+    if(id){body.rowVersion=Number((pm.details&&pm.details.plan&&pm.details.plan.rowVersion)||(maintenance.getCollection?.('pms')||[]).find(row=>row.id===id)?.rowVersion);return body;}
     for(const key of ['firstDueAt','nextDueAt']){const raw=val(key).trim();if(!raw)continue;const iso=typeof root.jStr2iso==='function'?root.jStr2iso(raw):null;if(!iso)throw Object.assign(new Error(key==='firstDueAt'?'PM_FIRST_DUE_AT_INVALID':'PM_NEXT_DUE_AT_INVALID'),{status:422,payload:{error:key==='firstDueAt'?'PM_FIRST_DUE_AT_INVALID':'PM_NEXT_DUE_AT_INVALID'}});body[key]=iso+'T00:00:00.000Z';}
     const tolerance=val('toleranceDays').trim();if(tolerance){const number=Number(tolerance);if(!Number.isInteger(number)||number<0)throw Object.assign(new Error('PM_TOLERANCE_DAYS_INVALID'),{status:422,payload:{error:'PM_TOLERANCE_DAYS_INVALID'}});body.toleranceDays=number;}
     body.scheduleBasis=val('scheduleBasis')||'calendar';return body;
@@ -208,7 +208,7 @@
     }
   }
   async function action(kind,planOrId,button,confirmation,promptReason){
-    const plan=typeof planOrId==='string'?root.DB.pms.find(row=>row.id===planOrId):planOrId;
+    const plan=typeof planOrId==='string'?(maintenance.getCollection?.('pms')||[]).find(row=>row.id===planOrId):planOrId;
     if(!plan||!plan.id)return {cancelled:true};
     const permission=kind==='schedule'?'schedule':kind==='generate'?'generate':kind==='archive'?'archive':kind==='restore'?'restore':null;
     if(!permission||!allowed(permission))throw Object.assign(new Error('PERMISSION_DENIED'),{status:403,payload:{error:'PERMISSION_DENIED'}});

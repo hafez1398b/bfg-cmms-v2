@@ -11,14 +11,20 @@ const read = file => fs.readFileSync(path.join(rootDir, file), 'utf8');
 
 function createUi({ plans = [], can = () => true, confirm = () => true, prompt = () => 'fixture reason', api } = {}) {
   const requests = [];
+  const DB = { pms:plans, assets:[], wos:[] };
   const window = {
     BFGMaintenance: {
       installed:false,
       pm:{ includeArchived:false, selectedId:null, loading:false, loaded:true, error:null, busy:new Set(), details:null, occurrenceDetails:null },
+      getCollection(name){
+        const allowed=['pms','assets'];
+        if(!allowed.includes(name)) return [];
+        if(!Array.isArray(DB[name])) return [];
+        return DB[name].slice();
+      },
       sync:async () => { window.syncCount++; return plans; }
     },
     syncCount:0,
-    DB:{ pms:plans, assets:[], wos:[] },
     BFGRuntime:{ state:{ config:{ apiBasePath:'/api' } }, isServerOnly:()=>true },
     BFGBackend:{ config:{ apiBasePath:'/api' } },
     bfgApi:async (url, options={}) => { requests.push({url,options}); return api?api(url,options,requests):{data:[]}; },
@@ -74,7 +80,6 @@ test('explicit scheduling prevents concurrent double-submit and reloads the back
   const plan={id:'plan-1',rowVersion:7,periodKey:'calendar:2026-10-28',dueStatus:'due',nextDueAt:'2026-10-28T00:00:00.000Z'};
   let resolveRequest;
   const { window, ui, requests }=createUi({plans:[plan],api:(url,options)=>new Promise(resolve=>{resolveRequest=()=>resolve({data:{occurrence:{id:'occ-1'},idempotentReplay:false}});})});
-  window.DB.pms=[plan];
   const button={disabled:false,setAttribute(){},removeAttribute(){}};
   const first=ui.action('schedule',plan,button);
   await Promise.resolve();
