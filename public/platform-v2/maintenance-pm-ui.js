@@ -157,16 +157,32 @@
     try{const response=await call('/pm-plans/'+encodeURIComponent(planId)+'/occurrences/'+encodeURIComponent(id)+(pm.includeArchived?'?includeArchived=true':''));pm.occurrenceDetails=response?.data||null;if(pm.details)root.modal(renderDetails(pm.details));}
     catch(error){showError(error);}
   }
-  function editPlan(id,preselectedAssetId){
+  const PM_ASSET_NOT_FOUND='تجهیز پرونده در فهرست مجاز تجهیزات پیدا نشد؛ لطفاً تجهیز را دستی انتخاب کنید.';
+  const PM_ASSET_AMBIGUOUS='شناسه یا کد تجهیز در فهرست مجاز یکتا نیست؛ لطفاً تجهیز را دستی انتخاب کنید.';
+  function availableAssets(){
+    return asList(maintenance.getCollection?.('assets')).filter(asset=>asset&&asset.id!=null&&String(asset.id)!==''&&asset.type==='eq'&&!asset.deleted);
+  }
+  function normalizeAssetReference(value){
+    if(value==null||String(value)==='')return {assetId:'',message:''};
+    const reference=String(value),assets=availableAssets();
+    const idMatches=assets.filter(asset=>asset.id!=null&&String(asset.id)===reference);
+    if(idMatches.length===1)return {assetId:idMatches[0].id,message:''};
+    if(idMatches.length>1)return {assetId:'',message:PM_ASSET_AMBIGUOUS};
+    const codeMatches=assets.filter(asset=>asset.code!=null&&String(asset.code)===reference);
+    if(codeMatches.length===1)return {assetId:codeMatches[0].id,message:''};
+    return {assetId:'',message:codeMatches.length>1?PM_ASSET_AMBIGUOUS:PM_ASSET_NOT_FOUND};
+  }
+  function editPlan(id,preselectedAssetId,preselectionMessage=''){
     const plan=id?((pm.details&&pm.details.plan)||(maintenance.getCollection?.('pms')||[]).find(row=>row.id===id)):null;
-    const selectedAssetId=plan?.assetId||preselectedAssetId||'';
+    const selectedAssetId=plan?.assetId??preselectedAssetId??'';
     if(plan&&!allowed('edit')){showError(Object.assign(new Error('PERMISSION_DENIED'),{status:403,payload:{error:'PERMISSION_DENIED'}}));return;}
-    const assets=(maintenance.getCollection?.('assets')||[]).filter(row=>row.type==='eq'&&!row.deleted);
+    const assets=availableAssets();
     const checks=(plan?.checklist||[]).map(item=>typeof item==='string'?item:(item.text||'')).filter(Boolean).join('\n');
     const readDate=value=>value&&Number.isFinite(Date.parse(value))&&typeof root.jDate==='function'?root.jDate(value):'';
     root.modal(`${root.mhead(plan?'ویرایش برنامه PM':'برنامه PM جدید')}<div class="m-body"><form data-pm-editor data-pm-dirty="false" onsubmit="event.preventDefault();BFGMaintenance.pmUi.save('${esc(id||'')}')">
       <label class="pm-form-field">عنوان<input data-pm-field="title" required value="${esc(plan?.title||'')}"></label>
-      <label class="pm-form-field">تجهیز<select data-pm-field="assetId" required><option value="">انتخاب تجهیز</option>${assets.map(asset=>`<option value="${esc(asset.id)}" ${String(asset.id)===String(selectedAssetId)?'selected':''}>${esc(asset.code||'')} — ${esc(asset.name)}</option>`).join('')}</select></label>
+      <label class="pm-form-field">تجهیز<select data-pm-field="assetId" required><option value="" ${selectedAssetId==null||String(selectedAssetId)===''?'selected':''}>انتخاب تجهیز</option>${assets.map(asset=>`<option value="${esc(asset.id)}" ${String(asset.id)===String(selectedAssetId)?'selected':''}>${esc(asset.code||'')} — ${esc(asset.name)}</option>`).join('')}</select></label>
+      ${preselectionMessage?`<p class="pm-error" role="alert" style="display:block;margin:8px 0">${esc(preselectionMessage)}</p>`:''}
       <div class="pm-form-grid"><label class="pm-form-field">تناوب (روز)<input data-pm-field="intervalDays" type="number" min="1" required value="${plan?.intervalDays??plan?.interval??''}"></label><label class="pm-form-field">تخصص<input data-pm-field="spec" value="${esc(plan?.requiredSkill||plan?.spec||'')}"></label></div>
       ${!plan?`<label class="pm-form-field">مبنای زمان‌بندی<select data-pm-field="scheduleBasis"><option value="calendar">تقویمی</option></select></label>
        <label class="pm-form-field">اولین موعد (شمسی)<input data-pm-field="firstDueAt" inputmode="numeric" placeholder="۱۴۰۵/۰۱/۰۱"></label>
@@ -244,13 +260,28 @@
   async function toggleArchived(){if(!allowed('restore'))return;pm.includeArchived=!pm.includeArchived;try{await maintenance.sync({quiet:true});pm.error=null;}catch(error){pm.error=error;showError(error);}if(typeof root.go==='function')root.go('pm');}
   async function retry(){pm.error=null;try{await maintenance.sync({quiet:true});}catch(error){pm.error=error;showError(error);}if(typeof root.go==='function')root.go('pm');}
   async function openPlanFromData(id){pm.selectedId=String(id);pm.occurrenceDetails=null;root.modal(root.mhead('برنامه PM')+'<div class="m-body"><div class="empty" role="status">در حال دریافت اطلاعات از Backend…</div></div>');try{pm.details=await loadDetails(id);root.modal(renderDetails(pm.details));}catch(error){pm.error=error;showError(error);root.modal(root.mhead('برنامه PM')+`<div class="m-body"><div class="card pm-error" role="alert">${esc(errorText(error))}</div><button class="btn btn-ghost" onclick="openPM('${esc(id)}')">تلاش دوباره</button></div><div class="m-foot"><button class="btn btn-ghost" onclick="closeModal()">بستن</button></div>`);}}
+  function installEquipmentQuickActionBoundary(){
+    const original=root.eqv2Related;
+    if(typeof original!=='function'||original.pmUiQuickActionBoundary)return;
+    const wrapped=function(kind,...args){
+      if(kind==='pm'&&typeof root.openPMForm==='function')return root.openPMForm(args[0]);
+      return original.apply(this,[kind,...args]);
+    };
+    Object.defineProperty(wrapped,'pmUiQuickActionBoundary',{value:true});
+    root.eqv2Related=wrapped;
+  }
   function install(){
     if(pm.uiInstalled||!maintenance.installed)return;
     pm.uiInstalled=true;
     const wrap=(name,fn)=>{const original=root[name];root[name]=function(...args){if(root.BFGRuntime?.isServerOnly())return fn.apply(this,args);return typeof original==='function'?original.apply(this,args):undefined;};};
     wrap('pgPM',renderPage);
     wrap('openPM',openPlanFromData);
-    wrap('openPMForm',assetId=>allowed('create')?editPlan(null,assetId):showError({status:403,payload:{error:'PERMISSION_DENIED'}}));
+    wrap('openPMForm',assetReference=>{
+      if(!allowed('create'))return showError({status:403,payload:{error:'PERMISSION_DENIED'}});
+      const normalized=normalizeAssetReference(assetReference);
+      return editPlan(null,normalized.assetId,normalized.message);
+    });
+    installEquipmentQuickActionBoundary();
     wrap('dtActPM',()=>root.openPMForm(root.DT&&root.DT.ent==='assets'?root.DT.id:null));
     wrap('dtActPMDo',()=>{if(typeof root.toast==='function')root.toast('برای ثبت PM از فرم مرکزی استفاده کنید؛ این مسیر مستقیم غیرفعال است.',1);});
     wrap('savePM',()=>saveEditor(''));
