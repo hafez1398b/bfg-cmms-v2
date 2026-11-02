@@ -1275,7 +1275,15 @@
     E.detail=false;E.detailKey=null;E.detailId=null;E.view='list';if(historyMode==='push')history.pushState({equipmentExplorer:true},'','/');
     const content=document.getElementById('content');if(!content)return;content.innerHTML=shell();await initExplorer(true);restoreExplorerScroll();
   }
-  async function restoreRoute(){if(!equipmentModuleAllowed())return false;const key=routeKey();if(!key||!ME)return false;CUR='equipment';buildMenu();document.getElementById('sidebar')?.classList.remove('open');await openDetail(key,{push:false,fromRoute:true});return true;}
+  async function restoreRoute(){
+    if(!equipmentModuleAllowed())return false;
+    const key=routeKey(),signedIn=typeof ME!=='undefined'&&ME;
+    if(!key||!signedIn)return false;
+    if(typeof CUR!=='undefined')CUR='equipment';
+    if(typeof buildMenu==='function')buildMenu();
+    document.getElementById('sidebar')?.classList.remove('open');
+    await openDetail(key,{push:false,fromRoute:true});return true;
+  }
 
   function filter(key,value){E[key]=value;if(key==='factoryId')E.categoryId='';E.page=1;saveState();const toolbarNode=document.querySelector('.eqv2-toolbar');if(toolbarNode)toolbarNode.outerHTML=toolbar();load().then(restoreExplorerScroll).catch(showError);}
   function view(){captureExplorerState();E.view='list';E.page=1;saveState();document.getElementById('content').innerHTML=shell();initExplorer(true);}
@@ -1675,15 +1683,14 @@
   function exportCsv(){const rows=[[...E.columns.map(key=>COLUMNS[key])],...E.rows.map(a=>E.columns.map(key=>valueFor(a,key)??''))],csv='\ufeff'+rows.map(row=>row.map(value=>'"'+String(value).replace(/"/g,'""')+'"').join(',')).join('\n'),link=document.createElement('a');link.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));link.download='equipment-list.csv';link.click();URL.revokeObjectURL(link.href);}
   function createRelated(kind,equipmentId){
     const selected=String(equipmentId||'');
-    if(kind==='request'&&window.BFGMaintenanceWizards&&typeof window.BFGMaintenanceWizards.openRequest==='function'){
-      return window.openReqForm({equipmentId:selected});
-    }
-    if(kind==='wo'&&window.BFGMaintenanceWizards&&typeof window.BFGMaintenanceWizards.openWorkOrder==='function'){
-      return window.openWOForm({equipmentId:selected});
-    }
-    const actions={request:['openReqForm','rqAsset'],wo:['openWOForm','woAsset'],pm:['openPMForm','pmAsset']},entry=actions[kind];
-    if(!entry||typeof window[entry[0]]!=='function'){toast('فرم مرتبط در دسترس نیست',1);return;}
-    window[entry[0]]();requestAnimationFrame(()=>{const input=document.getElementById(entry[1]);if(input){input.value=selected;input.dispatchEvent(new Event('change',{bubbles:true}));}});
+    const actions={
+      request:{opener:'openReqForm',argument:{equipmentId:selected}},
+      wo:{opener:'openWOForm',argument:{equipmentId:selected}},
+      pm:{opener:'openPMForm',argument:selected}
+    };
+    const entry=actions[kind],opener=entry&&window[entry.opener];
+    if(typeof opener!=='function'){if(typeof toast==='function')toast('فرم مرکزی مرتبط در دسترس نیست',1);return;}
+    return opener.call(window,entry.argument);
   }
   function showError(error){console.error(error);const main=document.querySelector('.eqv2-main')||document.getElementById('content');if(main)main.innerHTML=`<div class="eqv2-empty"><div><i>⚠️</i><b>خطا در دریافت اطلاعات تجهیزات</b><div>${escText(error.payload?.error||error.message)}</div></div></div>`;if(typeof toast==='function')toast('خطا در بخش تجهیزات: '+(error.payload?.error||error.message),1);}
 
@@ -1702,8 +1709,8 @@
   window.eqv2StructureEditSuggestion=structureEditSuggestion;window.eqv2StructureMoveSubmit=structureMoveSubmit;window.eqv2StructureCrossSearch=structureCrossSearch;
   const previousEquipmentListeners=window.__bfgEquipmentV2Listeners;
   if(previousEquipmentListeners&&typeof window.removeEventListener==='function'){
-    window.removeEventListener('bfg:domain-event',previousEquipmentListeners.domain);
-    window.removeEventListener('popstate',previousEquipmentListeners.popstate);
+    if(typeof previousEquipmentListeners.domain==='function')window.removeEventListener('bfg:domain-event',previousEquipmentListeners.domain);
+    if(typeof previousEquipmentListeners.popstate==='function')window.removeEventListener('popstate',previousEquipmentListeners.popstate);
   }
   const equipmentDomainEvent=event=>{
     const payload=event&&event.detail;
@@ -1712,13 +1719,20 @@
     refreshStructure({keepPanel:true}).catch(()=>{});
   };
   const equipmentPopState=()=>{const key=routeKey();if(key)openDetail(key,{push:false,fromRoute:true});else if(E.detail)backToEquipment({historyMode:'none'});};
-  window.addEventListener('bfg:domain-event',equipmentDomainEvent);
-  window.addEventListener('popstate',equipmentPopState);
-  window.__bfgEquipmentV2Listeners={domain:equipmentDomainEvent,popstate:equipmentPopState};
+  if(typeof window.addEventListener==='function'){
+    window.addEventListener('bfg:domain-event',equipmentDomainEvent);
+    window.addEventListener('popstate',equipmentPopState);
+    window.__bfgEquipmentV2Listeners={domain:equipmentDomainEvent,popstate:equipmentPopState};
+  }
 
-  const classicTreePage=pgTree;
-  pgTree=page;
-  const previousLogin=doLogin;
-  doLogin=function(){previousLogin();if(ME)setTimeout(restoreRoute,250);};
-  if(ME)setTimeout(restoreRoute,250);
+  if(typeof pgTree==='function')pgTree=page;else window.pgTree=page;
+  const previousLogin=typeof doLogin==='function'?doLogin:null;
+  if(previousLogin){
+    doLogin=async function(...args){
+      const result=await previousLogin.apply(this,args);
+      if(typeof ME!=='undefined'&&ME)setTimeout(restoreRoute,250);
+      return result;
+    };
+  }
+  if(typeof ME!=='undefined'&&ME)setTimeout(restoreRoute,250);
 })();

@@ -6872,10 +6872,11 @@ function attachVehChk(w){
  const chain=genPMWO;
  genPMWO=function(id){const n=DB.wos.length;chain(id);if(DB.wos.length>n){attachVehChk(DB.wos[0]);save();}};
 })();
-/* also attach when assigning a vehicle WO via drag (status change to assigned) */
+/* also attach when assigning a vehicle WO via the optional legacy drag flow */
 (function(){
- const chain=dropWO;
- dropWO=function(ev,st){chain(ev,st);DB.wos.forEach(w=>{const a=w.assetId?asset(w.assetId):null;if(isVehicle(a)&&!w.vehChk&&!['closed','cancel'].includes(w.status))attachVehChk(w);});save();};
+ if(typeof window.dropWO!=='function')return;
+ const chain=window.dropWO;
+ window.dropWO=function(ev,st){const result=chain.call(this,ev,st);DB.wos.forEach(w=>{const a=w.assetId?asset(w.assetId):null;if(isVehicle(a)&&!w.vehChk&&!['closed','cancel'].includes(w.status))attachVehChk(w);});save();return result;};
 })();
 /* migrate: existing open vehicle WOs get the checklist */
 DB.wos.forEach(w=>{const a=w.assetId?asset(w.assetId):null;if(isVehicle(a)&&!w.vehChk&&!['closed','cancel'].includes(w.status))attachVehChk(w);});
