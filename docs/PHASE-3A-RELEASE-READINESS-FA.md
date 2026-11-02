@@ -1,69 +1,182 @@
-# گزارش آمادگی انتشار Phase 3-A
+# گزارش آمادگی انتشار Phase 3-A — پذیرش Windows Staging
 
-**Security Gate: PASS** — آسیب‌پذیری‌های Critical و High صفر شده‌اند و آزمون‌های Regression/احراز هویت پاس هستند. **وضعیت کلی انتشار: Not Ready** تا تأیید PostgreSQL واقعی، Load Test و Backup ویندوزی خارج از Arena.
+## تصمیم فعلی
 
-## مبنا و تغییرات E1 / E1-S
+**نتیجهٔ Staging: Passed برای تشکیل بستهٔ Staging و ایجاد Draft PR.** این نتیجه مجوز Merge یا انتشار Production نیست.
 
-- **Branch:** `arena/dab53c60-bfg-cmms-v2`
-- **Commit مبنای E1-S:** `c3b87b558b538c5c8e2c5c0ca3a30e0ecb2f0e0f` (`docs(pm): finalize release readiness report`)
-- **Commit E1:** `5e4f41b` (`test(pm): align regression suite with migration 018`).
-- E1 فقط Assertionهای Regression مربوط به Migration list و ترتیب/قرارداد schema را به قرارداد مصوب 018 همسان کرد. Migration 017 و 018، `schema.sql`، Backend و Frontend تغییر نکرده‌اند.
-- E1-S فقط `package.json`، `package-lock.json` و همین گزارش را تغییر می‌دهد؛ قابلیت محصول، route، scripts، Docker و دادهٔ عملیاتی دست‌نخورده‌اند.
+- PR این مرحله باید **فقط Draft** باشد.
+- **Merge و Auto-merge تا تأیید دستی ممنوع است.**
+- استقرار Production انجام نشده است.
+- دادهٔ Production تغییر نکرده است.
+- هیچ Fixture، دادهٔ جعلی یا رکورد عملیاتی آزمایشی ساخته نشده است.
+- در UAT هیچ Save، Generate، Archive، Schedule، Occurrence، Work Order یا Completion اجرا نشده است.
 
-## دلیل شکست‌های قبلی
+## مبنای Source و Runtime
 
-دو Assertion قدیمی از زمانی مانده بودند که Migration 017 آخرین نسخهٔ شماره‌دار بود:
+| مورد | شاهد ثبت‌شده |
+|---|---|
+| Windows source branch | `phase3a-staging` |
+| Windows HEAD پذیرفته‌شده | `f5b5662ee5fce3a163f818f336e9a34ca03e258b` |
+| App version | `4.0.0` |
+| API version | `5.0.0` |
+| Runtime | `development / server-only` |
+| Container | Healthy |
+| Health API | `status=ready`، `database=true`، `schemaReady=true` |
 
-1. تست Migration 017 کل ادامهٔ `schema.sql` را با فایل 017 برابر می‌گرفت؛ درحالی‌که قرارداد مصوب 018 اکنون پس از بلوک 017 به `schema.sql` افزوده شده است. تست اکنون مرز 018 را پیدا می‌کند، برابری کامل بلوک 017 را جداگانه حفظ می‌کند و سپس ترتیب و برابری کامل بلوک 018 را می‌سنجد.
-2. تست Migration list نسخه‌ها را تا 017 محدود کرده بود. اکنون 018 را نیز به‌عنوان آخرین فایل شماره‌دار و با نام دقیق قرارداد انتظار دارد.
+Commitهای ارجاع‌شده در این گزارش در تاریخچهٔ مخزن وجود دارند:
 
-هیچ تستی حذف یا Skip نشده و Assertionهای صحت 017/018 تضعیف نشده‌اند. Contract اختصاصی 018 همچنان کنترل می‌کند که `pm_occurrences.work_order_id` و رابطهٔ معکوس وجود نداشته باشد؛ لینک canonical از سمت `work_orders.occurrence_id` است.
+- D1: `7118583225e68f0b1c2a6f42cae7b7d1980f7f59`
+- D1.1: `e50d2d1c7dc4328f674fcf1f6b179fb7e680c68c`
+- D1.2: `cf9a775005238a4ca10be0181e5a53df8f7d69a9`
+- D2: `f5b5662ee5fce3a163f818f336e9a34ca03e258b`
 
-## نتایج آزمون
+## سابقهٔ UAT و اصلاحات D1 تا D1.2
 
-| بررسی | نتیجه |
+### شکست اولیهٔ PM UI
+
+در UAT اولیه، اتصال UI جدید PM به Store واقعی Server-only کامل نبود؛ دسترسی مستقیم UI به Store مرورگر/Global با Store واژگانی Maintenance سازگار نبود و نمایش قابل اتکای Planهای واقعی Backend و روابط آن‌ها تضمین نمی‌شد. همچنین Quick Action پروندهٔ تجهیز، مرجع تجهیز را تا فرم مرکزی PM حفظ نمی‌کرد. بنابراین نتیجهٔ اولیهٔ PM UI قابل پذیرش نبود.
+
+### اصلاحات و شواهد Regression
+
+1. **D1 — `7118583`:** UI Phase 3-A به Projection واقعی و غیرپایدار Maintenance در Server-only متصل شد؛ خواندن Plan و Asset از accessor کنترل‌شده انجام شد و دادهٔ عملیاتی به Local Storage منتقل نشد.
+2. **D1.1 — `e50d2d1`:** دسترسی Collection مربوط به Work Order در accessor حفظ شد تا نمایش ارتباط Occurrence/Work Order با اصلاح D1 شکسته نشود.
+3. **D1.2 — `cf9a775`:** Quick Action «PM+» در پروندهٔ تجهیز به همان فرم مرکزی New PM Plan هدایت شد؛ شناسهٔ canonical تجهیز تا فرم حفظ و تجهیز درست preselect شد. مرجع ناشناخته، جزئی یا دارای کد تکراری Fail Closed می‌شود و تجهیز حدس زده نمی‌شود.
+
+### نتیجهٔ نهایی PM UI UAT
+
+- PM UI در حالت Server-only بارگذاری شد.
+- Planهای موجود Backend نمایش داده شدند.
+- جزئیات Plan و Checklist نمایش داده شدند.
+- در نبود شواهد Completion تأییدشده، Due/Next Due دقیقاً `N/A — داده کافی ثبت نشده است` باقی ماند.
+- فرم مرکزی «New PM Plan» باز شد.
+- PM+ پروندهٔ تجهیز همان فرم مرکزی را باز کرد و تجهیز صحیح preselect شد.
+- هیچ عملیات نوشتنی در UAT اجرا نشد.
+- Smoke نهایی پس از D2: **Pass؛ هیچ رکوردی ذخیره نشد.**
+
+## Critical Security Blocker و رفع D2
+
+در Windows Staging، Generic Data API امکان خواندن Collectionهای حساس و دورزدن Domain API را فراهم می‌کرد. مسیر Generic users اطلاعات بیش‌ازحد می‌داد و Generic write شامل SQL پویا و امکان Privilege Escalation در ساخت کاربر بود. این مورد یک Release Blocker بحرانی بود.
+
+D2 در Commit `f5b5662` این Blocker را بست:
+
+- Generic Dynamic SQL write حذف شد.
+- Generic `POST`، `PUT` و `DELETE` Fail Closed شدند.
+- Collection و Column ارسالی Caller دیگر Identifier SQL تولید نمی‌کنند.
+- ساخت کاربر به `POST /api/users` با Auth، CSRF، `users.create`، Role allowlist، ID سمت سرور، Password policy و Audit امن منتقل شد.
+- فقط System Administrator می‌تواند کاربر با نقش Administrator بسازد.
+- Password و Hash در Response، Audit یا Log قرار نمی‌گیرند.
+- Directory موردنیاز PM/Maintenance به `GET /api/users/directory` منتقل شد و فقط `id/name/role` برمی‌گرداند.
+- Generic readها دارای Policy ثابت، Permission صریح و ستون‌های مصوب شدند؛ `auditX` نیز بدون Permission قابل خواندن نیست.
+- Collectionهای Equipment، Maintenance و Inventory از Generic API به Domain API ارجاع/رد می‌شوند.
+
+Negative checkهای ثبت‌شده در Runtime ویندوز:
+
+| بررسی | نتیجهٔ مشاهده‌شده |
+|---|---|
+| Generic write بدون Authentication | `403 CSRF_FAILED` |
+| `POST /api/data/users` با نشست معتبر | `400 Bad Request`؛ بدون ایجاد رکورد |
+| POST به Collection دلخواه با نشست معتبر | `400 Bad Request`؛ بدون ایجاد رکورد |
+| کلیدهای خروجی Directory | فقط `id`, `name`, `role` |
+| تعداد Directory در Staging فعلی | `1` |
+
+هیچ تست امنیتی یا UAT رکورد عملیاتی ایجاد نکرد.
+
+## Passed
+
+### Migration و قرارداد Database
+
+Runner رسمی و بررسی‌شده:
+
+```text
+npm run update:apply -- <local-backup-path>
+node scripts/apply-update.js <local-backup-path>
+```
+
+نتایج Windows Staging:
+
+- اجرای اول Migration 018: `applied=["018"]` و `skipped=["002"..."017"]`.
+- اجرای دوم: `applied=[]` و `skipped=["002"..."018"]`.
+- `schema_migrations`، Migration 018 را ثبت کرده است.
+- جدول `pm_occurrences` وجود دارد.
+- ستون `work_orders.occurrence_id` وجود دارد.
+- ستون `pm_occurrences.work_order_id` وجود ندارد.
+- FK یک‌طرفه از `work_orders.occurrence_id` به Occurrence تأیید شد.
+- سه Unique Index الزامی تأیید شدند:
+  - `idx_pm_occurrences_plan_period_unique`
+  - `idx_work_orders_occurrence_unique`
+  - `idx_pm_plans_active_asset_code_unique`
+- Permissionهای `pm.restore` و `pm.schedule` برای `mgr` و `planner` تأیید شدند.
+
+### Backup و Restore Drill
+
+- Backup فعال پیش از Migration: `backups/pre-phase3-e2-20261029-161920.dump`
+- اندازه: `201787` بایت
+- SHA-256: `eb56e280551014d1cb7573ac16360367862a9b3bb2308ea8dbb27b1e437480d8`
+- Restore Drill با موفقیت در Database موقت `bfg_cmms_restore_test_20261029_163158` انجام شد.
+- Database عملیاتی در Restore Drill تغییر نکرد.
+- Database موقت و Dump موقت زیر `/tmp` پس از اعتبارسنجی حذف شدند.
+
+فایل Backup بخشی از بستهٔ Release نیست و نباید در Git، PR یا Archive قرار گیرد.
+
+### Performance Smoke
+
+آزمون `GET /api/health` در Windows Staging:
+
+| معیار | نتیجه |
 |---|---:|
-| `test/pm-phase3a-schema-contract.test.js` | **5/5 Pass** |
-| `test/pm-phase3a.test.js` | **10/10 Pass** |
-| B3 و B4 (`test/pm-phase3a-b3.test.js`, `test/pm-phase3a-b4.test.js`) | **24/24 Pass** |
-| Route / Permission / Scope گام C | **9/9 Pass** |
-| Frontend D و Dashboard | **10/10 Pass** |
-| Auth / Session / CSRF | **8/8 Pass** |
-| Server-only / localStorage | **5/5 Pass** |
-| Regressionهای Migration 017 و Module Registry اصلاح‌شده | **16/16 Pass** |
-| `npm test` کامل | **268 Pass, 0 Fail, 0 Skip** |
-| `npm ci` پس از به‌روزرسانی هدفمند | **Pass**؛ نصب پاک و همسان با lockfile |
-| Syntax سرور | **Pass**؛ `server.js` و 32 فایل `server/*.js` |
-| `git diff --check` | **Pass** |
+| Requests | 100 |
+| Concurrency | 10 |
+| Success | 100/100 |
+| Error rate | 0% |
+| Median | 30.44 ms |
+| p95 | 594.95 ms |
+| Max | 708.99 ms |
 
-هیچ PostgreSQL runtime در محیط Arena در دسترس نبود: `DATABASE_URL` و `PGHOST` تنظیم نیستند؛ `pg_isready`، `psql` و Docker نیز موجود نیستند. بنابراین این نتایج تست‌های خودکار/قراردادی‌اند و به‌تنهایی اجرای واقعی Migration روی PostgreSQL را اثبات نمی‌کنند.
+این نتیجه یک Smoke/Load محدود روی Health endpoint است و جایگزین Capacity Planning تولید نیست.
 
-## ممیزی و ارتقای هدفمند Dependencyهای تولید (E1-S)
+### Tests و Dependency Security
 
-`npm audit --omit=dev` پس از تغییر با Exit Code 0 تمام شد: **0 آسیب‌پذیری** (Critical 0، High 0، Moderate 0، Low 0). `npm ci` نیز نصب تمیز را با 0 آسیب‌پذیری گزارش کرد.
+- Windows با `TZ=UTC`: **288/288 Pass**.
+- `npm audit` در Registry رسمی: **0 vulnerability**.
+- تست‌های Auth/Session/CSRF، Permission/Scope، PM D1/D1.2، Equipment، Server-only و D2 پاس شدند.
+- هیچ تستی برای موفق نشان‌دادن نتیجه، دادهٔ عملیاتی جعلی ایجاد نکرد.
 
-| Package | پیش از E1-S | پس از E1-S | Dependency path / اقدام |
-|---|---:|---:|---|
-| `express` (direct) | 4.22.3 | 4.22.3 | نسخهٔ 4.22.3 موجود در Registry رسمی از بازهٔ آسیب‌پذیر Express خارج است؛ در شاخهٔ 4 نسخهٔ Patch جدیدتری در Registry نبود، پس Major ارتقا انجام نشد. مسیرهای transitive آن تازه شدند. |
-| `body-parser` (transitive) | 1.20.6 | 1.20.9 | `express → body-parser`; نسخهٔ 1.20.9 در بازهٔ سازگار Express (`~1.20.5`) است و GHSA-27r3-jxmh-p828 را رفع می‌کند. |
-| `proxy-addr` (transitive) | 2.0.7 | 2.0.8 | `express → proxy-addr`; نسخهٔ 2.0.8 در بازهٔ سازگار (`~2.0.7`) است و GHSA-jqcg-44mw-7w3h را رفع می‌کند. |
-| `qs` (transitive / override موجود) | 6.16.0 | 6.16.2 | `express → qs` و `express → body-parser → qs`; override از قبل موجود بود و فقط به Patch امن‌تر ارتقا یافت. 6.16.2 با `~6.16.0` سازگار است و GHSA-6pq8-jhm2-2vcw را رفع می‌کند. |
+### Image Evidence
 
-نسخه‌های Patch و محدوده‌های سازگاری با metadata از `registry.npmjs.org` بررسی شدند. Dependency transitive جدیدی به `dependencies` اضافه نشد؛ `express` مستقیم و scripts ثابت ماندند. `npm audit fix` و Force نصب/ارتقا اجرا نشدند.
+- Docker build استاندارد برای `f5b5662` موفق شد.
+- Local tag: `bfg-cmms-app:f5b5662`
+- Build manifest digest: `sha256:007a6faa32e349c5991e5115b121fa17c2c2c4ce6b289b1d057628869ca481c7`
+- Image موقت D1.2 به‌علت خطای `403` Docker Hub از Base محلی ساخته شده بود.
+- پس از بازیابی Docker Hub، Image نهایی D2 با Dockerfile استاندارد ساخته شد.
+- **هیچ شاهدی برای Push شدن Image محلی به Registry وجود ندارد و این گزارش چنین ادعایی نمی‌کند.**
 
-قبل از ارتقا، مسیرهای آسیب‌پذیر این‌ها بودند: `express@4.22.3 → body-parser@1.20.6 → qs@6.16.0`، `express@4.22.3 → proxy-addr@2.0.7` و `express@4.22.3 → qs@6.16.0`. بعد از ارتقا، به‌ترتیب `body-parser@1.20.9 → qs@6.16.2` و `proxy-addr@2.0.8` نصب‌اند؛ audit خروجی آسیب‌پذیری ندارد.
+## Deferred
 
-## PostgreSQL، بار و Backup
+موارد زیر در Phase 3-A E3 تکمیل‌شده محسوب نمی‌شوند:
 
-- **PostgreSQL runtime:** **Blocked** — در Arena سرور/سرویس PostgreSQL، client یا تنظیم اتصال وجود ندارد؛ مهاجرت و rollback روی پایگاه واقعی اجرا نشد.
-- **Load Test:** **Blocked** — به runtime PostgreSQL و محیط آزمون بار متصل نیاز دارد؛ ابزار load-test نیز در Arena نصب/در دسترس نیست.
-- **Backup روی Windows:** **Unverified / Blocked** — مسیر یا artifact مربوط به Backup ویندوزی در workspace قابل دسترسی پیدا نشد و فایل‌سیستم Windows از Arena قابل مشاهده نیست. مسئول Release باید وجود، زمان، checksum و قابلیت Restore آن را خارج از Arena تأیید کند. هیچ Backup یا دادهٔ عملیاتی ساخته نشده است.
+- استقرار Production و هرگونه تغییر دادهٔ Production.
+- Merge به `main` یا فعال‌سازی Auto-merge.
+- Release Tag یا GitHub Release.
+- Push کردن Docker Image به Registry.
+- Android packaging/signing یا پذیرش Android.
+- راه‌اندازی یا تأیید نهایی HTTPS، DNS و Production reverse proxy.
+- Capacity/soak test کامل Production؛ فقط Health smoke ثبت شده است.
+- معماری آیندهٔ DeepSeek، Gemini و Selene؛ این موضوع خارج از Phase 3-A E3 است و در این گزارش تکمیل‌شده تلقی نمی‌شود.
 
-## تصمیم و مراحل باقی‌ماندهٔ E2
+## Manual approval still required
 
-**Security Gate: PASS** برای Dependency audit و Regressionهای خودکار. تصمیم کلی: **Not Ready for Release** تا تکمیل بررسی‌های عملیاتی زیر:
+پیش از خروج PR از Draft یا هر Merge، موارد زیر باید دستی تأیید شوند:
 
-1. تأیید Backup واقعی روی Windows، ثبت مسیر و checksum، و Restore آزمایشی در مقصد امن.
-2. اجرای Migration 018 و تست Route/Permission/Scope روی PostgreSQL آزمایشی پس از Backup و ثبت نتیجهٔ rollback.
-3. اجرای Load Test روی محیط نزدیک به عملیاتی و ثبت معیارها/خطاها.
-4. بازبینی نهایی Release Readiness و تصمیم انتشار. **E2 در این مرحله شروع نشده است.**
+- [ ] بازبینی Code و Security تغییرات PM و D2.
+- [ ] تطبیق SHA-256 بستهٔ Staging با Sidecar و Manifest.
+- [ ] تأیید اینکه Archive فقط از فایل‌های tracked در Commit نهایی ساخته شده و Secret/Backup/Runtime data ندارد.
+- [ ] تأیید DBA برای Backup، Restore Drill و قرارداد یک‌طرفهٔ Occurrence/Work Order.
+- [ ] تأیید Product Owner برای نتیجهٔ PM UI UAT و رفتار دقیق `N/A`.
+- [ ] تأیید Release Manager برای Merge جداگانه و برنامهٔ Production deployment/rollback.
+- [ ] تأیید مستقل HTTPS/DNS/Registry در صورت قرارگرفتن در دامنهٔ Release بعدی.
+
+تا تکمیل این Checklist، **PR باید Draft بماند و Merge ممنوع است.**
+
+## مرز بستهٔ Staging
+
+بسته پس از Commit مستندات E3 و از همان HEAD نهایی با روش tracked-files-only ساخته می‌شود. موارد زیر از بسته حذف می‌شوند: metadata گیت، Secretها و فایل‌های Environment دارای مقدار، Override محلی Preview، Backup/Dump، `node_modules`، Log، Cookie/Token، Local config و دادهٔ عملیاتی تولیدشده. Manifest و Sidecar checksum کنار بسته، مرجع نهایی نام فایل، اندازه و SHA-256 هستند.
