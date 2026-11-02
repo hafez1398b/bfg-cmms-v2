@@ -5,8 +5,6 @@ const { Pool } = require('pg');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
-const bcrypt = require('bcryptjs');
-const { v4: uuidv4 } = require('uuid');
 const { createEquipmentRouter } = require('./server/equipment-routes');
 const { createNotificationRouter } = require('./server/notification-routes');
 const { createSecurity } = require('./server/security');
@@ -20,6 +18,8 @@ const { resolveRuntimeConfig } = require('./server/runtime-config');
 const release = require('./server/release-info');
 const { createModuleService } = require('./server/module-service');
 const { createModuleRouter, createModuleGate } = require('./server/module-routes');
+const { createGenericDataHandlers } = require('./server/generic-data');
+const { createUserRouter } = require('./server/user-routes');
 require('dotenv').config();
 
 const app = express();
@@ -43,6 +43,7 @@ const security = createSecurity({ pool, jwtSecret: process.env.JWT_SECRET, sessi
 const { authenticateToken, authorize, hasPermission } = security;
 const aiProviders = createProviderRegistry(process.env);
 const moduleService = createModuleService();
+const genericData = createGenericDataHandlers({ pool, hasPermission });
 
 app.disable('x-powered-by');
 app.set('trust proxy',1);
@@ -116,138 +117,25 @@ app.get('/api/auth/me', authenticateToken, (req,res) => {
 });
 
 app.use('/api/modules', createModuleRouter({ pool, sessions, service: moduleService }));
+
+// Compatibility reads are explicitly allowlisted. All generic mutations fail closed
+// before a domain query can execute.
+app.get('/api/data/:collection', authenticateToken, genericData.read);
+app.post('/api/data/:collection', authenticateToken, genericData.rejectWrite);
+app.put('/api/data/:collection/:id', authenticateToken, genericData.rejectWrite);
+app.delete('/api/data/:collection/:id', authenticateToken, genericData.rejectWrite);
+
+app.use('/api/users', createUserRouter({ pool, authenticateToken, hasPermission }));
+
+// Domain module gates run after the generic fail-closed boundary so a rejected
+// collection cannot trigger module-state or domain-data queries.
 app.use('/api', createModuleGate({ pool, sessions, service: moduleService }));
-
-app.get('/api/data/:collection', authenticateToken, async (req, res) => {
-    const { collection } = req.params;
-    if (['requests', 'wos', 'pms'].includes(collection)) return res.status(409).json({ error: 'USE_MAINTENANCE_API' });
-    if (['items', 'stock_docs', 'stockDocs', 'costEntries', 'cost_entries', 'warehouses'].includes(collection)) return res.status(409).json({ error: 'USE_INVENTORY_API' });
-    const allowed = ['assets', 'users', 'tools', 'instruments', 'contracts', 'projects', 'permits', 'docs', 'leaves', 'planEvents', 'comments', 'auditX'];
-    
-    if (!allowed.includes(collection)) {
-        return res.status(400).json({ error: 'Collection not allowed' });
-    }
-    
-    try {
-        let result;
-        if (collection === 'auditX' || collection === 'comments') {
-            result = await pool.query('SELECT * FROM ' + collection + ' ORDER BY t DESC LIMIT 500');
-        } else if (collection === 'users') {
-            result = await pool.query('SELECT id, name, role, unit, username, active, hr FROM users');
-        } else {
-            result = await pool.query('SELECT * FROM ' + collection);
-        }
-        
-        res.json(result.rows);
-    } catch (err) {
-        console.error('data read failed', err.code || 'db_error');
-        res.status(500).json({ error: 'REQUEST_FAILED' });
-    }
-});
-
-app.post('/api/data/:collection', authenticateToken, async (req, res) => {
-    const { collection } = req.params;
-    if (['requests', 'wos', 'pms', 'work_orders', 'pm_plans'].includes(collection)) return res.status(409).json({ error: 'USE_MAINTENANCE_API' });
-    if (['items', 'stock_docs', 'stockDocs', 'costEntries', 'cost_entries', 'warehouses'].includes(collection)) return res.status(409).json({ error: 'USE_INVENTORY_API' });
-    const data = req.body;
-    
-    try {
-        if (collection === 'assets') {
-            await pool.query(
-                'INSERT INTO assets (id, parent, code, name, type, cls, status, crit, maker, model, serial, year, install, power, hours, history) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)',
-                [data.id, data.parent, data.code, data.name, data.type, data.cls, data.status, data.crit, data.maker, data.model, data.serial, data.year, data.install, data.power, data.hours || 0, JSON.stringify(data.history || [])]
-            );
-        } else if (collection === 'users') {
-            const password = data.p;
-            if (typeof password !== 'string' || password.length < 12) {
-                return res.status(400).json({ error: 'A password of at least 12 characters is required' });
-            }
-            const pass_hash = bcrypt.hashSync(password, 10);
-            await pool.query(
-                'INSERT INTO users (id, username, pass_hash, name, role, unit, phone, active, hr) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
-                [data.id, data.u, pass_hash, data.name, data.role, data.unit, data.phone, data.active, JSON.stringify(data.hr || {})]
-            );
-        } else {
-            const keys = Object.keys(data);
-            const values = Object.values(data);
-            const placeholders = keys.map((_, i) => '$' + (i + 1)).join(', ');
-            await pool.query(
-                'INSERT INTO ' + collection + ' (' + keys.join(', ') + ') VALUES (' + placeholders + ')',
-                values
-            );
-        }
-        
-        io.emit('data-changed', { collection, id: data.id, data });
-        res.status(201).json({ message: 'Created', id: data.id });
-    } catch (err) {
-        console.error('data write failed', err.code || 'db_error');
-        res.status(500).json({ error: 'REQUEST_FAILED' });
-    }
-});
-
-const RECORD_DOMAINS={
-    assets:{table:'assets',permission:'equipment.edit',module:'equipment',fields:new Set(['parent','name','cls','status','crit','maker','model','serial','year','install','power','hours','ext','category_id'])}
-};
-
-app.put('/api/data/:collection/:id', authenticateToken, async (req, res) => {
-    if (['requests','wos','pms','work_orders','pm_plans'].includes(req.params.collection)) return res.status(409).json({ error:'USE_MAINTENANCE_API' });
-    if (['items','stock_docs','cost_entries','warehouses'].includes(req.params.collection)) return res.status(409).json({ error:'USE_INVENTORY_API' });
-    const domain=RECORD_DOMAINS[req.params.collection];
-    if(!domain)return res.status(400).json({error:'COLLECTION_NOT_EDITABLE'});
-    if(!await hasPermission(req.user,domain.permission))return res.status(403).json({error:'PERMISSION_DENIED',permission:domain.permission});
-    const rowVersion=Number(req.body.rowVersion??req.body.row_version);
-    if(!Number.isInteger(rowVersion)||rowVersion<1)return res.status(422).json({error:'ROW_VERSION_REQUIRED'});
-    const entries=Object.entries(req.body).filter(([key])=>domain.fields.has(key));
-    if(!entries.length)return res.status(422).json({error:'NO_EDITABLE_FIELDS'});
-    const jsonFields=new Set(['ext','checklist','key_for']),values=entries.map(([key,value])=>jsonFields.has(key)?JSON.stringify(value):value);
-    const setClause=entries.map(([key],index)=>`${key}=$${index+2}`).join(', '),versionIndex=values.length+2,userIndex=values.length+3;
-    const client=await pool.connect();
-    try{
-        await client.query('BEGIN');
-        const before=await client.query(`SELECT * FROM ${domain.table} WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`,[req.params.id]);
-        if(!before.rows[0]){await client.query('ROLLBACK');return res.status(404).json({error:'RECORD_NOT_FOUND'});}
-        const updated=await client.query(`UPDATE ${domain.table} SET ${setClause},updated_at=now(),updated_by=$${userIndex},row_version=row_version+1 WHERE id=$1 AND row_version=$${versionIndex} AND deleted_at IS NULL RETURNING *`,[req.params.id,...values,rowVersion,req.user.id]);
-        if(!updated.rows[0]){await client.query('ROLLBACK');return res.status(409).json({error:'VERSION_CONFLICT'});}
-        await client.query(`INSERT INTO audit_x(id,t,u,uid,role,action,mod,entity,note,before,after) VALUES($1,now(),$2,$3,$4,'edit',$5,$6,$7,$8,$9)`,[uuidv4(),req.user.name,req.user.id,req.user.role,domain.module,req.params.id,'ویرایش رکورد عملیاتی',JSON.stringify(before.rows[0]),JSON.stringify(updated.rows[0])]);
-        await client.query('COMMIT');
-        io.emit('data-changed',{collection:req.params.collection,id:req.params.id,data:updated.rows[0]});
-        res.json({message:'Updated',data:updated.rows[0]});
-    }catch(error){await client.query('ROLLBACK').catch(()=>{});res.status(500).json({error:'RECORD_UPDATE_FAILED'});}finally{client.release();}
-});
 
 app.use('/api/equipment', createEquipmentRouter({ pool, io, authenticateToken, aiRegistry: aiProviders, security }));
 app.use('/api', createMaintenanceRouter({ pool, security, requestStorageDir:process.env.REQUEST_ATTACHMENT_DIR || path.join(__dirname, 'storage', 'request-files') }));
 app.use('/api', createInventoryRouter({ pool, security, storageDir: process.env.ATTACHMENT_DIR || path.join(__dirname, 'storage', 'work-order-files') }));
 app.use('/api/notifications', createNotificationRouter({ pool, authenticateToken, authorize }));
 app.use('/api/ai', createAIRouter({ pool, authenticateToken, authorize, registry:aiProviders }));
-
-app.delete('/api/data/:collection/:id', authenticateToken, async (req, res) => {
-    if (['requests','wos','pms','work_orders','pm_plans'].includes(req.params.collection)) return res.status(409).json({ error:'USE_MAINTENANCE_API' });
-    if (['items','stock_docs','cost_entries','warehouses'].includes(req.params.collection)) return res.status(409).json({ error:'USE_INVENTORY_API' });
-    const domain=RECORD_DOMAINS[req.params.collection];
-    if(!domain)return res.status(400).json({error:'COLLECTION_NOT_ARCHIVABLE'});
-    const permission=domain.module+'.delete';
-    if(!await hasPermission(req.user,permission))return res.status(403).json({error:'PERMISSION_DENIED',permission});
-    const reason=String(req.body?.reason||'').trim(),rowVersion=Number(req.body?.rowVersion??req.body?.row_version);
-    if(!reason)return res.status(422).json({error:'ARCHIVE_REASON_REQUIRED'});
-    if(!Number.isInteger(rowVersion)||rowVersion<1)return res.status(422).json({error:'ROW_VERSION_REQUIRED'});
-    const client=await pool.connect();
-    try{
-        await client.query('BEGIN');
-        const before=await client.query(`SELECT * FROM ${domain.table} WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`,[req.params.id]);
-        if(!before.rows[0]){await client.query('ROLLBACK');return res.status(404).json({error:'RECORD_NOT_FOUND'});}
-        if(domain.table==='work_orders'&&(before.rows[0].times?.start||before.rows[0].report&&Object.keys(before.rows[0].report).length||before.rows[0].parts?.length)){
-            await client.query('ROLLBACK');return res.status(409).json({error:'EXECUTED_WORK_ORDER_CANNOT_BE_ARCHIVED',action:'cancel'});
-        }
-        if(domain.table==='items'&&Number(before.rows[0].stock)!==0){await client.query('ROLLBACK');return res.status(409).json({error:'NONZERO_STOCK_CANNOT_BE_ARCHIVED'});}
-        const archived=await client.query(`UPDATE ${domain.table} SET deleted_at=now(),updated_at=now(),updated_by=$3,row_version=row_version+1 WHERE id=$1 AND row_version=$2 AND deleted_at IS NULL RETURNING *`,[req.params.id,rowVersion,req.user.id]);
-        if(!archived.rows[0]){await client.query('ROLLBACK');return res.status(409).json({error:'VERSION_CONFLICT'});}
-        await client.query(`INSERT INTO audit_x(id,t,u,uid,role,action,mod,entity,note,before,after) VALUES($1,now(),$2,$3,$4,'delete',$5,$6,$7,$8,NULL)`,[uuidv4(),req.user.name,req.user.id,req.user.role,domain.module,req.params.id,reason,JSON.stringify(before.rows[0])]);
-        await client.query('COMMIT');
-        io.emit('data-changed',{collection:req.params.collection,id:req.params.id,data:null});
-        res.json({message:'Archived',historyPreserved:true});
-    }catch(error){await client.query('ROLLBACK').catch(()=>{});res.status(500).json({error:'RECORD_ARCHIVE_FAILED'});}finally{client.release();}
-});
 
 // SPA fallback keeps bookmarkable Equipment Detail URLs refresh-safe.
 app.get('/equipment/:equipmentKey', (_req, res) => {

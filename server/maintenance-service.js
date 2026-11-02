@@ -25,6 +25,9 @@ const WORK_ORDER_FLOW = {
 const LOCKED_REQUEST = new Set(['approved', 'wo', 'closed', 'rejected', 'cancelled']);
 const LOCKED_WORK_ORDER = new Set(['done', 'closed', 'cancel']);
 const LOCKED_PM = new Set(['cancelled']);
+const PM_OCCURRENCE_STATES = new Set(['scheduled', 'due', 'overdue', 'work_order_generated', 'in_progress', 'completed', 'cancelled', 'skipped']);
+const PM_OCCURRENCE_FINAL_STATES = new Set(['completed', 'cancelled', 'skipped']);
+const PM_ACTIVE_WORK_ORDER_STATES = new Set(['draft', 'open', 'assigned', 'seen', 'doing', 'hold']);
 const CANCELLABLE_WORK_ORDER = new Set(['draft', 'open', 'assigned', 'seen', 'doing', 'hold']);
 
 function coded(status, code) {
@@ -96,6 +99,133 @@ function appendHistory(history, text) {
   return next;
 }
 
+function dateIso(value, code = 'INVALID_DATE') {
+  if (value == null || value === '') return null;
+  const date = value instanceof Date ? new Date(value.getTime()) : new Date(value);
+  if (Number.isNaN(date.getTime())) throw coded(422, code);
+  return date.toISOString();
+}
+
+function timestampIso(value) {
+  if (value == null || value === '') return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
+}
+
+function parsePmTimestamp(value, code = 'PM_DATE_INVALID') {
+  if (value == null || value === '') return null;
+  if (value instanceof Date) {
+    if (!Number.isFinite(value.getTime())) throw coded(422, code);
+    return value.toISOString();
+  }
+  if (typeof value !== 'string') throw coded(422, code);
+  const text = value.trim();
+  const match = text.match(/^([0-9]{4})-([0-9]{2})-([0-9]{2})(.*)$/);
+  if (!match) throw coded(422, code);
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (month < 1 || month > 12 || day < 1 || day > daysInMonth[month - 1]) throw coded(422, code);
+  const suffix = match[4];
+  if (suffix && !/^T[0-9]{2}:[0-9]{2}(?::[0-9]{2}(?:[.][0-9]+)?)?(?:Z|[+-][0-9]{2}:?[0-9]{2})$/i.test(suffix)) {
+    throw coded(422, code);
+  }
+  const parsed = Date.parse(text);
+  if (!Number.isFinite(parsed)) throw coded(422, code);
+  return new Date(parsed).toISOString();
+}
+
+function calendarDaysFrom(value, days) {
+  const start = timestampIso(value);
+  const amount = Number(days);
+  if (!start || !Number.isInteger(amount) || amount < 1) return null;
+  const date = new Date(start);
+  date.setUTCDate(date.getUTCDate() + amount);
+  return date.toISOString();
+}
+
+function nextDueAtForPlan(plan = {}) {
+  const basis = String(plan.schedule_basis || plan.scheduleBasis || '').trim().toLowerCase();
+  if (basis !== 'calendar') return null;
+  const lastCompletedAt = parsePmTimestamp(plan.last_completed_at ?? plan.lastCompletedAt, 'PM_LAST_COMPLETED_AT_INVALID');
+  const storedNextDueAt = parsePmTimestamp(plan.next_due_at ?? plan.nextDueAt, 'PM_NEXT_DUE_AT_INVALID');
+  const firstDueAt = parsePmTimestamp(plan.first_due_at ?? plan.firstDueAt, 'PM_FIRST_DUE_AT_INVALID');
+  const interval = plan.interval_days ?? plan.intervalDays ?? plan.interval;
+  if (lastCompletedAt) {
+    if (storedNextDueAt && Date.parse(storedNextDueAt) > Date.parse(lastCompletedAt)) return storedNextDueAt;
+    return calendarDaysFrom(lastCompletedAt, interval);
+  }
+  return storedNextDueAt || firstDueAt;
+}
+
+function calculatePmDue(plan = {}, evaluatedAt) {
+  const insufficient = reason => ({ nextDueAt:null, dueStatus:'insufficient_data', reason });
+  const basis = String(plan.schedule_basis || plan.scheduleBasis || '').trim().toLowerCase();
+  const lastCompletedAt = parsePmTimestamp(plan.last_completed_at ?? plan.lastCompletedAt, 'PM_LAST_COMPLETED_AT_INVALID');
+  parsePmTimestamp(plan.first_due_at ?? plan.firstDueAt, 'PM_FIRST_DUE_AT_INVALID');
+  parsePmTimestamp(plan.next_due_at ?? plan.nextDueAt, 'PM_NEXT_DUE_AT_INVALID');
+  const evaluationIso = parsePmTimestamp(evaluatedAt, 'PM_EVALUATED_AT_INVALID');
+  if (!basis) return insufficient('schedule_basis_missing');
+  if (basis !== 'calendar') return insufficient('unsupported_schedule_basis');
+  const nextDueAt = nextDueAtForPlan(plan);
+  if (!nextDueAt) {
+    return insufficient(lastCompletedAt ? 'calendar_interval_missing_or_invalid' : 'first_or_next_due_at_missing');
+  }
+  if (!evaluationIso) return insufficient('evaluation_time_required');
+  const toleranceValue = Number(plan.tolerance_days ?? plan.toleranceDays ?? 0);
+  if (!Number.isInteger(toleranceValue) || toleranceValue < 0) throw coded(422, 'PM_TOLERANCE_DAYS_INVALID');
+  const dueDay = Math.floor(Date.parse(nextDueAt) / 86400000);
+  const currentDay = Math.floor(Date.parse(evaluationIso) / 86400000);
+  if (!Number.isFinite(dueDay) || !Number.isFinite(currentDay)) throw coded(422, 'PM_SCHEDULE_DATE_INVALID');
+  if (currentDay < dueDay) return { nextDueAt, dueStatus:'scheduled', reason:null };
+  if (currentDay <= dueDay + toleranceValue) return { nextDueAt, dueStatus:'due', reason:null };
+  return { nextDueAt, dueStatus:'overdue', reason:null };
+}
+
+function periodKeyForDueDate(value, basis = 'calendar') {
+  const iso = parsePmTimestamp(value, 'PM_DUE_DATE_INVALID');
+  if (!iso) throw coded(422, 'PM_DUE_DATE_REQUIRED');
+  if (String(basis).trim().toLowerCase() !== 'calendar') throw coded(422, 'PM_SCHEDULE_BASIS_UNSUPPORTED');
+  return `calendar:${iso.slice(0, 10)}`;
+}
+
+function occurrenceDto(row) {
+  return {
+    id:row.id, pmPlanId:row.pm_plan_id, equipmentId:row.equipment_id, periodKey:row.period_key,
+    dueAt:row.due_at, dueMeterValue:row.due_meter_value == null ? null : Number(row.due_meter_value),
+    status:row.status, workOrderId:row.linked_work_order_id || null, generatedAt:row.generated_at || null,
+    startedAt:row.started_at || null, completedAt:row.completed_at || null, cancelledAt:row.cancelled_at || null,
+    cancellationReason:row.cancellation_reason || null, completionSource:row.completion_source || null,
+    provenanceStatus:row.provenance_status || 'verified', rowVersion:Number(row.row_version),
+    createdAt:row.created_at, updatedAt:row.updated_at, createdBy:row.created_by || null, updatedBy:row.updated_by || null
+  };
+}
+
+function positiveInteger(value, code, { nullable = true, maximum = 1000000 } = {}) {
+  if (value == null || value === '') {
+    if (nullable) return null;
+    throw coded(422, code);
+  }
+  const number = Number(value);
+  if (!Number.isInteger(number) || number < 1 || number > maximum) throw coded(422, code);
+  return number;
+}
+
+function nonNegativeInteger(value, code, maximum = 3650) {
+  if (value == null || value === '') return 0;
+  const number = Number(value);
+  if (!Number.isInteger(number) || number < 0 || number > maximum) throw coded(422, code);
+  return number;
+}
+
+function pmListValue(row, snake, camel, fallback) {
+  if (Object.prototype.hasOwnProperty.call(row, snake)) return row[snake];
+  if (Object.prototype.hasOwnProperty.call(row, camel)) return row[camel];
+  return fallback;
+}
+
 function equipmentOf(row) {
   if (!row.asset_id && !row.equipment_id) return null;
   return {
@@ -122,6 +252,7 @@ function workOrderDto(row) {
     desc: row.descr, descr: row.descr, priority: row.priority, assignee: row.assignee,
     status: row.status, reqId: row.req_id, pmId: row.pm_id, ptw: row.ptw === true,
     ptwId: row.ptw_id || null, permitStatus: row.permit_status || (row.ptw ? 'pending_issuance' : 'not_required'),
+    occurrenceId:row.occurrence_id || null, dueAt:row.due_at || null,
     failureType: row.failure_type || null, probableCauses: asArray(row.probable_causes),
     confirmedRootCause: row.confirmed_root_cause || null, recommendedAction: row.recommended_action || null,
     performedAction: row.performed_action || null, requiredParts: asArray(row.required_parts),
@@ -133,14 +264,26 @@ function workOrderDto(row) {
   };
 }
 
-function pmDto(row) {
+function pmDto(row, evaluatedAt = new Date()) {
   const checklist = asArray(row.checklist).map(item => typeof item === 'string' ? item : (item.text || item.item || item.title || '')).filter(Boolean);
+  const due = calculatePmDue(row, evaluatedAt);
   return {
-    id: row.id, assetId: row.asset_id, equipment: equipmentOf(row), title: row.title,
-    interval: row.interval_days, intervalDays: row.interval_days, last: row.last_run, spec: row.spec,
-    owner: row.owner, sup: row.sup, kind: row.kind, checklist, status: row.status || 'active',
-    createdAt: row.created_at, updatedAt: row.updated_at, rowVersion: Number(row.row_version),
-    cancelReason: row.cancel_reason, deletedAt: row.deleted_at || null
+    id:row.id, code:row.code || null, assetId:row.asset_id, equipment:equipmentOf(row), title:row.title,
+    interval:row.interval_days, intervalDays:row.interval_days, scheduleBasis:row.schedule_basis || null,
+    firstDueAt:row.first_due_at || null, nextDueAt:due.nextDueAt, dueStatus:due.dueStatus, dueReason:due.reason || null,
+    periodKey:due.nextDueAt && String(row.schedule_basis || '').toLowerCase() === 'calendar' ? `calendar:${due.nextDueAt.slice(0, 10)}` : null,
+    toleranceDays:Number(row.tolerance_days || 0), last:row.last_completed_at || null,
+    lastCompletedAt:row.last_completed_at || null, provenanceStatus:row.provenance_status || 'legacy_unverified',
+    estimatedDurationMinutes:row.estimated_duration_minutes == null ? null : Number(row.estimated_duration_minutes),
+    requiredSkill:row.required_skill || null, requiredPersonnel:row.required_personnel == null ? null : Number(row.required_personnel),
+    requiredTools:asArray(row.required_tools), requiredParts:asArray(row.required_parts),
+    safetyRequirements:asArray(row.safety_requirements), lotoRequired:row.loto_required === true,
+    ptwRequired:row.ptw_required === true, instructions:row.instructions || '', spec:row.spec || '',
+    owner:row.owner || null, sup:row.sup || null, kind:row.kind || 'PM', checklist,
+    status:row.status || 'active', archivedAt:row.archived_at || null, archivedBy:row.archived_by || null,
+    archiveReason:row.archive_reason || null, cancelReason:row.cancel_reason || null,
+    createdAt:row.created_at, updatedAt:row.updated_at, rowVersion:Number(row.row_version),
+    deletedAt:row.deleted_at || null
   };
 }
 
@@ -152,11 +295,135 @@ async function withTransaction(pool, work) {
     await client.query('COMMIT');
     return result;
   } catch (error) {
-    await client.query('ROLLBACK').catch(() => {});
+    try {
+      await client.query('ROLLBACK');
+    } catch (rollbackError) {
+      if (error && typeof error === 'object') error.rollbackError = rollbackError;
+    }
     throw error;
   } finally {
     client.release();
   }
+}
+
+function mapPmDatabaseError(error) {
+  if (error && error.code === '23505') {
+    const constraint = String(error.constraint || '');
+    if (constraint.includes('pm_plans_active_asset_code')) return coded(409, 'PM_CODE_CONFLICT');
+    if (constraint.includes('pm_occurrences_plan_period')) return coded(409, 'PM_OCCURRENCE_CONFLICT');
+    if (constraint.includes('work_orders_occurrence')) return coded(409, 'PM_OCCURRENCE_WORK_ORDER_CONFLICT');
+    return coded(409, 'PM_UNIQUE_CONFLICT');
+  }
+  if (error && error.code === '23503') return coded(409, 'PM_REFERENCE_CONFLICT');
+  if (error && ['40P01','40001'].includes(error.code)) return coded(409, 'VERSION_CONFLICT');
+  if (error && /^[0-9A-Z]{5}$/.test(String(error.code))) return coded(500, 'PM_TRANSACTION_FAILED');
+  return error;
+}
+
+async function withPmTransaction(pool, work) {
+  try {
+    return await withTransaction(pool, work);
+  } catch (error) {
+    throw mapPmDatabaseError(error);
+  }
+}
+
+async function lockPmWorkOrderContext(client, workOrder) {
+  if (!workOrder.occurrence_id) return null;
+  if (!workOrder.pm_id) throw coded(409, 'PM_OCCURRENCE_LINK_MISMATCH');
+  const { rows:plans } = await client.query('SELECT * FROM pm_plans WHERE id=$1 FOR UPDATE', [workOrder.pm_id]);
+  const plan = plans[0];
+  if (!plan || plan.deleted_at) throw coded(409, 'PM_PLAN_NOT_FOUND');
+  const { rows:occurrences } = await client.query('SELECT * FROM pm_occurrences WHERE id=$1 FOR UPDATE', [workOrder.occurrence_id]);
+  const occurrence = occurrences[0];
+  if (!occurrence) throw coded(409, 'PM_OCCURRENCE_NOT_FOUND');
+  if (String(occurrence.pm_plan_id) !== String(workOrder.pm_id)
+    || String(occurrence.equipment_id) !== String(workOrder.asset_id)
+    || String(plan.id) !== String(workOrder.pm_id)
+    || String(plan.asset_id) !== String(occurrence.equipment_id)) {
+    throw coded(409, 'PM_OCCURRENCE_LINK_MISMATCH');
+  }
+  if (!PM_OCCURRENCE_STATES.has(occurrence.status)) throw coded(409, 'PM_OCCURRENCE_STATUS_INVALID');
+  return { plan, occurrence };
+}
+
+function assertPmStartConsistency(workOrder, occurrence) {
+  if (occurrence.status !== 'in_progress') throw coded(409, 'PM_START_INCONSISTENT');
+  const workStart = parsePmTimestamp(asObject(workOrder.times).start, 'PM_START_INCONSISTENT');
+  const occurrenceStart = parsePmTimestamp(occurrence.started_at, 'PM_START_INCONSISTENT');
+  if (!workStart || !occurrenceStart || Date.parse(workStart) !== Date.parse(occurrenceStart)) {
+    throw coded(409, 'PM_START_INCONSISTENT');
+  }
+}
+
+function assertPmCompletionConsistency(workOrder, context) {
+  const { plan, occurrence } = context;
+  if (occurrence.status !== 'completed' || occurrence.completion_source !== 'work_order') {
+    throw coded(409, 'PM_COMPLETION_INCONSISTENT');
+  }
+  assertPmStartConsistency(workOrder, { ...occurrence, status:'in_progress' });
+  const workEnd = parsePmTimestamp(asObject(workOrder.times).end, 'PM_COMPLETION_INCONSISTENT');
+  const occurrenceEnd = parsePmTimestamp(occurrence.completed_at, 'PM_COMPLETION_INCONSISTENT');
+  const planLastCompleted = parsePmTimestamp(plan.last_completed_at, 'PM_COMPLETION_INCONSISTENT');
+  const planNextDue = parsePmTimestamp(plan.next_due_at, 'PM_COMPLETION_INCONSISTENT');
+  if (!workEnd || !occurrenceEnd || !planLastCompleted
+    || Date.parse(workEnd) !== Date.parse(occurrenceEnd)
+    || Date.parse(planLastCompleted) < Date.parse(occurrenceEnd)) {
+    throw coded(409, 'PM_COMPLETION_INCONSISTENT');
+  }
+  const expected = calculatePmDue({
+    schedule_basis:plan.schedule_basis,
+    interval_days:plan.interval_days,
+    last_completed_at:planLastCompleted,
+    next_due_at:null,
+    tolerance_days:plan.tolerance_days
+  }, planLastCompleted);
+  if (expected.nextDueAt !== planNextDue) throw coded(409, 'PM_COMPLETION_INCONSISTENT');
+}
+
+async function reservePmGenerationRequest(client, userId, idempotencyKey, requestHash) {
+  await client.query(
+    `DELETE FROM idempotency_keys WHERE user_id=$1 AND idempotency_key=$2 AND expires_at<=now()`,
+    [userId, idempotencyKey]
+  );
+  const inserted = await client.query(
+    `INSERT INTO idempotency_keys(user_id,idempotency_key,request_hash,expires_at)
+     VALUES($1,$2,$3,now()+interval '24 hours')
+     ON CONFLICT(user_id,idempotency_key) DO NOTHING RETURNING idempotency_key`,
+    [userId, idempotencyKey, requestHash]
+  );
+  if (inserted.rows[0]) return null;
+  const existing = await client.query(
+    `SELECT request_hash,response_status,response_body FROM idempotency_keys
+     WHERE user_id=$1 AND idempotency_key=$2 FOR UPDATE`, [userId, idempotencyKey]
+  );
+  const row = existing.rows[0];
+  if (!row) throw coded(409, 'DUPLICATE_REQUEST_PENDING');
+  if (row.request_hash !== requestHash) throw coded(409, 'IDEMPOTENCY_KEY_REUSED');
+  if (Number(row.response_status) !== 201 || !row.response_body) throw coded(409, 'DUPLICATE_REQUEST_PENDING');
+  const body = typeof row.response_body === 'string' ? JSON.parse(row.response_body) : row.response_body;
+  if (!body || !body.occurrence || !body.workOrder) throw coded(409, 'DUPLICATE_REQUEST_PENDING');
+  return body;
+}
+
+async function findPmOccurrence(client, planId, periodKey) {
+  const { rows } = await client.query(
+    `SELECT o.*, w.id AS linked_work_order_id
+     FROM pm_occurrences o LEFT JOIN work_orders w ON w.occurrence_id=o.id
+     WHERE o.pm_plan_id=$1 AND o.period_key=$2 FOR UPDATE OF o`,
+    [planId, periodKey]
+  );
+  return rows[0] || null;
+}
+
+async function findPmWorkOrder(client, occurrenceId) {
+  const { rows } = await client.query(
+    `SELECT w.*, a.id AS equipment_id, a.code AS equipment_code, a.name AS equipment_name
+     FROM work_orders w LEFT JOIN assets a ON a.id=w.asset_id
+     WHERE w.occurrence_id=$1 ORDER BY w.created_at LIMIT 1`,
+    [occurrenceId]
+  );
+  return rows[0] || null;
 }
 
 async function nextNumber(client, name, prefix) {
@@ -221,11 +488,46 @@ async function audit(client, user, action, module, entity, before, after, note) 
 async function factoryOf(client, equipmentId) {
   if (!equipmentId) return null;
   const { rows } = await client.query(
-    `SELECT c.factory_asset_id FROM assets a
-     LEFT JOIN asset_categories c ON c.id=a.category_id WHERE a.id=$1`,
+    `WITH RECURSIVE ancestors(id,parent,node_kind,depth) AS (
+       SELECT a.id,a.parent,a.ext->>'nodeKind',0 FROM assets a WHERE a.id=$1
+       UNION ALL
+       SELECT p.id,p.parent,p.ext->>'nodeKind',ancestors.depth+1
+       FROM assets p JOIN ancestors ON p.id=ancestors.parent WHERE ancestors.depth < 64
+     )
+     SELECT COALESCE(c.factory_asset_id,
+       (SELECT id FROM ancestors WHERE lower(COALESCE(node_kind,''))='factory' ORDER BY depth LIMIT 1)
+     ) AS factory_asset_id
+     FROM assets a LEFT JOIN asset_categories c ON c.id=a.category_id WHERE a.id=$1`,
     [equipmentId]
   );
-  return rows[0] ? rows[0].factory_asset_id : null;
+  return rows[0] ? rows[0].factory_asset_id || null : null;
+}
+
+async function userScopes(client, user) {
+  if (!user || !user.id) throw coded(403, 'EQUIPMENT_SCOPE_DENIED');
+  if (user.role === 'admin') return [];
+  const { rows } = await client.query(
+    'SELECT scope_type,scope_id FROM user_scopes WHERE user_id=$1', [user.id]
+  );
+  return rows;
+}
+
+function scopeAllows(scopes, equipmentId, factoryId) {
+  return scopes.some(scope => scope && (
+    scope.scope_type === 'company'
+    || (scope.scope_type === 'equipment' && scope.scope_id === equipmentId)
+    || (factoryId && scope.scope_type === 'factory' && scope.scope_id === factoryId)
+  ));
+}
+
+async function assertEquipmentScope(client, user, equipmentId, knownFactoryId = null) {
+  const equipment = await requireEquipment(client, equipmentId, true);
+  if (!user || !user.id) throw coded(403, 'EQUIPMENT_SCOPE_DENIED');
+  if (user.role === 'admin') return { equipment, factoryId:knownFactoryId || await factoryOf(client, equipmentId) };
+  const scopes = await userScopes(client, user);
+  const factoryId = knownFactoryId || await factoryOf(client, equipmentId);
+  if (!scopeAllows(scopes, equipmentId, factoryId)) throw coded(403, 'EQUIPMENT_SCOPE_DENIED');
+  return { equipment, factoryId };
 }
 
 async function selectRecipients(client, permission, equipmentId) {
@@ -703,10 +1005,19 @@ async function linkWorkOrderPermit(pool, user, id, input) {
 async function transitionWorkOrder(pool, user, id, input) {
   const rowVersion = versionOf(input.rowVersion);
   const status = String(input.status || '');
-  return withTransaction(pool, async client => {
+  return withPmTransaction(pool, async client => {
     const current = await lockRow(client, 'work_orders', id);
-    if (Number(current.row_version) !== rowVersion) throw coded(409, 'VERSION_CONFLICT');
+    const currentVersion = Number(current.row_version);
+    const samePmRetry = current.occurrence_id && current.status === status && ['doing','done'].includes(status);
+    if (samePmRetry && currentVersion >= rowVersion && currentVersion - rowVersion <= 1) {
+      const context = await lockPmWorkOrderContext(client, current);
+      if (status === 'doing') assertPmStartConsistency(current, context.occurrence);
+      else assertPmCompletionConsistency(current, context);
+      return workOrderDto(current);
+    }
+    if (currentVersion !== rowVersion) throw coded(409, 'VERSION_CONFLICT');
     assertTransition(WORK_ORDER_FLOW, current.status, status);
+
     let permitStatus = current.permit_status || (current.ptw ? 'pending_issuance' : 'not_required');
     if (status === 'doing' && current.ptw === true) {
       if (!current.ptw_id) throw coded(409, 'WORK_PERMIT_REQUIRED');
@@ -714,34 +1025,118 @@ async function transitionWorkOrder(pool, user, id, input) {
       if (!permitIsIssued(permit)) throw coded(409, 'WORK_PERMIT_REQUIRED');
       permitStatus = 'issued';
     }
+
+    const existingStart = Boolean(asObject(current.times).start);
     const times = asObject(current.times);
     const report = asObject(current.report);
-    if (status === 'seen' && !times.seen) times.seen = new Date().toISOString();
-    if (status === 'doing' && !times.start) times.start = new Date().toISOString();
+    const transitionAt = ['doing','done'].includes(status) ? new Date().toISOString() : null;
+    if (status === 'seen' && !times.seen) times.seen = transitionAt || new Date().toISOString();
+    if (status === 'doing' && !times.start) times.start = transitionAt;
     if (status === 'hold') current.hold_reason = reasonOf(input.reason, 'HOLD_REASON_REQUIRED');
     if (status === 'done') {
       const text = String(input.report?.text || '').trim();
       if (!text) throw coded(422, 'REPORT_REQUIRED');
-      times.end = new Date().toISOString();
+      if (current.occurrence_id && times.end) throw coded(409, 'WORK_ORDER_COMPLETION_INCONSISTENT');
+      times.end = transitionAt;
       report.text = text;
       report.cause = input.report.cause || null;
       current.performed_action = text;
       report.by = user.id;
-      report.at = times.end;
+      report.at = transitionAt;
     }
     if (status === 'closed' && !hasExecutionHistory({ ...current, times, report })) throw coded(409, 'WORK_ORDER_NOT_EXECUTED');
+
+    let pmContext = null;
+    if (current.occurrence_id && ['doing','done','closed'].includes(status)) {
+      pmContext = await lockPmWorkOrderContext(client, current);
+      const occurrence = pmContext.occurrence;
+      if (status === 'doing') {
+        if (PM_OCCURRENCE_FINAL_STATES.has(occurrence.status)) throw coded(409, 'PM_OCCURRENCE_NOT_STARTABLE');
+        if (occurrence.status === 'work_order_generated') {
+          if (occurrence.started_at || existingStart) throw coded(409, 'PM_START_INCONSISTENT');
+        } else if (occurrence.status === 'in_progress') {
+          if (current.status !== 'hold') throw coded(409, 'PM_START_INCONSISTENT');
+          assertPmStartConsistency(current, occurrence);
+        } else {
+          throw coded(409, 'PM_OCCURRENCE_NOT_STARTABLE');
+        }
+      } else if (status === 'done') {
+        if (occurrence.status === 'completed' || PM_OCCURRENCE_FINAL_STATES.has(occurrence.status)) {
+          throw coded(409, 'PM_OCCURRENCE_ALREADY_FINAL');
+        }
+        if (occurrence.status !== 'in_progress') throw coded(409, 'PM_OCCURRENCE_NOT_IN_PROGRESS');
+        assertPmStartConsistency(current, occurrence);
+      } else {
+        assertPmCompletionConsistency(current, pmContext);
+      }
+    }
+
     const updated = await writeUpdate(client, 'work_orders', id, rowVersion, user.id, {
       status,
       times: JSON.stringify(times),
       report: JSON.stringify(report),
-      performed_action: status === 'done' ? current.performed_action : current.performed_action,
+      performed_action: current.performed_action,
       permit_status: permitStatus,
-      hold_reason: status === 'hold' ? current.hold_reason : current.hold_reason
+      hold_reason: current.hold_reason
     });
+
+    let updatedOccurrence = null;
+    let updatedPlan = null;
+    if (status === 'doing' && pmContext?.occurrence.status === 'work_order_generated') {
+      const { rows } = await client.query(
+        `UPDATE pm_occurrences SET status='in_progress',started_at=$3,updated_at=now(),updated_by=$4,row_version=row_version+1
+         WHERE id=$1 AND row_version=$2 AND status='work_order_generated' RETURNING *`,
+        [pmContext.occurrence.id, Number(pmContext.occurrence.row_version), transitionAt, user.id]
+      );
+      if (!rows[0]) throw coded(409, 'VERSION_CONFLICT');
+      updatedOccurrence = rows[0];
+      await audit(client, user, 'start', 'pm_occurrence', updatedOccurrence.id, pmContext.occurrence, updatedOccurrence, 'شروع دستورکار');
+      await publish(client, user, {
+        type:'pm_occurrence.started', aggregateType:'pm_occurrence', aggregateId:updatedOccurrence.id, permission:'pm.view',
+        equipmentId:updatedOccurrence.equipment_id, payload:{ id:updatedOccurrence.id, pmPlanId:updatedOccurrence.pm_plan_id,
+          workOrderId:id, status:updatedOccurrence.status, startedAt:updatedOccurrence.started_at }
+      });
+    }
+
+    if (status === 'done' && pmContext) {
+      const completionAt = parsePmTimestamp(asObject(updated.times).end, 'WORK_ORDER_COMPLETION_INCONSISTENT');
+      if (!completionAt) throw coded(409, 'WORK_ORDER_COMPLETION_INCONSISTENT');
+      const nextDue = calculatePmDue({
+        schedule_basis:pmContext.plan.schedule_basis,
+        interval_days:pmContext.plan.interval_days,
+        last_completed_at:completionAt,
+        next_due_at:null,
+        tolerance_days:pmContext.plan.tolerance_days
+      }, completionAt);
+      const { rows:occurrenceRows } = await client.query(
+        `UPDATE pm_occurrences SET status='completed',completed_at=$3,completion_source='work_order',
+           updated_at=now(),updated_by=$4,row_version=row_version+1
+         WHERE id=$1 AND row_version=$2 AND status='in_progress' RETURNING *`,
+        [pmContext.occurrence.id, Number(pmContext.occurrence.row_version), completionAt, user.id]
+      );
+      if (!occurrenceRows[0]) throw coded(409, 'VERSION_CONFLICT');
+      updatedOccurrence = occurrenceRows[0];
+      const { rows:planRows } = await client.query(
+        `UPDATE pm_plans SET last_completed_at=$3,next_due_at=$4,updated_at=now(),updated_by=$5,row_version=row_version+1
+         WHERE id=$1 AND row_version=$2 AND deleted_at IS NULL RETURNING *`,
+        [pmContext.plan.id, Number(pmContext.plan.row_version), completionAt, nextDue.nextDueAt, user.id]
+      );
+      if (!planRows[0]) throw coded(409, 'VERSION_CONFLICT');
+      updatedPlan = planRows[0];
+      await audit(client, user, 'complete', 'pm_occurrence', updatedOccurrence.id, pmContext.occurrence, updatedOccurrence, 'تکمیل مستند Work Order');
+      await audit(client, user, 'complete', 'pm_plan', updatedPlan.id, pmContext.plan, updatedPlan, id);
+      await publish(client, user, {
+        type:'pm_occurrence.completed', aggregateType:'pm_occurrence', aggregateId:updatedOccurrence.id, permission:'pm.view',
+        equipmentId:updatedOccurrence.equipment_id, payload:{ id:updatedOccurrence.id, pmPlanId:updatedOccurrence.pm_plan_id,
+          workOrderId:id, status:updatedOccurrence.status, completedAt:updatedOccurrence.completed_at,
+          completionSource:updatedOccurrence.completion_source, nextDueAt:updatedPlan.next_due_at }
+      });
+    }
+
     await audit(client, user, 'transition', 'work_order', id, current, updated, status);
     await publish(client, user, {
-      type: 'work_order.transitioned', aggregateType: 'work_order', aggregateId: id, permission: 'work_order.view',
-      equipmentId: current.asset_id, payload: { id, status, assetId: current.asset_id, rowVersion: Number(updated.row_version) }
+      type:'work_order.transitioned', aggregateType:'work_order', aggregateId:id, permission:'work_order.view',
+      equipmentId:current.asset_id, payload:{ id, status, assetId:current.asset_id, rowVersion:Number(updated.row_version) }
     });
     return workOrderDto(updated);
   });
@@ -804,6 +1199,7 @@ async function correctRecord(pool, user, kind, id, input) {
       : { title: 'title', interval: 'interval_days', spec: 'spec' };
   return withTransaction(pool, async client => {
     const current = await lockRow(client, table, id);
+    if (kind === 'pm_plan') await assertEquipmentScope(client, user, current.asset_id);
     if (Number(current.row_version) !== rowVersion) throw coded(409, 'VERSION_CONFLICT');
     const patch = {};
     for (const [key, column] of Object.entries(allowed)) {
@@ -832,16 +1228,24 @@ async function correctRecord(pool, user, kind, id, input) {
 async function createPmPlan(pool, user, input) {
   const title = String(input.title || '').trim();
   if (!title) throw coded(422, 'TITLE_REQUIRED');
+  const scheduleBasis = String(input.scheduleBasis ?? input.schedule_basis ?? 'calendar').trim().toLowerCase();
+  if (scheduleBasis !== 'calendar') throw coded(422, 'PM_SCHEDULE_BASIS_UNSUPPORTED');
+  const firstDueAt = parsePmTimestamp(input.firstDueAt ?? input.first_due_at, 'PM_FIRST_DUE_AT_INVALID');
+  const suppliedNextDueAt = parsePmTimestamp(input.nextDueAt ?? input.next_due_at, 'PM_NEXT_DUE_AT_INVALID');
+  const nextDueAt = suppliedNextDueAt || firstDueAt;
+  const intervalDays = positiveInteger(input.intervalDays ?? input.interval, 'PM_INTERVAL_DAYS_INVALID') || 30;
+  const toleranceDays = nonNegativeInteger(input.toleranceDays ?? input.tolerance_days, 'PM_TOLERANCE_DAYS_INVALID');
   return withTransaction(pool, async client => {
     const assetId = input.assetId || null;
-    await requireEquipment(client, assetId, true);
+    await assertEquipmentScope(client, user, assetId);
     const owner = await requireUser(client, input.owner || null);
     const id = crypto.randomUUID();
     const { rows } = await client.query(
-      `INSERT INTO pm_plans(id,asset_id,title,interval_days,last_run,spec,owner,kind,checklist,status)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'active') RETURNING *`,
-      [id, assetId, title, Number(input.intervalDays || input.interval) || 30, input.lastRun || new Date().toISOString(),
-        input.spec || null, owner, input.kind || 'PM', JSON.stringify(input.checklist || [])]
+      `INSERT INTO pm_plans(id,asset_id,title,interval_days,last_run,spec,owner,kind,checklist,status,
+         schedule_basis,first_due_at,next_due_at,last_completed_at,tolerance_days)
+       VALUES($1,$2,$3,$4,NULL,$5,$6,$7,$8,'active',$9,$10,$11,NULL,$12) RETURNING *`,
+      [id, assetId, title, intervalDays, input.spec || null, owner, input.kind || 'PM', JSON.stringify(input.checklist || []),
+        scheduleBasis, firstDueAt, nextDueAt, toleranceDays]
     );
     await audit(client, user, 'create', 'pm_plan', id, null, rows[0], 'ثبت برنامه PM');
     await publish(client, user, {
@@ -852,25 +1256,193 @@ async function createPmPlan(pool, user, input) {
   });
 }
 
-async function listPmPlans(pool, filters = {}) {
+async function readScopedPmPlan(pool, user, id, includeArchived = false) {
   const { rows } = await pool.query(
     `SELECT p.*, a.id AS equipment_id, a.code AS equipment_code, a.name AS equipment_name
      FROM pm_plans p LEFT JOIN assets a ON a.id=p.asset_id
-     WHERE p.deleted_at IS NULL AND ($1::text IS NULL OR p.asset_id=$1)
-     ORDER BY p.title LIMIT 500`,
-    [filters.assetId || null]
-  );
-  return rows.map(pmDto);
-}
-
-async function getPmPlan(pool, id) {
-  const { rows } = await pool.query(
-    `SELECT p.*, a.id AS equipment_id, a.code AS equipment_code, a.name AS equipment_name
-     FROM pm_plans p LEFT JOIN assets a ON a.id=p.asset_id
-     WHERE p.id=$1 AND p.deleted_at IS NULL`,
-    [id]
+     WHERE p.id=$1 AND ($2::boolean OR (p.archived_at IS NULL AND p.deleted_at IS NULL))`,
+    [id, includeArchived]
   );
   if (!rows[0]) throw coded(404, 'RECORD_NOT_FOUND');
+  await assertEquipmentScope(pool, user, rows[0].asset_id);
+  return rows[0];
+}
+
+async function getPmDue(pool, user, id, input = {}, options = {}) {
+  const evaluatedAt = input.evaluatedAt;
+  if (evaluatedAt == null || evaluatedAt === '') throw coded(422, 'PM_EVALUATED_AT_REQUIRED');
+  const plan = await readScopedPmPlan(pool, user, id, options.includeArchived === true);
+  const due = calculatePmDue(plan, evaluatedAt);
+  return { evaluatedAt:parsePmTimestamp(evaluatedAt, 'PM_EVALUATED_AT_INVALID'), ...due };
+}
+
+async function listPmOccurrences(pool, user, planId, options = {}) {
+  const plan = await readScopedPmPlan(pool, user, planId, options.includeArchived === true);
+  const { rows } = await pool.query(
+    `SELECT o.*, w.id AS linked_work_order_id
+     FROM pm_occurrences o LEFT JOIN work_orders w ON w.occurrence_id=o.id
+     WHERE o.pm_plan_id=$1 ORDER BY o.due_at,o.created_at`,
+    [planId]
+  );
+  if (rows.some(row => String(row.equipment_id) !== String(plan.asset_id))) throw coded(409, 'PM_OCCURRENCE_LINK_MISMATCH');
+  return rows.map(row => occurrenceDto(row));
+}
+
+async function getPmOccurrence(pool, user, planId, occurrenceId, options = {}) {
+  const { rows } = await pool.query(
+    `SELECT o.*, p.asset_id AS plan_asset_id, w.id AS linked_work_order_id
+     FROM pm_occurrences o JOIN pm_plans p ON p.id=o.pm_plan_id
+     LEFT JOIN work_orders w ON w.occurrence_id=o.id
+     WHERE o.id=$1 AND o.pm_plan_id=$2
+       AND ($3::boolean OR (p.archived_at IS NULL AND p.deleted_at IS NULL))`,
+    [occurrenceId, planId, options.includeArchived === true]
+  );
+  if (!rows[0]) throw coded(404, 'RECORD_NOT_FOUND');
+  await assertEquipmentScope(pool, user, rows[0].plan_asset_id);
+  if (String(rows[0].equipment_id) !== String(rows[0].plan_asset_id)) throw coded(409, 'PM_OCCURRENCE_LINK_MISMATCH');
+  return occurrenceDto(rows[0]);
+}
+
+async function createPmOccurrence(pool, user, planId, input = {}) {
+  const rowVersion = versionOf(input.rowVersion);
+  const evaluatedAt = input.evaluatedAt;
+  if (evaluatedAt == null || evaluatedAt === '') throw coded(422, 'PM_EVALUATED_AT_REQUIRED');
+  const evaluationTime = parsePmTimestamp(evaluatedAt, 'PM_EVALUATED_AT_INVALID');
+  const requestedPeriodKey = input.periodKey == null ? null : String(input.periodKey).trim();
+  return withPmTransaction(pool, async client => {
+    const { rows:plans } = await client.query('SELECT * FROM pm_plans WHERE id=$1 FOR UPDATE', [planId]);
+    const current = plans[0];
+    if (!current) throw coded(404, 'RECORD_NOT_FOUND');
+    await assertEquipmentScope(client, user, current.asset_id);
+    if (Number(current.row_version) !== rowVersion) throw coded(409, 'VERSION_CONFLICT');
+    if (current.deleted_at || current.archived_at || LOCKED_PM.has(current.status)) throw coded(409, 'RECORD_LOCKED');
+
+    let existing = null;
+    if (requestedPeriodKey) {
+      const match = requestedPeriodKey.match(/^calendar:(\d{4}-\d{2}-\d{2})$/);
+      if (!match || periodKeyForDueDate(match[1], current.schedule_basis) !== requestedPeriodKey) {
+        throw coded(422, 'PM_PERIOD_KEY_INVALID');
+      }
+      existing = await findPmOccurrence(client, planId, requestedPeriodKey);
+      if (existing) {
+        if (String(existing.equipment_id) !== String(current.asset_id)) throw coded(409, 'PM_OCCURRENCE_LINK_MISMATCH');
+        return { occurrence:occurrenceDto(existing), idempotentReplay:true };
+      }
+    }
+
+    const due = calculatePmDue(current, evaluationTime);
+    if (!due.nextDueAt || due.dueStatus === 'insufficient_data') {
+      throw Object.assign(coded(422, 'PM_SCHEDULE_DATA_REQUIRED'), { reason:due.reason || 'due_date_unavailable' });
+    }
+    const periodKey = periodKeyForDueDate(due.nextDueAt, current.schedule_basis);
+    if (requestedPeriodKey && requestedPeriodKey !== periodKey) throw coded(422, 'PM_PERIOD_KEY_MISMATCH');
+    const occurrence = await findPmOccurrence(client, planId, periodKey);
+    if (occurrence) {
+      if (String(occurrence.equipment_id) !== String(current.asset_id)) throw coded(409, 'PM_OCCURRENCE_LINK_MISMATCH');
+      return { occurrence:occurrenceDto(occurrence), idempotentReplay:true };
+    }
+
+    const id = crypto.randomUUID();
+    const { rows:inserted } = await client.query(
+      `INSERT INTO pm_occurrences(id,pm_plan_id,equipment_id,period_key,due_at,status,provenance_status,row_version,created_by,updated_by)
+       VALUES($1,$2,$3,$4,$5,$6,'verified',1,$7,$7)
+       ON CONFLICT(pm_plan_id,period_key) DO NOTHING RETURNING *`,
+      [id, planId, current.asset_id, periodKey, due.nextDueAt, due.dueStatus, user.id]
+    );
+    const saved = inserted[0] || await findPmOccurrence(client, planId, periodKey);
+    if (!saved) throw coded(409, 'PM_OCCURRENCE_CONFLICT');
+    if (String(saved.equipment_id) !== String(current.asset_id)) throw coded(409, 'PM_OCCURRENCE_LINK_MISMATCH');
+    if (inserted[0]) {
+      await audit(client, user, 'schedule', 'pm_occurrence', saved.id, null, saved, periodKey);
+      await publish(client, user, {
+        type:'pm_occurrence.scheduled', aggregateType:'pm_occurrence', aggregateId:saved.id, permission:'pm.view',
+        equipmentId:current.asset_id, payload:{ id:saved.id, pmPlanId:planId, periodKey, assetId:current.asset_id }
+      });
+    }
+    return { occurrence:occurrenceDto(saved), idempotentReplay:!inserted[0] };
+  });
+}
+
+async function updatePmOccurrenceDueStatus(pool, user, planId, occurrenceId, input = {}) {
+  const rowVersion = versionOf(input.rowVersion);
+  const evaluatedAt = input.evaluatedAt;
+  if (evaluatedAt == null || evaluatedAt === '') throw coded(422, 'PM_EVALUATED_AT_REQUIRED');
+  const evaluationTime = parsePmTimestamp(evaluatedAt, 'PM_EVALUATED_AT_INVALID');
+  return withPmTransaction(pool, async client => {
+    const { rows:refs } = await client.query('SELECT pm_plan_id FROM pm_occurrences WHERE id=$1', [occurrenceId]);
+    if (!refs[0] || String(refs[0].pm_plan_id) !== String(planId)) throw coded(404, 'RECORD_NOT_FOUND');
+    const { rows:plans } = await client.query('SELECT * FROM pm_plans WHERE id=$1 FOR UPDATE', [planId]);
+    const plan = plans[0];
+    if (!plan) throw coded(404, 'RECORD_NOT_FOUND');
+    await assertEquipmentScope(client, user, plan.asset_id);
+    if (plan.deleted_at || plan.archived_at || LOCKED_PM.has(plan.status)) throw coded(409, 'RECORD_LOCKED');
+    const { rows:occurrences } = await client.query(
+      'SELECT * FROM pm_occurrences WHERE id=$1 AND pm_plan_id=$2 FOR UPDATE', [occurrenceId, planId]
+    );
+    const current = occurrences[0];
+    if (!current) throw coded(404, 'RECORD_NOT_FOUND');
+    if (String(current.equipment_id) !== String(plan.asset_id)) throw coded(409, 'PM_OCCURRENCE_LINK_MISMATCH');
+    if (Number(current.row_version) !== rowVersion) throw coded(409, 'VERSION_CONFLICT');
+    if (PM_OCCURRENCE_FINAL_STATES.has(current.status)) throw coded(409, 'PM_OCCURRENCE_FINAL');
+    if (!['scheduled','due','overdue'].includes(current.status)) throw coded(409, 'PM_OCCURRENCE_STATUS_LOCKED');
+    if (periodKeyForDueDate(current.due_at, plan.schedule_basis) !== current.period_key) throw coded(409, 'PM_PERIOD_KEY_MISMATCH');
+
+    const due = calculatePmDue({
+      schedule_basis:plan.schedule_basis, first_due_at:current.due_at,
+      last_completed_at:null, next_due_at:null, tolerance_days:plan.tolerance_days
+    }, evaluationTime);
+    if (!due.nextDueAt || due.dueStatus === 'insufficient_data') {
+      throw Object.assign(coded(422, 'PM_SCHEDULE_DATA_REQUIRED'), { reason:due.reason || 'due_date_unavailable' });
+    }
+    if (current.status === due.dueStatus) {
+      return { occurrence:occurrenceDto(current), evaluatedAt:evaluationTime, idempotentReplay:true };
+    }
+    const { rows:updatedRows } = await client.query(
+      `UPDATE pm_occurrences SET status=$3,updated_at=now(),updated_by=$4,row_version=row_version+1
+       WHERE id=$1 AND row_version=$2 AND status IN ('scheduled','due','overdue') RETURNING *`,
+      [occurrenceId, rowVersion, due.dueStatus, user.id]
+    );
+    const updated = updatedRows[0];
+    if (!updated) throw coded(409, 'VERSION_CONFLICT');
+    await audit(client, user, 'evaluate_due', 'pm_occurrence', occurrenceId, current, updated, evaluationTime);
+    await publish(client, user, {
+      type:'pm_occurrence.due_status_updated', aggregateType:'pm_occurrence', aggregateId:occurrenceId, permission:'pm.view',
+      equipmentId:plan.asset_id, payload:{ id:occurrenceId, pmPlanId:planId, status:due.dueStatus, evaluatedAt:evaluationTime }
+    });
+    return { occurrence:occurrenceDto(updated), evaluatedAt:evaluationTime, idempotentReplay:false };
+  });
+}
+
+async function listPmPlans(pool, user, filters = {}) {
+  const { rows } = await pool.query(
+    `SELECT p.*, a.id AS equipment_id, a.code AS equipment_code, a.name AS equipment_name
+     FROM pm_plans p LEFT JOIN assets a ON a.id=p.asset_id
+     WHERE ($1::boolean OR (p.archived_at IS NULL AND p.deleted_at IS NULL))
+       AND ($2::text IS NULL OR p.asset_id=$2)
+     ORDER BY p.title LIMIT 500`,
+    [filters.includeArchived === true, filters.assetId || null]
+  );
+  const visible = [];
+  for (const row of rows) {
+    try {
+      await assertEquipmentScope(pool, user, row.asset_id);
+      visible.push(row);
+    } catch (error) {
+      if (!['EQUIPMENT_SCOPE_DENIED','EQUIPMENT_NOT_FOUND'].includes(error.code)) throw error;
+    }
+  }
+  return visible.map(row => pmDto(row));
+}
+
+async function getPmPlan(pool, user, id, options = {}) {
+  const { rows } = await pool.query(
+    `SELECT p.*, a.id AS equipment_id, a.code AS equipment_code, a.name AS equipment_name
+     FROM pm_plans p LEFT JOIN assets a ON a.id=p.asset_id
+     WHERE p.id=$1 AND ($2::boolean OR (p.archived_at IS NULL AND p.deleted_at IS NULL))`,
+    [id, options.includeArchived === true]
+  );
+  if (!rows[0]) throw coded(404, 'RECORD_NOT_FOUND');
+  await assertEquipmentScope(pool, user, rows[0].asset_id);
   return pmDto(rows[0]);
 }
 
@@ -878,10 +1450,11 @@ async function updatePmPlan(pool, user, id, input) {
   const rowVersion = versionOf(input.rowVersion);
   return withTransaction(pool, async client => {
     const current = await lockRow(client, 'pm_plans', id);
-    if (current.deleted_at || LOCKED_PM.has(current.status)) throw coded(409, 'RECORD_LOCKED');
+    await assertEquipmentScope(client, user, current.asset_id);
+    if (current.deleted_at || current.archived_at || LOCKED_PM.has(current.status)) throw coded(409, 'RECORD_LOCKED');
     if (Number(current.row_version) !== rowVersion) throw coded(409, 'VERSION_CONFLICT');
     const assetId = input.assetId || current.asset_id;
-    await requireEquipment(client, assetId, true);
+    if (String(assetId) !== String(current.asset_id)) await assertEquipmentScope(client, user, assetId);
     const title = String(input.title ?? current.title ?? '').trim();
     if (!title) throw coded(422, 'TITLE_REQUIRED');
     const updated = await writeUpdate(client, 'pm_plans', id, rowVersion, user.id, {
@@ -900,24 +1473,100 @@ async function updatePmPlan(pool, user, id, input) {
   });
 }
 
-async function archivePmPlan(pool, user, id, input) {
+async function lockPmPlanForArchive(client, id) {
+  const { rows } = await client.query('SELECT * FROM pm_plans WHERE id=$1 FOR UPDATE', [id]);
+  if (!rows[0]) throw coded(404, 'RECORD_NOT_FOUND');
+  return rows[0];
+}
+
+async function requirePmActor(client, user) {
+  if (!user || !user.id) throw coded(422, 'ACTOR_REQUIRED');
+  const { rows } = await client.query('SELECT id FROM users WHERE id=$1 AND active=true', [user.id]);
+  if (!rows[0]) throw coded(403, 'ACTOR_INVALID');
+  return rows[0].id;
+}
+
+async function assertNoActivePmWork(client, planId) {
+  const { rows } = await client.query(
+    `SELECT 1 FROM pm_occurrences o
+     WHERE o.pm_plan_id=$1 AND o.status='in_progress'
+     UNION ALL
+     SELECT 1 FROM work_orders w
+     LEFT JOIN pm_occurrences o ON o.id=w.occurrence_id
+     WHERE w.deleted_at IS NULL AND (w.pm_id=$1 OR o.pm_plan_id=$1)
+       AND w.status=ANY($2::text[])
+     LIMIT 1`,
+    [planId, [...PM_ACTIVE_WORK_ORDER_STATES]]
+  );
+  if (rows[0]) throw coded(409, 'PM_HAS_ACTIVE_WORK');
+}
+
+async function archivePmPlan(pool, user, id, input = {}) {
   const rowVersion = versionOf(input.rowVersion);
   const reason = reasonOf(input.reason, 'ARCHIVE_REASON_REQUIRED');
-  return withTransaction(pool, async client => {
-    const current = await lockRow(client, 'pm_plans', id);
+  return withPmTransaction(pool, async client => {
+    const current = await lockPmPlanForArchive(client, id);
+    await assertEquipmentScope(client, user, current.asset_id);
     if (Number(current.row_version) !== rowVersion) throw coded(409, 'VERSION_CONFLICT');
+    await requirePmActor(client, user);
+    await assertNoActivePmWork(client, id);
+    if (current.archived_at || current.deleted_at) return { archived:true, historyPreserved:true, idempotent:true };
+    const { rows:clockRows } = await client.query('SELECT clock_timestamp() AS archived_at');
+    const archivedAt = clockRows[0]?.archived_at;
+    if (!archivedAt) throw coded(500, 'PM_ARCHIVE_TIMESTAMP_UNAVAILABLE');
     const { rows } = await client.query(
-      `UPDATE pm_plans SET deleted_at=now(), updated_at=now(), updated_by=$3, row_version=row_version+1
-       WHERE id=$1 AND row_version=$2 AND deleted_at IS NULL RETURNING *`,
-      [id, rowVersion, user.id]
+      `UPDATE pm_plans
+       SET archived_at=$3, archived_by=$4, archive_reason=$5, deleted_at=$3,
+           updated_at=$3, updated_by=$4, row_version=row_version+1
+       WHERE id=$1 AND row_version=$2 AND archived_at IS NULL AND deleted_at IS NULL
+       RETURNING *`,
+      [id, rowVersion, archivedAt, user.id, reason]
     );
     if (!rows[0]) throw coded(409, 'VERSION_CONFLICT');
     await audit(client, user, 'archive', 'pm_plan', id, current, rows[0], reason);
     await publish(client, user, {
-      type: 'pm_plan.archived', aggregateType: 'pm_plan', aggregateId: id, permission: 'pm.view',
-      equipmentId: current.asset_id, payload: { id, archived: true, assetId: current.asset_id }
+      type:'pm_plan.archived', aggregateType:'pm_plan', aggregateId:id, permission:'pm.view',
+      equipmentId:current.asset_id, payload:{ id, archived:true, assetId:current.asset_id, archivedAt }
     });
-    return { archived: true, historyPreserved: true };
+    return { archived:true, historyPreserved:true };
+  });
+}
+
+async function restorePmPlan(pool, user, id, input = {}) {
+  const rowVersion = versionOf(input.rowVersion);
+  return withPmTransaction(pool, async client => {
+    const current = await lockPmPlanForArchive(client, id);
+    await assertEquipmentScope(client, user, current.asset_id);
+    if (Number(current.row_version) !== rowVersion) throw coded(409, 'VERSION_CONFLICT');
+    await requirePmActor(client, user);
+    const isArchived = Boolean(current.archived_at || current.deleted_at);
+    if (!isArchived) return { restored:true, historyPreserved:true, idempotent:true };
+
+    if (current.code != null) {
+      const { rows:conflicts } = await client.query(
+        `SELECT id FROM pm_plans
+         WHERE id<>$1 AND asset_id=$2 AND code=$3
+           AND archived_at IS NULL AND deleted_at IS NULL
+         LIMIT 1`,
+        [id, current.asset_id, current.code]
+      );
+      if (conflicts[0]) throw coded(409, 'PM_CODE_CONFLICT');
+    }
+    const { rows } = await client.query(
+      `UPDATE pm_plans
+       SET archived_at=NULL, archived_by=NULL, archive_reason=NULL, deleted_at=NULL,
+           updated_at=clock_timestamp(), updated_by=$3, row_version=row_version+1
+       WHERE id=$1 AND row_version=$2 AND (archived_at IS NOT NULL OR deleted_at IS NOT NULL)
+       RETURNING *`,
+      [id, rowVersion, user.id]
+    );
+    if (!rows[0]) throw coded(409, 'VERSION_CONFLICT');
+    await audit(client, user, 'restore', 'pm_plan', id, current, rows[0], 'بازیابی برنامه PM');
+    await publish(client, user, {
+      type:'pm_plan.restored', aggregateType:'pm_plan', aggregateId:id, permission:'pm.view',
+      equipmentId:current.asset_id, payload:{ id, restored:true, assetId:current.asset_id }
+    });
+    return { restored:true, historyPreserved:true };
   });
 }
 
@@ -926,8 +1575,9 @@ async function cancelPmPlan(pool, user, id, input) {
   const reason = reasonOf(input.reason, 'CANCEL_REASON_REQUIRED');
   return withTransaction(pool, async client => {
     const current = await lockRow(client, 'pm_plans', id);
+    await assertEquipmentScope(client, user, current.asset_id);
     if (Number(current.row_version) !== rowVersion) throw coded(409, 'VERSION_CONFLICT');
-    if (LOCKED_PM.has(current.status)) throw coded(409, 'RECORD_LOCKED');
+    if (current.deleted_at || current.archived_at || LOCKED_PM.has(current.status)) throw coded(409, 'RECORD_LOCKED');
     const updated = await writeUpdate(client, 'pm_plans', id, rowVersion, user.id, {
       status: 'cancelled',
       cancel_reason: reason,
@@ -944,33 +1594,106 @@ async function cancelPmPlan(pool, user, id, input) {
 
 async function generatePmWorkOrder(pool, user, id, input) {
   const rowVersion = versionOf(input.rowVersion);
-  return withTransaction(pool, async client => {
+  return withPmTransaction(pool, async client => {
     const current = await lockRow(client, 'pm_plans', id);
+    await assertEquipmentScope(client, user, current.asset_id);
     if (Number(current.row_version) !== rowVersion) throw coded(409, 'VERSION_CONFLICT');
-    if (LOCKED_PM.has(current.status)) throw coded(409, 'RECORD_LOCKED');
-    await requireEquipment(client, current.asset_id, true);
-    const workOrderId = crypto.randomUUID();
-    const no = await nextNumber(client, 'work_order', 'WO');
-    const checklist = asArray(current.checklist);
-    const descr = `${current.title}${checklist.length ? ' — ' + checklist.join('، ') : ''}`;
-    const created = await client.query(
-      `INSERT INTO work_orders(id,no,type,asset_id,descr,priority,assignee,status,pm_id,times,parts,report,est)
-       VALUES($1,$2,'PM',$3,$4,'normal',$5,$6,$7,'{}'::jsonb,'[]'::jsonb,'{}'::jsonb,2) RETURNING *`,
-      [workOrderId, no, current.asset_id, descr, current.owner || null, current.owner ? 'assigned' : 'open', current.id]
+    if (LOCKED_PM.has(current.status) || current.archived_at || current.deleted_at) throw coded(409, 'RECORD_LOCKED');
+
+    const evaluatedAt = new Date();
+    const due = calculatePmDue(current, evaluatedAt);
+    if (!due.nextDueAt || due.dueStatus === 'insufficient_data') {
+      throw Object.assign(coded(422, 'PM_SCHEDULE_DATA_REQUIRED'), { reason:due.reason || 'due_date_unavailable' });
+    }
+    const periodKey = periodKeyForDueDate(due.nextDueAt, current.schedule_basis);
+    const requestedKey = String(input.idempotencyKey || input.requestId || `pm-generate:${id}:${periodKey}`).trim();
+    if (!requestedKey || requestedKey.length > 240) throw coded(422, 'PM_IDEMPOTENCY_KEY_INVALID');
+    const requestHash = crypto.createHash('sha256').update(JSON.stringify({ planId:String(id), periodKey })).digest('hex');
+    const replay = await reservePmGenerationRequest(client, user.id, requestedKey, requestHash);
+    if (replay) return { ...replay, idempotentReplay:true };
+
+    let occurrence = await findPmOccurrence(client, id, periodKey);
+    if (!occurrence) {
+      const occurrenceId = crypto.randomUUID();
+      const inserted = await client.query(
+        `INSERT INTO pm_occurrences(id,pm_plan_id,equipment_id,period_key,due_at,status,provenance_status,row_version,created_by,updated_by)
+         VALUES($1,$2,$3,$4,$5,$6,'verified',1,$7,$7)
+         ON CONFLICT(pm_plan_id,period_key) DO NOTHING RETURNING *`,
+        [occurrenceId, id, current.asset_id, periodKey, due.nextDueAt, due.dueStatus, user.id]
+      );
+      occurrence = inserted.rows[0] || await findPmOccurrence(client, id, periodKey);
+      if (!occurrence) throw coded(409, 'PM_OCCURRENCE_CONFLICT');
+    }
+    if (PM_OCCURRENCE_FINAL_STATES.has(occurrence.status)) throw coded(409, 'PM_OCCURRENCE_NOT_GENERATABLE');
+
+    let workOrder = occurrence.linked_work_order_id
+      ? await findPmWorkOrder(client, occurrence.id)
+      : null;
+    if (occurrence.linked_work_order_id && !workOrder) throw coded(409, 'PM_OCCURRENCE_WORK_ORDER_INCONSISTENT');
+    let updatedOccurrence = occurrence;
+    if (workOrder) {
+      if (occurrence.status !== 'work_order_generated') {
+        const { rows } = await client.query(
+          `UPDATE pm_occurrences SET status='work_order_generated',generated_at=COALESCE(generated_at,now()),
+             updated_at=now(),updated_by=$3,row_version=row_version+1
+           WHERE id=$1 AND row_version=$2 RETURNING *`,
+          [occurrence.id, Number(occurrence.row_version), user.id]
+        );
+        if (!rows[0]) throw coded(409, 'VERSION_CONFLICT');
+        updatedOccurrence = rows[0];
+        await audit(client, user, 'reconcile', 'pm_occurrence', occurrence.id, occurrence, updatedOccurrence, 'بازیابی اتصال دستورکار موجود');
+      }
+    } else {
+      if (occurrence.status === 'work_order_generated') throw coded(409, 'PM_OCCURRENCE_WORK_ORDER_INCONSISTENT');
+      if (!PM_OCCURRENCE_STATES.has(occurrence.status) || !['scheduled','due','overdue'].includes(occurrence.status)) {
+        throw coded(409, 'PM_OCCURRENCE_NOT_GENERATABLE');
+      }
+      const workOrderId = crypto.randomUUID();
+      const no = await nextNumber(client, 'work_order', 'WO');
+      const checklist = asArray(current.checklist);
+      const descr = `${current.title}${checklist.length ? ' — ' + checklist.join('، ') : ''}`;
+      const estimatedHours = Number(current.estimated_duration_minutes) > 0
+        ? Number(current.estimated_duration_minutes) / 60 : null;
+      const created = await client.query(
+        `INSERT INTO work_orders(id,no,type,asset_id,descr,priority,assignee,status,pm_id,occurrence_id,due_at,source_ref,times,parts,report,est)
+         VALUES($1,$2,'PM',$3,$4,'normal',$5,$6,$7,$8,$9,$10,'{}'::jsonb,'[]'::jsonb,'{}'::jsonb,$11) RETURNING *`,
+        [workOrderId, no, current.asset_id, descr, current.owner || null, current.owner ? 'assigned' : 'open',
+          current.id, occurrence.id, occurrence.due_at, `pm:${id}:${periodKey}`, estimatedHours]
+      );
+      workOrder = created.rows[0];
+      await linkWorkOrderAsset(client, workOrderId, current.asset_id);
+      const { rows } = await client.query(
+        `UPDATE pm_occurrences SET status='work_order_generated',generated_at=now(),updated_at=now(),
+           updated_by=$3,row_version=row_version+1
+         WHERE id=$1 AND row_version=$2 RETURNING *`,
+        [occurrence.id, Number(occurrence.row_version), user.id]
+      );
+      if (!rows[0]) throw coded(409, 'VERSION_CONFLICT');
+      updatedOccurrence = rows[0];
+      await audit(client, user, 'create', 'pm_occurrence', occurrence.id, null, updatedOccurrence, periodKey);
+      await audit(client, user, 'generate', 'pm_plan', id, current, current, no);
+      await audit(client, user, 'create', 'work_order', workOrderId, null, workOrder, `صدور از PM ${current.title}`);
+      await publish(client, user, {
+        type:'pm_plan.generated', aggregateType:'pm_plan', aggregateId:id, permission:'pm.view',
+        equipmentId:current.asset_id, payload:{ id, workOrderId, occurrenceId:occurrence.id, periodKey, assetId:current.asset_id }
+      });
+      await publish(client, user, {
+        type:'work_order.created', aggregateType:'work_order', aggregateId:workOrderId, permission:'work_order.view',
+        equipmentId:current.asset_id, payload:{ id:workOrderId, no, assetId:current.asset_id, pmId:id, occurrenceId:occurrence.id }
+      });
+    }
+
+    const result = {
+      plan:pmDto(current, evaluatedAt),
+      occurrence:occurrenceDto({ ...updatedOccurrence, linked_work_order_id:workOrder.id }),
+      workOrder:workOrderDto(workOrder)
+    };
+    await client.query(
+      `UPDATE idempotency_keys SET response_status=201,response_body=$3::jsonb,expires_at=now()+interval '24 hours'
+       WHERE user_id=$1 AND idempotency_key=$2 AND request_hash=$4`,
+      [user.id, requestedKey, JSON.stringify(result), requestHash]
     );
-    await linkWorkOrderAsset(client, workOrderId, current.asset_id);
-    const updated = await writeUpdate(client, 'pm_plans', id, rowVersion, user.id, { last_run: new Date().toISOString() });
-    await audit(client, user, 'generate', 'pm_plan', id, current, updated, no);
-    await audit(client, user, 'create', 'work_order', workOrderId, null, created.rows[0], `صدور از PM ${current.title}`);
-    await publish(client, user, {
-      type: 'pm_plan.generated', aggregateType: 'pm_plan', aggregateId: id, permission: 'pm.view',
-      equipmentId: current.asset_id, payload: { id, workOrderId, assetId: current.asset_id }
-    });
-    await publish(client, user, {
-      type: 'work_order.created', aggregateType: 'work_order', aggregateId: workOrderId, permission: 'work_order.view',
-      equipmentId: current.asset_id, payload: { id: workOrderId, no, assetId: current.asset_id, pmId: id }
-    });
-    return { plan: pmDto(updated), workOrder: workOrderDto(created.rows[0]) };
+    return result;
   });
 }
 
@@ -1321,6 +2044,8 @@ module.exports = {
   requestDto,
   workOrderDto,
   pmDto,
+  calculatePmDue,
+  periodKeyForDueDate,
   createRequest,
   listRequests,
   getRequest,
@@ -1340,8 +2065,14 @@ module.exports = {
   createPmPlan,
   listPmPlans,
   getPmPlan,
+  getPmDue,
+  listPmOccurrences,
+  getPmOccurrence,
+  createPmOccurrence,
+  updatePmOccurrenceDueStatus,
   updatePmPlan,
   archivePmPlan,
+  restorePmPlan,
   cancelPmPlan,
   generatePmWorkOrder,
   equipmentLinks,

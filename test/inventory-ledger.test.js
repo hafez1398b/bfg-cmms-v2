@@ -281,11 +281,12 @@ test('delivery confirmation is limited to the requester and attachments stay out
 test('inventory client and generic routes do not keep stock or files locally', () => {
   const client = read('public/platform-v2/inventory-client.js');
   const server = read('server.js');
+  const generic = read('server/generic-data.js');
   assert.match(client, /\/api\/inventory\/consumptions/);
   assert.match(client, /\/api\/work-orders\/.+\/attachments/);
   assert.match(client, /LOCAL_INVENTORY_WRITE_BLOCKED/);
   assert.doesNotMatch(client, /localStorage|readAsDataURL|toDataURL|btoa/);
-  assert.match(server, /USE_INVENTORY_API/);
+  assert.match(generic, /USE_INVENTORY_API/);
   assert.match(server, /createInventoryRouter/);
   assert.doesNotMatch(server, /RECORD_DOMAINS=\{[^}]*items:/);
   assert.match(read('public/index.html'), /inventory-client\.js/);

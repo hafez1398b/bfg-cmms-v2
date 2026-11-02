@@ -41,7 +41,7 @@ function harness({ wizard = false } = {}) {
     MENU: [{ g: 'دارایی‌ها' }, { id: 'tree', ic: '🌳', t: 'درخت تجهیزات' }],
     pgTree: () => '<div>classic tree</div>', doLogin() {}, ME: null, CUR: 'dash', buildMenu() {},
     EquipmentRepository: { current: () => repository },
-    sessionStorage: { getItem: () => null, setItem() {} }, localStorage: { getItem: () => null, setItem() {} },
+    sessionStorage: { getItem: () => null, setItem() {} },
     setTimeout: () => 0, clearTimeout() {}, requestAnimationFrame: fn => fn(), can: () => true,
     esc: value => String(value ?? ''), fa: value => String(value ?? ''), money: value => String(value ?? ''),
     jDate: value => String(value ?? ''), jDateTime: value => String(value ?? ''), AS_ST: { active: ['فعال', 'b-green'] },
@@ -124,6 +124,56 @@ test('dossier has exactly the authoritative eleven sections and no passport-prin
   assert.match(content.innerHTML, /مشخصات فنی/);
   assert.doesNotMatch(content.innerHTML, /چاپ شناسنامه|QR/);
   assert.match(content.innerHTML, /eqv2-breadcrumb/);
+});
+
+test('all eleven dossier sections render without a runtime exception', async () => {
+  const { context, detailBody } = harness();
+  await context.eqv2OpenDetail('eq-1');
+  const tabs = ['technical','structure','spares','maintenance','history','calibration','instructions','documents','transactions','monitoring','risk'];
+  for (const tab of tabs) {
+    await assert.doesNotReject(context.eqv2DetailTab(tab), tab);
+    assert.equal(context.EQV2.tab, tab);
+    assert.ok(detailBody.innerHTML.length > 0, `${tab} must render a deterministic body`);
+    assert.doesNotMatch(detailBody.innerHTML, /بخش پرونده در دسترس نیست/, tab);
+  }
+});
+
+test('dossier onclick handlers resolve to installed runtime functions', () => {
+  const { context, source } = harness();
+  const handlers = [...source.matchAll(/\bon(?:click|input|change|keydown)="([^"]+)"/g)].map(match => match[1]);
+  assert.ok(handlers.length >= 50, 'the complete dossier event surface must be audited');
+  const names = new Set();
+  for (const handler of handlers) {
+    for (const match of handler.matchAll(/\b(eqv2[A-Z][A-Za-z0-9]*)\s*\(/g)) names.add(match[1]);
+    if (/\bopenReq\(/.test(handler)) assert.match(handler, /typeof openReq===['"]function['"]/);
+    if (/\bopenWO\(/.test(handler)) assert.match(handler, /typeof openWO===['"]function['"]/);
+  }
+  for (const name of names) assert.equal(typeof context[name], 'function', `${name} must be installed before an inline handler can call it`);
+
+  const minimal = {
+    sessionStorage:{ getItem:()=>null, setItem(){} }, document:{}, location:{ pathname:'/' }, history:{},
+    setTimeout:()=>0, clearTimeout(){}, console
+  };
+  minimal.window = minimal;
+  vm.createContext(minimal);
+  assert.doesNotThrow(() => vm.runInContext(source, minimal), 'optional shell hooks must not throw when legacy functions are absent');
+  assert.equal(typeof minimal.pgTree, 'function');
+});
+
+test('dossier request, work-order and PM actions use central forms with the equipment preselected', () => {
+  const { context } = harness();
+  const calls = [];
+  context.openReqForm = argument => calls.push(['request', argument]);
+  context.openWOForm = argument => calls.push(['wo', argument]);
+  context.openPMForm = argument => calls.push(['pm', argument]);
+  context.eqv2Related('request', 'eq-1');
+  context.eqv2Related('wo', 'eq-1');
+  context.eqv2Related('pm', 'eq-1');
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [
+    ['request', { equipmentId:'eq-1' }],
+    ['wo', { equipmentId:'eq-1' }],
+    ['pm', 'eq-1']
+  ]);
 });
 
 test('risk section maps recorded work-order root-cause analysis without inventing findings', async () => {

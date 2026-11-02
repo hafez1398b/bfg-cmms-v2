@@ -78,7 +78,7 @@
       technicianMessage:'داده کافی برای پیشنهاد تکنسین وجود ندارد',ai:{loading:false,message:'',recommendations:[],runId:null,generation:0},quantityStep:null,quantityKeys:new Map(),
       fileTokens:new WeakMap(),uploadedFiles:new WeakSet(),dataWarnings:[]};
     const jobs=[optional('/api/equipment/filters',{factories:[],categories:[]})];
-    if(type==='work_order')jobs.push(optional('/api/requests',{data:[]}),optional('/api/data/users',[]),optional('/api/inventory/items/availability',{data:[]}));
+    if(type==='work_order')jobs.push(optional('/api/requests',{data:[]}),optional('/api/users/directory',{data:[]}),optional('/api/inventory/items/availability',{data:[]}));
     const result=await Promise.all(jobs),filters=result[0]||{};
     rt.filters={factories:Array.isArray(filters.factories)?filters.factories:[],categories:Array.isArray(filters.categories)?filters.categories:[]};
     if(type==='work_order'){
