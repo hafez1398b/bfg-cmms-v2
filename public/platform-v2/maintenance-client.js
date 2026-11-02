@@ -107,8 +107,8 @@
     if (!Array.isArray(DB.users)) DB.users = [];
     (Array.isArray(rows) ? rows : []).forEach(row => {
       const existing = DB.users.find(user => user.id === row.id);
-      if (existing) { existing.name = row.name; existing.role = row.role; existing.active = row.active !== false; return; }
-      DB.users.push({ id:row.id, u:row.username, name:row.name, role:row.role, unit:row.unit, active:row.active !== false, backendIdentity:true });
+      if (existing) { existing.name = row.name; existing.role = row.role; existing.active = true; return; }
+      DB.users.push({ id:row.id, name:row.name, role:row.role, active:true, backendIdentity:true });
     });
   }
 
@@ -133,7 +133,7 @@
       replace('pms', plans.data || []);
       state.pm.loaded = true;
       try { mergeAssets((await api(apiBasePath() + '/equipment?limit=200')).data); } catch (_) {}
-      try { mergeUsers(await api(apiBasePath() + '/data/users')); } catch (_) {}
+      try { mergeUsers((await api(apiBasePath() + '/users/directory')).data || []); } catch (_) {}
       if (!(options && options.quiet) && typeof go === 'function' && ['requests','wos','pm'].includes(window.CUR)) go(window.CUR);
       return plans.data || [];
     } catch (error) {

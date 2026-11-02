@@ -1886,7 +1886,7 @@ function sendMsg(){
 /* ================= Users & RBAC ================= */
 const PERMS=[['تجهیزات','✔','✔','✔','✔'],['دستورکارها','✔','✔','✔','✔'],['انبار','✔','✔','—','—'],['PTW','✔','—','—','—'],['گزارش‌ها','✔','✔','—','✔']];
 function pgUsers(){
- if(!['admin','mgr'].includes(ME.role))return head('کاربران','دسترسی محدود')+`<div class="card empty"><div class="big">🔒</div>دسترسی به این بخش فقط برای مدیر سیستم مجاز است (RBAC — FR-USR-02)</div>`;
+ if(ME.role!=='admin')return head('کاربران','دسترسی محدود')+`<div class="card empty"><div class="big">🔒</div>دسترسی به این بخش فقط برای مدیر سیستم مجاز است (RBAC — FR-USR-02)</div>`;
  return head('مدیریت کاربران و نقش‌ها (RBAC)','کاربران',
  `<button class="btn btn-primary" onclick="openUserForm()">＋ کاربر جدید</button>`)+`
  <div class="tbl-wrap" style="margin-bottom:16px"><table><thead><tr><th>کاربر</th><th>نام کاربری</th><th>نقش</th><th>واحد</th><th>موبایل</th><th>وضعیت</th><th></th></tr></thead><tbody>
@@ -1903,7 +1903,10 @@ function pgUsers(){
  </div>
  <div class="muted" style="margin-top:9px">Admin می‌تواند نقش سفارشی با ماتریس چک‌باکسی تعریف کند؛ برآیند چند نقش = اجتماع مجوزها (FR-USR-03).</div></div>`;
 }
-function toggleUser(id){const u=user(id);u.active=!u.active;save();audit((u.active?'فعال‌سازی ':'غیرفعال‌سازی ')+u.name);go('users');}
+function toggleUser(id){
+ if(bfgUseServerStore()){toast('تغییر وضعیت کاربر فقط از مسیر اختصاصی مدیریت کاربران قابل انجام است.',1);return;}
+ const u=user(id);u.active=!u.active;save();audit((u.active?'فعال‌سازی ':'غیرفعال‌سازی ')+u.name);go('users');
+}
 function openUserForm(){
  modal(mhead('کاربر جدید')+`
  <div class="m-body">
@@ -1917,17 +1920,30 @@ function openUserForm(){
   </div>
   <div class="frow">
    <div class="field"><label>موبایل (پیامک/بله/WhatsApp)</label><input id="usPhone"></div>
-   <div class="field"><label>رمز اولیه</label><input id="usPass" value="1234"></div>
+   <div class="field"><label>رمز اولیه (حداقل ۱۲ نویسه)</label><input id="usPass" type="password" minlength="12" autocomplete="new-password"></div>
   </div>
  </div>
  <div class="m-foot"><button class="btn btn-primary" onclick="saveUser()">ثبت کاربر</button><button class="btn btn-ghost" onclick="closeModal()">انصراف</button></div>`);
 }
-function saveUser(){
- const name=$('#usName').value.trim(),un=$('#usUser').value.trim();
+async function saveUser(){
+ const name=$('#usName').value.trim(),un=$('#usUser').value.trim(),password=$('#usPass').value;
+ const role=$('#usRole').value,unit=$('#usUnit').value.trim()||'—',phone=$('#usPhone').value.trim();
  if(!name||!un){toast('نام و نام کاربری الزامی است',1);return;}
+ if(password.length<12){toast('رمز عبور باید حداقل ۱۲ نویسه باشد',1);return;}
+ if(bfgUseServerStore()){
+  try{
+   const result=await window.bfgApi('/api/users',{method:'POST',body:JSON.stringify({username:un,password,name,role,unit,phone})});
+   DB.users.push({...result.data,u:un,unit,phone,active:true,backendIdentity:true});
+   closeModal();toast('کاربر از مسیر امن سرور ثبت شد ✅');go('users');
+  }catch(error){
+   const code=error&&error.payload&&error.payload.error;
+   toast(code==='USERNAME_ALREADY_EXISTS'?'این نام کاربری قبلاً ثبت شده':code==='SYSTEM_ADMIN_REQUIRED'?'فقط مدیر سیستم می‌تواند نقش مدیر سیستم ایجاد کند':code==='PERMISSION_DENIED'?'مجوز ساخت کاربر وجود ندارد':'ثبت کاربر انجام نشد؛ اطلاعات فرم را بررسی کنید.',1);
+  }
+  return;
+ }
  if(DB.users.some(u=>u.u===un)){toast('این نام کاربری قبلاً ثبت شده',1);return;}
- DB.users.push({id:uid(),u:un,p:$('#usPass').value||'1234',name,role:$('#usRole').value,unit:$('#usUnit').value||'—',phone:$('#usPhone').value,active:true});
- save();audit('ایجاد کاربر '+name);closeModal();toast('کاربر ثبت شد ✅ (تغییر اجباری رمز در اولین ورود)');go('users');
+ DB.users.push({id:uid(),u:un,p:password,name,role,unit,phone,active:true});
+ save();audit('ایجاد کاربر '+name);closeModal();toast('کاربر ثبت شد ✅');go('users');
 }
 
 /* ================= Audit ================= */
@@ -3259,18 +3275,20 @@ function staffForm(id){
    <div class="field"><label>وضعیت فعالیت</label><select id="sfAct">${['فعال','مرخصی','مأموریت','تعلیق','بازنشسته'].map(x=>`<option ${h.activity===x?'selected':''}>${x}</option>`).join('')}</select></div>
   </div>
   <div class="checkline"><input type="checkbox" id="sfTfa" ${h.twoFA?'checked':''}> فعال‌سازی ورود دومرحله‌ای (2FA) با کد پیامکی</div>
-  ${!u?'<div class="frow"><div class="field"><label>نام کاربری *</label><input id="sfUser"></div><div class="field"><label>رمز اولیه</label><input id="sfPass" value="1234"></div></div>':''}
+  ${!u?'<div class="frow"><div class="field"><label>نام کاربری *</label><input id="sfUser"></div><div class="field"><label>رمز اولیه (حداقل ۱۲ نویسه)</label><input id="sfPass" type="password" minlength="12" autocomplete="new-password"></div></div>':''}
  </div>
  <div class="m-foot"><button class="btn btn-primary" onclick="staffSave(${u?`'${u.id}'`:'null'})">ذخیره پرونده</button><button class="btn btn-ghost" onclick="closeModal()">انصراف</button></div>`,true);
 }
 function staffSave(id){
+ if(bfgUseServerStore()){toast('ثبت یا ویرایش پرونده HR به Route اختصاصی و مجوز HR نیاز دارد و محلی ذخیره نمی‌شود.',1);return;}
  const name=$('#sfName').value.trim();if(!name){toast('نام الزامی است',1);return;}
  let u;
  if(id)u=user(id);
  else{
   const un=$('#sfUser').value.trim();if(!un){toast('نام کاربری الزامی است',1);return;}
   if(DB.users.some(x=>x.u===un)){toast('نام کاربری تکراری است',1);return;}
-  u={id:uid(),u:un,p:$('#sfPass').value||'1234',active:true};DB.users.push(u);
+  const password=$('#sfPass').value;if(password.length<12){toast('رمز عبور باید حداقل ۱۲ نویسه باشد',1);return;}
+  u={id:uid(),u:un,p:password,active:true};DB.users.push(u);
  }
  u.name=name;u.role=$('#sfRole').value;u.unit=$('#sfUnit').value;u.phone=$('#sfPhone').value;
  u.hr=Object.assign(u.hr||{},{pcode:$('#sfPcode').value,father:$('#sfFather').value,nid:$('#sfNid').value,insurance:$('#sfIns').value,

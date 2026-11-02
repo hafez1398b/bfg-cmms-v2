@@ -29,13 +29,14 @@ test('operational records provide permission-controlled edit and recoverable arc
   assert.doesNotMatch(actions,/\.splice\(/);
 });
 
-test('backend generic record deletion is audited soft archive with concurrency and RBAC',()=>{
-  const server=read('server.js');
-  const route=server.slice(server.indexOf("app.delete('/api/data/:collection/:id'"),server.indexOf('// SPA fallback'));
-  assert.match(route,/hasPermission/);
-  assert.match(route,/ARCHIVE_REASON_REQUIRED/);
-  assert.match(route,/row_version=row_version\+1/);
-  assert.match(route,/deleted_at=now\(\)/);
-  assert.match(route,/INSERT INTO audit_x/);
-  assert.doesNotMatch(route,/DELETE FROM/i);
+test('backend generic mutations fail closed and equipment archive remains in its domain route',()=>{
+  const server=read('server.js'),generic=read('server/generic-data.js'),equipment=read('server/equipment-routes.js');
+  for(const method of ['post','put','delete'])assert.match(server,new RegExp(`app\\.${method}\\('\\/api\\/data\\/:collection`));
+  assert.match(server,/genericData\.rejectWrite/);
+  assert.doesNotMatch(generic,/INSERT INTO|UPDATE\s+[a-z_]+|DELETE FROM/i);
+  assert.match(equipment,/ARCHIVE_REASON_REQUIRED/);
+  assert.match(equipment,/row_version=row_version\+1/);
+  assert.match(equipment,/deleted_at=now\(\)/);
+  assert.match(equipment,/INSERT INTO audit_x/);
+  assert.doesNotMatch(equipment,/DELETE FROM assets/i);
 });

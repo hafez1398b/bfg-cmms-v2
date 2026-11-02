@@ -270,12 +270,13 @@ test('migration and client keep maintenance records on the central server', () =
   const schema = read('schema.sql');
   const client = read('public/platform-v2/maintenance-client.js');
   const server = read('server.js');
+  const generic = read('server/generic-data.js');
   for (const table of ['maintenance_counters', 'maintenance_corrections']) {
     assert.match(migration, new RegExp(`CREATE TABLE IF NOT EXISTS ${table}`));
     assert.match(schema, new RegExp(`CREATE TABLE IF NOT EXISTS ${table}`));
   }
   assert.doesNotMatch(migration, /\b(DROP|TRUNCATE|DELETE FROM)\b/i);
-  assert.match(server, /USE_MAINTENANCE_API/);
+  assert.match(generic, /USE_MAINTENANCE_API/);
   assert.match(server, /createMaintenanceRouter/);
   assert.doesNotMatch(server, /INSERT INTO work_orders/);
   assert.doesNotMatch(server, /SELECT \* FROM work_orders/);
