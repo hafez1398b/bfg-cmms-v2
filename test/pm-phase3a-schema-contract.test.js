@@ -56,8 +56,15 @@ test('schema.sql contains exactly one contract block identical to Migration 018,
   const migration017Start = schema.indexOf(migration017Marker);
   assert.ok(migration017Start >= 0 && migration017Start < start, 'Migration 017 must precede Migration 018 in schema.sql');
   assert.equal(schema.slice(migration017Start, start).trim(), migration017.trim(), 'Migration 017 schema contract must remain exact and unchanged');
-  const contractBlock = schema.slice(start).trim();
+  // Mission D4 appends Migration 019 after the Phase 3-A block; the 018 contract itself must
+  // remain exact and unchanged, and schema.sql must end with the exact Migration 019 mirror.
+  const migration019 = fs.readFileSync(path.join(root, 'migrations/019_equipment_spares_lifecycle.sql'), 'utf8');
+  const sparesMarker = '-- Mission D4 / Phase 3: critical spare parts lifecycle in the equipment dossier.';
+  const sparesStart = schema.indexOf(sparesMarker);
+  assert.ok(sparesStart > start, 'Migration 019 must follow the Phase 3-A block in schema.sql');
+  const contractBlock = schema.slice(start, sparesStart).trim();
   assert.equal(contractBlock, migration.trim());
+  assert.equal(schema.slice(sparesStart).trim(), migration019.trim(), 'schema.sql must end with the exact Migration 019 contract');
 
   for (const source of [contractBlock]) {
     assert.doesNotMatch(source, /\bwork_order_id\b/i);

@@ -423,9 +423,20 @@ test('migration failures log only the PostgreSQL code and filename and keep the 
 
 test('numbered migrations are idempotent and the fresh schema includes the registry', () => {
   const files = updates.listMigrationFiles(path.join(root, 'migrations'));
-  assert.deepEqual(files.map(file => file.version), ['002', '003', '004', '005', '006', '007', '008', '009', '010', '011', '012', '013', '014', '015', '016', '017', '018']);
-  assert.equal(files.at(-1).filename, '018_pm_occurrences_and_due_schedule.sql');
-  assert.equal(files.at(-1).version, '018');
+  assert.deepEqual(files.map(file => file.version), ['002', '003', '004', '005', '006', '007', '008', '009', '010', '011', '012', '013', '014', '015', '016', '017', '018', '019']);
+  assert.equal(files.at(-1).filename, '019_equipment_spares_lifecycle.sql');
+  assert.equal(files.at(-1).version, '019');
+  // Mission D4 / Phase 3: spare-part links gain lifecycle columns and specialized permissions.
+  // The migration stays additive, re-runnable and free of any destructive statement.
+  const sparesMigration = read('migrations/019_equipment_spares_lifecycle.sql');
+  assert.match(sparesMigration, /ALTER TABLE asset_spare_parts ADD COLUMN IF NOT EXISTS row_version BIGINT NOT NULL DEFAULT 1/);
+  assert.match(sparesMigration, /ALTER TABLE asset_spare_parts ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ/);
+  assert.match(sparesMigration, /equipment\.spares\.view/);
+  assert.match(sparesMigration, /equipment\.spares\.archive/);
+  assert.match(sparesMigration, /ON CONFLICT \(role, permission\) DO NOTHING/);
+  assert.doesNotMatch(sparesMigration, /\b(DROP|TRUNCATE|DELETE)\b/i);
+  assert.match(read('schema.sql'), /equipment\.spares\.archive/);
+  assert.match(read('schema.sql'), /idx_asset_spare_parts_active/);
   const structureMigration = read('migrations/015_digital_equipment_structure.sql');
   assert.match(structureMigration, /equipment\.structure\.view/);
   assert.match(structureMigration, /ON CONFLICT \(role, permission\) DO NOTHING/);

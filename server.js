@@ -141,6 +141,12 @@ app.use('/api/ai', createAIRouter({ pool, authenticateToken, authorize, registry
 app.get('/equipment/:equipmentKey', (_req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
+// Mission D4: the printable passport is an independent, bookmarkable route. It serves only the
+// application shell — every passport value is fetched afterwards through the authenticated and
+// scope-checked Equipment APIs, so a scanned/shared link never exposes data before sign-in.
+app.get('/equipment/:equipmentKey/passport', (_req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
 const realtime = configureRealtime({ io, pool, security });
 

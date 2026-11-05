@@ -24,7 +24,10 @@
     structure:null,structurePanel:[],structureFocus:null,structureSelected:null,structureQuery:'',structureArchived:false,structureLoading:false,
     structureExpanded:{},structureBulkLoading:false,structureBulkNotice:null,structureBulkError:null,structureNodeLoadingId:null,structureNodeLoadError:null,
     structureDrawerView:null,structureInventoryResults:[],structureInventoryTimer:null,structureInventoryRequestId:0,
-    structureError:null,structureSuggestNotice:null,structurePendingReject:null,inventoryOptions:[]
+    structureError:null,structureSuggestNotice:null,structurePendingReject:null,inventoryOptions:[],
+    spares:null,sparesError:null,sparesLoading:false,sparesArchived:false,sparesItemResults:[],sparesSearching:false,
+    sparesSuggestions:[],sparesSuggestNotice:null,sparesSuggesting:false,sparesPendingReject:null,sparesSuggestBusy:null,
+    passport:null,passportError:null,passportLoading:false,batchPrintBusy:false
   };
 
   // The legacy shell declares MENU with `const`, so it is not available as window.MENU.
@@ -76,7 +79,7 @@
   function toolbar(){
     const factories=E.options.factories.map(x=>`<option value="${escText(x.id)}" ${E.factoryId===x.id?'selected':''}>${escText(x.name)}</option>`).join('');
     const categories=E.options.categories.filter(x=>!E.factoryId||x.factory_id===E.factoryId).map(x=>`<option value="${escText(x.id)}" ${E.categoryId===x.id?'selected':''}>${escText(x.name)}</option>`).join('');
-    return`<div class="eqv2-toolbar"><div class="eqv2-search"><span>⌕</span><input value="${escText(E.q)}" placeholder="کد، نام، سریال، مدل یا سازنده…" oninput="eqv2Search(this.value)"></div><select aria-label="کارخانه" onchange="eqv2Filter('factoryId',this.value)"><option value="">همه کارخانه‌ها</option>${factories}</select><select aria-label="دسته" onchange="eqv2Filter('categoryId',this.value)"><option value="">همه دسته‌ها</option>${categories}</select><select aria-label="وضعیت" onchange="eqv2Filter('status',this.value)"><option value="">همه وضعیت‌ها</option>${Object.entries(typeof AS_ST==='undefined'?{}:AS_ST).map(([key,value])=>`<option value="${key}" ${E.status===key?'selected':''}>${value[0]}</option>`).join('')}</select><select aria-label="بحرانیت" onchange="eqv2Filter('criticality',this.value)"><option value="">همه بحرانیت‌ها</option>${['A','B','C'].map(x=>`<option ${E.criticality===x?'selected':''}>${x}</option>`).join('')}</select><button class="btn btn-sm btn-ghost" onclick="eqv2Columns()">ستون‌ها</button><button class="btn btn-sm btn-ghost" onclick="eqv2Export()">↓ Excel</button></div>`;
+    return`<div class="eqv2-toolbar"><div class="eqv2-search"><span>⌕</span><input value="${escText(E.q)}" placeholder="کد، نام، سریال، مدل یا سازنده…" oninput="eqv2Search(this.value)"></div><select aria-label="کارخانه" onchange="eqv2Filter('factoryId',this.value)"><option value="">همه کارخانه‌ها</option>${factories}</select><select aria-label="دسته" onchange="eqv2Filter('categoryId',this.value)"><option value="">همه دسته‌ها</option>${categories}</select><select aria-label="وضعیت" onchange="eqv2Filter('status',this.value)"><option value="">همه وضعیت‌ها</option>${Object.entries(typeof AS_ST==='undefined'?{}:AS_ST).map(([key,value])=>`<option value="${key}" ${E.status===key?'selected':''}>${value[0]}</option>`).join('')}</select><select aria-label="بحرانیت" onchange="eqv2Filter('criticality',this.value)"><option value="">همه بحرانیت‌ها</option>${['A','B','C'].map(x=>`<option ${E.criticality===x?'selected':''}>${x}</option>`).join('')}</select><button class="btn btn-sm btn-ghost" onclick="eqv2Columns()">ستون‌ها</button><button class="btn btn-sm btn-ghost" onclick="eqv2Export()">↓ Excel</button><button class="btn btn-sm btn-ghost" onclick="eqv2BatchPrintModal()">🖨 چاپ گروهی شناسنامه</button></div>`;
   }
 
   function equipmentModuleAllowed(){return !window.BFGModules||typeof window.BFGModules.allows!=='function'||window.BFGModules.allows('equipment');}
@@ -131,6 +134,7 @@
       <div class="eqv2-detail-actions">
         ${canDo('create')?`<button class="btn btn-sm btn-primary" onclick="eqv2Related('wo','${escText(a.id)}')">＋ دستورکار</button><button class="btn btn-sm btn-ghost" onclick="eqv2Related('request','${escText(a.id)}')">＋ درخواست</button><button class="btn btn-sm btn-ghost" onclick="eqv2Related('pm','${escText(a.id)}')">＋ PM</button>`:''}
         ${canDo('view')?`<button class="btn btn-sm btn-ghost" onclick="eqv2OpenIntake('${escText(a.id)}')">ورود هوشمند</button>`:''}
+        ${canDo('view')?`<button class="btn btn-sm btn-ghost" onclick="eqv2QrModal('${escText(a.id)}')" title="QR پرونده دیجیتال تجهیز">▦ QR تجهیز</button><button class="btn btn-sm btn-ghost" onclick="eqv2OpenPassport('${escText(a.code||a.id)}')" title="شناسنامه چاپی در مسیر مستقل /passport">📄 شناسنامه</button><button class="btn btn-sm btn-ghost" onclick="eqv2PrintIdentity('${escText(a.id)}')" title="شناسنامه چاپی A4 از دادهٔ واقعی پرونده">🖨 چاپ شناسنامه</button>`:''}
         ${canDo('edit')?`<button class="btn btn-sm btn-ghost" onclick="eqv2OpenWizard('${escText(a.id)}','initial','${escText(tab)}')">✎ ویرایش</button>`:''}
         ${canDo('delete')?`<button class="btn btn-sm btn-danger" onclick="eqv2Delete('${escText(a.id)}')">بایگانی</button>`:''}
       </div>
@@ -173,12 +177,7 @@
       return`<section class="eqv2-section-heading"><div><span>پرونده دیجیتال تجهیز</span><h2>مشخصه فنی</h2><p>مقادیر از رجیستری PostgreSQL و فیلدهای موجود ext خوانده می‌شوند؛ مقدار ثبت‌نشده حدس زده نمی‌شود.</p></div>${canDo('edit')?`<button class="btn btn-sm btn-primary" onclick="eqv2OpenWizard('${escText(a.id)}','initial','technical')">ویرایش مشخصه فنی</button>`:''}</section>${cards(rows)}`;
     }
     if(E.tab==='structure'){return structureSection(a);}
-    if(E.tab==='spares'){
-      const stored=a.spare_parts||[],keyParts=Array.isArray(ext.keyParts)?ext.keyParts:[];
-      const linked=stored.length?`<div class="eqv2-record-list">${stored.map(part=>`<article><div><b>${escText(part.code||'')} — ${escText(part.name)}</b><span>${escText(part.relation_type||'')}</span></div><p>موجودی: ${part.stock==null?notRecorded:faText(part.stock)} · حداقل: ${part.minimum==null?notRecorded:faText(part.minimum)} · نیاز تجهیز: ${part.quantity_required==null?notRecorded:faText(part.quantity_required)} ${escText(part.unit||'')}</p>${part.notes?`<small>${escText(part.notes)}</small>`:''}</article>`).join('')}</div>`:empty('قلم قطعه یدکی متصل به موجودی ثبت نشده است.');
-      const noted=keyParts.length?`<section class="eqv2-subsection"><h3>قطعات کلیدیِ متنی در پرونده</h3><p class="muted">این متن از ext آمده و قلم انبار یا موجودی محسوب نمی‌شود.</p><div class="eqv2-parts-chips">${keyParts.map(part=>`<span>${escText(part)}</span>`).join('')}</div></section>`:'';
-      return`<section class="eqv2-section-heading"><div><span>دادهٔ قطعات مرتبط</span><h2>قطعات یدکی حیاتی</h2><p>فقط لینک‌های واقعی asset_spare_parts و items نمایش داده می‌شوند.</p></div></section>${linked}${noted}`;
-    }
+    if(E.tab==='spares'){return sparesSection(a);}
     if(E.tab==='maintenance'){
       const plansHtml=plans.length?`<div class="eqv2-record-list">${plans.map(plan=>`<article><div><b>${escText((plan.code?plan.code+' — ':'')+(plan.title||'برنامه PM'))}</b><span>${plan.interval_days?faText(plan.interval_days)+' روز':notRecorded}</span></div><p>مسئول: ${escText(plan.owner_role)} · آخرین اجرا: ${plan.last_run?formatDate(plan.last_run):notRecorded} · وضعیت: ${escText(plan.status)}</p>${Array.isArray(plan.checklist)&&plan.checklist.length?`<ul class="eqv2-checklist">${plan.checklist.map(item=>`<li>${escText(typeof item==='string'?item:(item.title||item.text||item.label||''))}</li>`).join('')}</ul>`:''}</article>`).join('')}</div>`:empty('برنامه PM ثبت نشده است.');
       const daily=Array.isArray(ext.dailyInspection)?ext.dailyInspection:[];
@@ -1236,7 +1235,595 @@
     await refreshStructure({keepPanel:true});
   }
 
+  /* ---------- Mission D4 / Phase 3: critical spare parts (real inventory links only) ---------- */
+  const SPARE_MESSAGES={
+    INVENTORY_ITEM_REQUIRED:'ابتدا یک قلم واقعی انبار را جستجو و انتخاب کنید؛ قلم جدید اینجا ساخته نمی‌شود.',
+    INVENTORY_ITEM_NOT_FOUND:'قلم انتخاب‌شده از اطلاعات مرجع انبار موجود نیست؛ فقط قلم موجود قابل اتصال است.',
+    SPARE_RELATION_TYPE_INVALID:'نوع اتصال قطعه یدکی معتبر نیست.',
+    SPARE_LINK_EXISTS:'این قلم قبلاً به پرونده همین تجهیز متصل شده است؛ از ویرایش همان ردیف استفاده کنید.',
+    SPARE_LINK_NOT_FOUND:'اتصال قطعه یدکی پیدا نشد؛ فهرست را تازه‌سازی کنید.',
+    SPARE_LINK_ALREADY_ARCHIVED:'این اتصال قبلاً بایگانی شده است؛ برای استفاده دوباره آن را بازیابی کنید.',
+    SPARE_LINK_NOT_ARCHIVED:'این اتصال بایگانی نشده است.',
+    REQUIRED_QUANTITY_INVALID:'تعداد موردنیاز باید عددی مثبت یا صفر و در محدوده مجاز باشد.',
+    NO_EDITABLE_FIELDS:'تغییری برای ذخیره وجود ندارد.',
+    ROW_VERSION_REQUIRED:'نسخه رکورد (row_version) لازم است؛ فهرست قطعات را تازه‌سازی کنید.',
+    VERSION_CONFLICT:'این اتصال هم‌زمان تغییر کرده است؛ فهرست قطعات را تازه‌سازی کنید.',
+    ARCHIVE_REASON_REQUIRED:'دلیل بایگانی الزامی است؛ هیچ تغییری انجام نشد.',
+    RESTORE_REASON_REQUIRED:'دلیل بازیابی الزامی است؛ هیچ تغییری انجام نشد.',
+    VALIDATION_ERROR:'فیلدهای الزامی یا مقادیر واردشده معتبر نیستند.',
+    PERMISSION_DENIED:'مجوز این عملیات قطعات یدکی را ندارید.',
+    EQUIPMENT_SCOPE_DENIED:'این تجهیز در محدوده دسترسی شما نیست.',
+    EQUIPMENT_NOT_FOUND:'این تجهیز در پایگاه‌داده پیدا نشد؛ فهرست تجهیزات را تازه‌سازی کنید.',
+    ROOT_EQUIPMENT_NOT_FOUND:'تجهیز انتخاب‌شده پیدا نشد؛ قطعات یدکی فقط در پرونده خود تجهیز مدیریت می‌شوند.',
+    NOT_COMMITTED:'سرور ثبت را تأیید نکرد؛ فرم باز مانده و اطلاعات حفظ شد.',
+    SERVER_REQUIRED:'اتصال به سرور برقرار نیست؛ قطعات یدکی فقط از سرور خوانده می‌شوند.',
+    SPARES_FAILED:'فهرست قطعات یدکی از سرور دریافت نشد؛ دوباره تلاش کنید.'
+  };
+  const spareSay=error=>{const code=error&&(error.payload&&error.payload.error||error.code||error.message);toast(SPARE_MESSAGES[code]||('عملیات قطعات یدکی انجام نشد: '+(code||'REQUEST_FAILED')),1);};
+  const spareRelationLabel=value=>{const found=((E.spares&&E.spares.relationTypes)||[]).find(item=>item.value===value);return found?found.label:(value==='key-spare'?'قطعه یدکی حیاتی':value==='general-spare'?'قطعه یدکی عمومی':(value||''));};
+  function normalizeSpares(id,payload){
+    const data=payload&&typeof payload==='object'?payload:{};
+    return{equipmentId:(data.equipment&&data.equipment.id)||id,equipment:data.equipment||null,
+      parts:Array.isArray(data.parts)?data.parts:[],relationTypes:Array.isArray(data.relationTypes)?data.relationTypes:[],
+      targets:Array.isArray(data.targets)?data.targets:[],
+      capabilities:data.capabilities||{},includeArchived:!!data.includeArchived};
+  }
+  async function loadSpares(id){
+    if(typeof R().spares!=='function'){E.spares=normalizeSpares(id,{});E.sparesError='SERVER_REQUIRED';if(E.tab==='spares')await renderCurrentDetail();return;}
+    try{
+      const result=await R().spares(id,{includeArchived:E.sparesArchived});
+      E.spares=normalizeSpares(id,result.data);E.sparesError=null;
+    }catch(error){
+      E.sparesError=(error.payload&&error.payload.error)||error.message||'SPARES_FAILED';
+      E.spares=normalizeSpares(id,{});
+    }
+    if(E.tab==='spares')await renderCurrentDetail();
+  }
+  function queueSparesLoad(id){
+    if(E.sparesLoading)return;
+    E.sparesLoading=true;
+    setTimeout(()=>{loadSpares(id).finally(()=>{E.sparesLoading=false;});},0);
+  }
+  function spareShortage(part){
+    if(part.quantityRequired==null||part.stockAvailable==null)return false;
+    return Number(part.stockAvailable)<Number(part.quantityRequired);
+  }
+  function spareStockCell(part){
+    if(part.stockAvailable==null)return notRecorded;
+    const shortage=spareShortage(part);
+    return`<div class="eqv2-spare-stock${shortage?' is-short':''}">
+      <b>${faText(part.stockAvailable)} ${escText(part.unit||'')}</b>
+      <small>در دست: ${part.stockOnHand==null?'—':faText(part.stockOnHand)} · رزرو: ${part.stockReserved==null?'—':faText(part.stockReserved)}</small>
+      ${shortage?'<span class="badge b-red">کسری نسبت به نیاز تجهیز</span>':''}
+    </div>`;
+  }
+  function sparePurchaseCell(part){
+    const purchase=part.lastPurchase;
+    if(!purchase||!purchase.at)return notRecorded;
+    return`<div><b>${formatDate(purchase.at)}</b><small class="muted">رسید ${escText(purchase.entryNo||'—')} · ${purchase.qty==null?'—':faText(purchase.qty)} ${escText(part.unit||'')}</small></div>`;
+  }
+  function sparesSection(a){
+    const equipmentId=E.detailId||a.id;
+    const sp=E.spares;
+    const ext=a.ext||{},keyParts=Array.isArray(ext.keyParts)?ext.keyParts:[];
+    const noted=keyParts.length?`<section class="eqv2-subsection"><h3>قطعات کلیدیِ متنی در پرونده قدیمی</h3><p class="muted">این متن از ext آمده و قلم انبار یا موجودی محسوب نمی‌شود؛ برای اتصال واقعی، قلم را از جستجوی انبار اضافه کنید.</p><div class="eqv2-parts-chips">${keyParts.map(part=>`<span>${escText(part)}</span>`).join('')}</div></section>`:'';
+    const heading=(actions='')=>`<section class="eqv2-section-heading"><div><span>اتصال واقعی به قلم انبار · موجودی فقط از دفتر انبار</span><h2>قطعات یدکی حیاتی</h2><p>فقط لینک‌های واقعی asset_spare_parts و items نمایش داده می‌شوند؛ موجودی تایپ‌کردنی نیست و قلم جدید خودکار ساخته نمی‌شود.</p></div><div class="eqv2-section-actions">${actions}</div></section>`;
+    if(!sp||String(sp.equipmentId)!==String(equipmentId)){
+      queueSparesLoad(equipmentId);
+      return`${heading()}<div class="eqv2-loading">در حال دریافت قطعات یدکی حیاتی…</div>${noted}`;
+    }
+    if(E.sparesError){
+      return`${heading(`<button class="btn btn-sm btn-ghost" onclick="eqv2SparesRefresh()">تلاش دوباره</button>`)}<div class="eqv2-wizard-note">${escText(SPARE_MESSAGES[E.sparesError]||SPARE_MESSAGES.SPARES_FAILED)}</div>${empty('فهرست قطعات یدکی در دسترس نیست.')}${noted}`;
+    }
+    const caps=sp.capabilities||{};
+    const actions=`${caps.create&&!E.sparesArchived?`<button class="btn btn-sm btn-primary" onclick="eqv2SpareAdd()">＋ افزودن قطعه یدکی</button>`:''}
+      ${caps.suggest?`<button class="btn btn-sm btn-ghost" onclick="eqv2SpareSuggest()" ${E.sparesSuggesting?'disabled':''}>${E.sparesSuggesting?'در حال تحلیل…':'✦ پیشنهاد سلن'}</button>`:''}
+      ${caps.archive?`<button class="btn btn-sm btn-ghost" onclick="eqv2SparesArchivedToggle()">${E.sparesArchived?'نمایش قطعات فعال':'نمایش بایگانی'}</button>`:''}
+      <button class="btn btn-sm btn-ghost" onclick="eqv2SparesRefresh()">تازه‌سازی</button>`;
+    const parts=sp.parts||[];
+    const table=parts.length?`<div class="eqv2-table-wrap eqv2-spares-wrap"><table class="eqv2-spares-table"><thead><tr>
+        <th>کد قلم</th><th>نام قلم</th><th>هدف اتصال</th><th>نوع اتصال</th><th>تعداد موردنیاز</th><th>موجودی قابل دسترس</th><th>حداقل موجودی</th><th>آخرین خرید</th><th>ملاحظات</th><th>عملیات</th>
+      </tr></thead><tbody>${parts.map(part=>`<tr data-spare-item="${escText(part.itemId)}" data-spare-target="${escText(part.targetId||'')}" class="${part.archived?'is-archived':''}">
+        <td><span class="eqv2-code">${escText(part.code||'—')}</span></td>
+        <td><b>${escText(part.name||'—')}</b>${part.partNumber?`<div class="muted">شماره فنی: ${escText(part.partNumber)}</div>`:''}${part.brand?`<div class="muted">برند: ${escText(part.brand)}</div>`:''}${part.itemArchived?'<span class="badge b-orange">قلم انبار بایگانی شده</span>':''}</td>
+        <td>${spareTargetCell(part)}</td>
+        <td><span class="badge ${part.relationType==='key-spare'?'b-red':'b-gray'}">${escText(part.relationLabel||spareRelationLabel(part.relationType))}</span></td>
+        <td>${part.quantityRequired==null?notRecorded:faText(part.quantityRequired)+' '+escText(part.unit||'')}</td>
+        <td>${spareStockCell(part)}</td>
+        <td>${part.minStock==null?notRecorded:faText(part.minStock)}</td>
+        <td>${sparePurchaseCell(part)}</td>
+        <td>${part.notes?escText(part.notes):notRecorded}${part.archived&&part.deleteReason?`<div class="muted">دلیل بایگانی: ${escText(part.deleteReason)}</div>`:''}</td>
+        <td class="eqv2-spare-actions">${part.archived
+          ?(caps.archive?`<button class="btn btn-sm btn-ghost" onclick="eqv2SpareRestore('${escText(part.itemId)}','${escText(part.targetId||'')}')">بازیابی</button>`:'')
+          :`${caps.update?`<button class="btn btn-sm btn-ghost" onclick="eqv2SpareEdit('${escText(part.itemId)}','${escText(part.targetId||'')}')">ویرایش</button>`:''}${caps.archive?`<button class="btn btn-sm btn-danger" onclick="eqv2SpareArchive('${escText(part.itemId)}','${escText(part.targetId||'')}')">بایگانی</button>`:''}`}
+          ${part.archived?'<span class="badge b-gray">بایگانی‌شده</span>':''}</td>
+      </tr>`).join('')}</tbody></table></div>`
+      :empty(E.sparesArchived?'اتصال بایگانی‌شده‌ای ثبت نشده است.':'هنوز قطعه یدکی به قلم واقعی انبار متصل نشده است؛ با «افزودن قطعه یدکی» فقط قلم موجود انبار را جستجو و متصل کنید.');
+    return`${heading(actions)}${sparesSuggestionPanel()}${table}${noted}`;
+  }
+  function spareTargetCell(part){
+    const target=part.target||{};
+    const label=target.label||target.kind||'';
+    const name=target.name||target.code||(target.id&&String(target.id)===String(E.spares&&E.spares.equipmentId)?'خود تجهیز':'');
+    if(!name&&!label)return notRecorded;
+    return`<div><b>${escText(name||'—')}</b>${label?`<div class="muted">${escText(label)}</div>`:''}</div>`;
+  }
+  function spareTargetOptions(selected){
+    const targets=(E.spares&&E.spares.targets)||[];
+    if(!targets.length)return'<option value="">هدفی در ساختار ثبت نشده است</option>';
+    return targets.map(target=>{
+      const name=target.name||target.code||target.id;
+      const label=`${name} — ${target.label||target.kind||''}`;
+      return`<option value="${escText(target.id)}" ${String(selected||targets[0].id)===String(target.id)?'selected':''}>${escText(label)}</option>`;
+    }).join('');
+  }
+  function spareRelationOptions(selected,targetId){
+    const types=(E.spares&&E.spares.relationTypes&&E.spares.relationTypes.length)?E.spares.relationTypes:[{value:'key-spare',label:'قطعه یدکی حیاتی'},{value:'general-spare',label:'قطعه یدکی عمومی'}];
+    const targets=(E.spares&&E.spares.targets)||[];
+    const target=targets.find(item=>String(item.id)===String(targetId))||targets[0]||null;
+    const criticalAllowed=target?target.criticalAllowed!==false:true;
+    const allowed=types.filter(item=>item.value!=='key-spare'||criticalAllowed);
+    const fallback=allowed.some(item=>item.value===selected)?selected:(allowed[0]?allowed[0].value:'general-spare');
+    return allowed.map(item=>`<option value="${escText(item.value)}" ${String(fallback)===item.value?'selected':''}>${escText(item.label)}</option>`).join('');
+  }
+  function spareItemOptions(){
+    const items=E.sparesItemResults||[];
+    if(!items.length)return'<option value="">قلمی یافت نشد؛ عبارت دیگری را جستجو کنید</option>';
+    return'<option value="">— انتخاب قلم واقعی —</option>'+items.map(item=>{
+      const label=`${item.code||'بدون کد'} — ${item.name||'بدون نام'} · موجودی قابل دسترس: ${faText(item.available==null?0:item.available)} ${item.unit||''}`;
+      return`<option value="${escText(item.id)}">${escText(label)}</option>`;
+    }).join('');
+  }
+  function spareFormModal(mode,part){
+    const isEdit=mode==='edit';
+    const targets=(E.spares&&E.spares.targets)||[];
+    const defaultTarget=targets[0]?targets[0].id:'';
+    const editTargetId=isEdit?(part.targetId||(part.target&&part.target.id)||defaultTarget):defaultTarget;
+    const targetField=isEdit
+      ?`<div class="field"><label>هدف اتصال (غیرقابل تغییر)</label><input value="${escText(spareTargetLabel(editTargetId))}" disabled></div>`
+      :`<div class="field"><label>هدف اتصال *</label><select id="spareTarget" onchange="eqv2SpareTargetChanged()">${spareTargetOptions(defaultTarget)}</select><small>قطعه حیاتی فقط برای «جزء اصلی» و «جزء فرعی» مجاز است؛ خود تجهیز و زیرسیستم فقط قطعه یدکی عمومی می‌پذیرند.</small></div>`;
+    modal(mhead(isEdit?'ویرایش اتصال قطعه یدکی':'افزودن قطعه یدکی')+`<div class="m-body">
+      <div class="eqv2-wizard-note">فقط قلم واقعی انبار قابل اتصال است؛ موجودی تایپ نمی‌شود و فقط از دفتر انبار خوانده می‌شود. ایجاد قلم جدید فقط از مسیر رسمی انبار انجام می‌شود.</div>
+      ${targetField}
+      ${isEdit?`<div class="field"><label>قلم انبار (غیرقابل تغییر)</label><input value="${escText((part.code||'')+' — '+(part.name||''))}" disabled></div>`:`
+      <div class="field"><label>جستجوی قلم واقعی انبار *</label>
+        <div class="eqv2-spare-search"><input id="spareItemQuery" type="search" placeholder="کد، نام، شماره فنی یا برند…" onkeydown="if(event.key==='Enter'){event.preventDefault();eqv2SpareItemSearch()}"><button class="btn btn-sm btn-ghost" onclick="eqv2SpareItemSearch()" ${E.sparesSearching?'disabled':''}>جستجو</button></div>
+      </div>
+      <div class="field"><label>قلم یافت‌شده *</label><select id="spareItemSelect">${spareItemOptions()}</select><small>اتصال به قلم تکراری مجاز نیست؛ هر قلم یک اتصال فعال در پرونده دارد.</small></div>`}
+      <div class="field"><label>نوع اتصال *</label><select id="spareRelation">${spareRelationOptions(isEdit?part.relationType:'key-spare',editTargetId)}</select></div>
+      <div class="field"><label>تعداد موردنیاز تجهیز</label><input id="spareQuantity" type="number" min="0" step="0.001" value="${isEdit&&part.quantityRequired!=null?escText(part.quantityRequired):''}" placeholder="خالی = ثبت نشده"></div>
+      <div class="field"><label>ملاحظات</label><textarea id="spareNotes" rows="2" maxlength="2000">${isEdit&&part.notes?escText(part.notes):''}</textarea></div>
+      <div class="eqv2-spare-form-error" id="spareFormError" hidden></div>
+      <div class="m-foot"><button class="btn btn-primary" id="spareSubmitBtn" onclick="eqv2SpareSubmit('${mode}','${isEdit?escText(part.itemId):''}','${isEdit?escText(editTargetId):''}')">${isEdit?'ذخیره تغییرات':'ثبت اتصال'}</button><button class="btn btn-ghost" onclick="closeModal()">انصراف</button></div>
+    </div>`,true);
+  }
+  function spareTargetLabel(targetId){
+    const targets=(E.spares&&E.spares.targets)||[];
+    const target=targets.find(item=>String(item.id)===String(targetId));
+    if(!target)return targetId||'—';
+    return`${target.name||target.code||target.id} — ${target.label||target.kind||''}`;
+  }
+  function spareTargetChanged(){
+    const select=document.getElementById('spareTarget');
+    const relation=document.getElementById('spareRelation');
+    if(select&&relation)relation.innerHTML=spareRelationOptions(relation.value,select.value);
+  }
+  function spareAdd(){
+    if(!E.spares||!E.spares.capabilities.create){toast('مجوز افزودن قطعه یدکی را ندارید.',1);return;}
+    E.sparesItemResults=[];
+    spareFormModal('create',null);
+  }
+  function spareEdit(itemId,targetId){
+    if(!E.spares||!E.spares.capabilities.update){toast('مجوز ویرایش اتصال قطعه یدکی را ندارید.',1);return;}
+    const part=(E.spares.parts||[]).find(item=>String(item.itemId)===String(itemId)&&(!targetId||String(item.targetId||'')===String(targetId)));
+    if(!part){spareSay({message:'SPARE_LINK_NOT_FOUND'});return;}
+    spareFormModal('edit',part);
+  }
+  async function spareItemSearch(){
+    const query=String(document.getElementById('spareItemQuery')?.value||'').trim();
+    if(E.sparesSearching)return;
+    E.sparesSearching=true;
+    try{
+      const result=await R().inventoryItems(query);
+      E.sparesItemResults=Array.isArray(result.data)?result.data:[];
+      const select=document.getElementById('spareItemSelect');
+      if(select)select.innerHTML=spareItemOptions();
+    }catch(error){spareSay(error);}finally{E.sparesSearching=false;}
+  }
+  function spareFormError(code){
+    const node=document.getElementById('spareFormError');
+    if(node){node.hidden=false;node.textContent=SPARE_MESSAGES[code]||('ثبت انجام نشد: '+(code||'REQUEST_FAILED'));}
+    else toast(SPARE_MESSAGES[code]||('ثبت انجام نشد: '+(code||'REQUEST_FAILED')),1);
+  }
+  async function spareSubmit(mode,itemId,editTargetId){
+    const equipmentId=E.detailId;
+    if(!equipmentId){spareFormError('EQUIPMENT_NOT_FOUND');return;}
+    const quantityRaw=String(document.getElementById('spareQuantity')?.value??'').trim();
+    const payload={
+      relationType:document.getElementById('spareRelation')?.value||'key-spare',
+      quantityRequired:quantityRaw===''?null:Number(quantityRaw),
+      notes:String(document.getElementById('spareNotes')?.value||'').trim()||null
+    };
+    if(payload.quantityRequired!=null&&(!Number.isFinite(payload.quantityRequired)||payload.quantityRequired<0||payload.quantityRequired>1000000000)){spareFormError('REQUIRED_QUANTITY_INVALID');return;}
+    try{
+      let result;
+      if(mode==='edit'){
+        const part=(E.spares&&E.spares.parts||[]).find(item=>String(item.itemId)===String(itemId)&&(!editTargetId||String(item.targetId||'')===String(editTargetId)));
+        if(!part){spareFormError('SPARE_LINK_NOT_FOUND');return;}
+        payload.rowVersion=Number(part.rowVersion);
+        payload.targetId=part.targetId||(part.target&&part.target.id)||editTargetId||undefined;
+        result=await R().spareUpdate(equipmentId,itemId,payload);
+      }else{
+        payload.itemId=String(document.getElementById('spareItemSelect')?.value||'');
+        if(!payload.itemId){spareFormError('INVENTORY_ITEM_REQUIRED');return;}
+        const targetSelect=document.getElementById('spareTarget');
+        if(targetSelect&&targetSelect.value)payload.targetId=targetSelect.value;
+        result=await R().spareLink(equipmentId,payload);
+      }
+      if(!result||result.committed!==true)throw Object.assign(new Error('NOT_COMMITTED'),{payload:{error:'NOT_COMMITTED'}});
+      closeModal();
+      toast(mode==='edit'?'تغییرات اتصال قطعه یدکی پس از commit در PostgreSQL ثبت شد.':'قطعه یدکی پس از پاسخ 201 و commit در PostgreSQL به پرونده متصل شد.');
+      await loadSpares(equipmentId);
+    }catch(error){
+      const code=(error&&error.payload&&error.payload.error)||(error&&error.message)||'REQUEST_FAILED';
+      spareFormError(code);
+    }
+  }
+  async function spareArchive(itemId,targetId){
+    if(!E.spares||!E.spares.capabilities.archive){toast('مجوز بایگانی اتصال قطعه یدکی را ندارید.',1);return;}
+    const part=(E.spares.parts||[]).find(item=>String(item.itemId)===String(itemId)&&(!targetId||String(item.targetId||'')===String(targetId)));
+    if(!part){spareSay({message:'SPARE_LINK_NOT_FOUND'});return;}
+    if(part.archived){toast(SPARE_MESSAGES.SPARE_LINK_ALREADY_ARCHIVED,1);return;}
+    const entered=window.prompt('دلیل بایگانی الزامی است:');
+    if(entered===null)return;
+    const reason=String(entered).trim();
+    if(!reason){toast(SPARE_MESSAGES.ARCHIVE_REASON_REQUIRED,1);return;}
+    if(!window.confirm(`آیا اتصال «${part.name||part.code||'این قطعه'}» را بایگانی نرم می‌کنید؟ قلم انبار و سوابق آن حذف نمی‌شوند.`))return;
+    try{
+      const result=await R().spareArchive(E.detailId,itemId,reason,Number(part.rowVersion),part.targetId||(part.target&&part.target.id)||targetId||undefined);
+      if(!result||result.archived!==true||result.historyPreserved!==true)throw Object.assign(new Error('NOT_COMMITTED'),{payload:{error:'NOT_COMMITTED'}});
+      toast('اتصال با دلیل بایگانی شد؛ قلم انبار، موجودی و Audit حفظ شدند.');
+      await loadSpares(E.detailId);
+    }catch(error){spareSay(error);}
+  }
+  async function spareRestore(itemId,targetId){
+    if(!E.spares||!E.spares.capabilities.archive){toast('مجوز بازیابی اتصال قطعه یدکی را ندارید.',1);return;}
+    const part=(E.spares.parts||[]).find(item=>String(item.itemId)===String(itemId)&&(!targetId||String(item.targetId||'')===String(targetId)));
+    if(!part){spareSay({message:'SPARE_LINK_NOT_FOUND'});return;}
+    if(!part.archived){toast(SPARE_MESSAGES.SPARE_LINK_NOT_ARCHIVED,1);return;}
+    const entered=window.prompt('دلیل بازیابی الزامی است:');
+    if(entered===null)return;
+    const reason=String(entered).trim();
+    if(!reason){toast(SPARE_MESSAGES.RESTORE_REASON_REQUIRED,1);return;}
+    try{
+      const result=await R().spareRestore(E.detailId,itemId,{reason,rowVersion:Number(part.rowVersion),targetId:part.targetId||(part.target&&part.target.id)||targetId||undefined});
+      if(!result||result.committed!==true||result.restored!==true||result.historyPreserved!==true)throw Object.assign(new Error('NOT_COMMITTED'),{payload:{error:'NOT_COMMITTED'}});
+      toast('اتصال قطعه یدکی با مجوز، دلیل و Audit بازیابی شد.');
+      await loadSpares(E.detailId);
+    }catch(error){spareSay(error);}
+  }
+  async function sparesArchivedToggle(){
+    E.sparesArchived=!E.sparesArchived;
+    await loadSpares(E.detailId);
+  }
+
+  /* ---------- Mission D4: Selene spare-link suggestions (Analyze→Suggest→Approval→Save) ---------- */
+  function sparesSuggestionPanel(){
+    const caps=(E.spares&&E.spares.capabilities)||{};
+    if(!caps.suggest&&!caps.approveAi)return'';
+    const notice=E.sparesSuggestNotice;
+    const drafts=E.sparesSuggestions||[];
+    const noticeHtml=notice?`<div class="eqv2-wizard-note">${escText(notice)}</div>`:'';
+    const cards=drafts.map(draft=>spareSuggestionCard(draft)).join('');
+    const body=drafts.length?cards:'<p class="muted">پیشنهادی ثبت نشده است؛ با «پیشنهاد سلن» تحلیل پرونده و انبار را اجرا کنید. هیچ اتصالی بدون تأیید شما ذخیره نمی‌شود.</p>';
+    return`<section class="eqv2-subsection eqv2-spares-suggestions"><h3>پیشنهاد سلن برای قطعات یدکی</h3>
+      <p class="muted">سلن فقط پیشنهاد می‌دهد؛ هر پیشنهاد پس از تأیید صریح شما و فقط از مسیر Domain API ثبت می‌شود. شواهد، منبع، اطمینان و مدل برای هر پیشنهاد نمایش داده می‌شود.</p>
+      ${noticeHtml}${body}</section>`;
+  }
+  function spareSuggestionCard(draft){
+    const proposed=draft.proposed||{},caps=(E.spares&&E.spares.capabilities)||{};
+    const busy=E.sparesSuggestBusy===draft.id;
+    const targetName=spareTargetLabel(proposed.targetId);
+    const itemName=proposed.itemName||proposed.itemId||'—';
+    const relation=spareRelationLabel(proposed.relationType||'key-spare');
+    const evidence=Array.isArray(draft.evidence)?draft.evidence:[];
+    const confidence=draft.confidence==null?'—':faText(Math.round(Number(draft.confidence)*100))+'٪';
+    const provenance=draft.source&&draft.source.ref?draft.source.ref:(draft.provenance||'—');
+    const statusLabel={pending:'در انتظار تأیید',incomplete:'ناقص',conflict:'دارای تعارض',executed:'اجراشده',rejected:'ردشده',expired:'منقضی'}[draft.status]||draft.status||'—';
+    const canApprove=caps.approveAi&&draft.status==='pending';
+    const canReject=caps.suggest&&['pending','incomplete','conflict'].includes(draft.status);
+    return`<div class="eqv2-suggestion-card" data-suggestion="${escText(draft.id)}">
+      <div class="eqv2-suggestion-head"><b>${escText(itemName)}</b><span class="badge ${proposed.relationType==='key-spare'?'b-red':'b-gray'}">${escText(relation)}</span><span class="badge b-gray">${escText(statusLabel)}</span></div>
+      <div class="eqv2-suggestion-meta">
+        <span>هدف: ${escText(targetName)}</span>
+        ${proposed.quantityRequired!=null?`<span>تعداد موردنیاز: ${faText(proposed.quantityRequired)}</span>`:''}
+        <span>اطمینان: ${confidence}</span>
+        <span>ارائه‌دهنده: ${escText(draft.provider||'—')} / ${escText(draft.model||'—')}</span>
+        <span>منبع: ${escText(provenance)}</span>
+      </div>
+      ${proposed.explanation?`<p class="eqv2-suggestion-explanation">${escText(proposed.explanation)}</p>`:''}
+      ${evidence.length?`<ul class="eqv2-suggestion-evidence">${evidence.map(item=>`<li>${escText(typeof item==='string'?item:(item&&item.text)||JSON.stringify(item))}</li>`).join('')}</ul>`:''}
+      ${Array.isArray(proposed.missingFields)&&proposed.missingFields.length?`<div class="eqv2-wizard-note">فیلدهای ناقص: ${escText(proposed.missingFields.join('، '))}</div>`:''}
+      <div class="eqv2-suggestion-actions">
+        ${canApprove?`<button class="btn btn-sm btn-primary" onclick="eqv2SpareApprove('${escText(draft.id)}')" ${busy?'disabled':''}>${busy?'در حال ثبت…':'تأیید و ثبت'}</button>`:''}
+        ${canReject?`<button class="btn btn-sm btn-danger" onclick="eqv2SpareReject('${escText(draft.id)}')" ${busy?'disabled':''}>رد</button>`:''}
+        <button class="btn btn-sm btn-ghost" onclick="eqv2SpareEditSuggestion('${escText(draft.id)}')">ویرایش و ثبت دستی</button>
+      </div>
+    </div>`;
+  }
+  async function spareSuggest(){
+    if(!E.spares||!E.spares.capabilities.suggest){toast('مجوز پیشنهاد سلن را ندارید.',1);return;}
+    if(E.sparesSuggesting)return;
+    E.sparesSuggesting=true;E.sparesSuggestNotice=null;
+    await renderCurrentDetail();
+    try{
+      const result=await R().sparesSuggestions(E.detailId);
+      const data=result.data||{};
+      E.sparesSuggestions=Array.isArray(data.suggestions)?data.suggestions:[];
+      const notices=[];
+      if(data.notice)notices.push(SPARE_SUGGEST_NOTICES[data.notice]||data.notice);
+      if(data.insufficient)notices.push('دادهٔ کافی برای پیشنهاد قطعه یدکی در پرونده/انبار یافت نشد؛ پیشنهادی ساخته نشد.');
+      if(!E.sparesSuggestions.length&&!notices.length)notices.push('سلن پیشنهاد جدیدی تولید نکرد.');
+      E.sparesSuggestNotice=notices.join(' ');
+      if(E.sparesSuggestions.length)E.sparesSuggestNotice=(data.provider?`ارائه‌دهنده: ${data.provider}${data.model?' / '+data.model:''}. `:'')+E.sparesSuggestNotice;
+    }catch(error){
+      const code=(error&&error.payload&&error.payload.error)||(error&&error.message)||'REQUEST_FAILED';
+      E.sparesSuggestNotice=SPARE_SUGGEST_NOTICES[code]||('پیشنهاد سلن دریافت نشد: '+code);
+    }finally{E.sparesSuggesting=false;await renderCurrentDetail();}
+  }
+  const SPARE_SUGGEST_NOTICES={
+    AI_PROVIDER_DISABLED_BY_POLICY:'ارائه‌دهندهٔ هوش مصنوعی طبق سیاست غیرفعال است.',
+    AI_PURPOSE_DENIED_BY_POLICY:'این کاربرد طبق سیاست هوش مصنوعی مجاز نیست.',
+    CLOUD_CONTEXT_NOT_APPROVED:'ارسال داده به سرویس ابری بدون تأیید سیاست مجاز نیست.',
+    NO_CAPABLE_PROVIDER:'ارائه‌دهندهٔ capable در دسترس نیست.',
+    SELENE_DRAFTS_UNAVAILABLE:'سرویس پیش‌نویس سلن در دسترس نیست؛ migration مربوطه را اعمال کنید.',
+    SERVER_REQUIRED:'اتصال به سرور برقرار نیست.'
+  };
+  async function spareApprove(draftId){
+    if(!E.spares||!E.spares.capabilities.approveAi){toast('مجوز تأیید پیشنهاد سلن را ندارید.',1);return;}
+    const draft=(E.sparesSuggestions||[]).find(item=>String(item.id)===String(draftId));
+    if(!draft){toast('پیشنهاد پیدا نشد؛ فهرست را تازه‌سازی کنید.',1);return;}
+    if(!window.confirm('این پیشنهاد پس از تأیید شما از مسیر Domain API ثبت می‌شود. ادامه می‌دهید؟'))return;
+    E.sparesSuggestBusy=draftId;await renderCurrentDetail();
+    try{
+      const confirmation=await R().actionConfirm(draftId);
+      const confirmationId=confirmation&&confirmation.data&&confirmation.data.id;
+      if(!confirmationId)throw Object.assign(new Error('CONFIRMATION_NOT_FOUND'),{payload:{error:'CONFIRMATION_NOT_FOUND'}});
+      const requestId=window.crypto&&window.crypto.randomUUID?window.crypto.randomUUID():`sp-${draftId}-${Date.now()}`;
+      const result=await R().actionExecute(draftId,{confirmationId,requestId});
+      if(!result||result.committed!==true)throw Object.assign(new Error('NOT_COMMITTED'),{payload:{error:'NOT_COMMITTED'}});
+      toast('پیشنهاد سلن پس از تأیید شما و بررسی دوباره مجوز از مسیر Domain API ثبت شد.');
+      E.sparesSuggestions=(E.sparesSuggestions||[]).filter(item=>String(item.id)!==String(draftId));
+      await loadSpares(E.detailId);
+    }catch(error){
+      const code=(error&&error.payload&&error.payload.error)||(error&&error.message)||'REQUEST_FAILED';
+      toast(SPARE_MESSAGES[code]||('تأیید پیشنهاد انجام نشد: '+code),1);
+    }finally{E.sparesSuggestBusy=null;await renderCurrentDetail();}
+  }
+  async function spareReject(draftId){
+    if(!E.spares||!E.spares.capabilities.suggest){toast('مجوز رد پیشنهاد را ندارید.',1);return;}
+    const reason=window.prompt('دلیل رد پیشنهاد (اختیاری):');
+    if(reason===null)return;
+    E.sparesSuggestBusy=draftId;await renderCurrentDetail();
+    try{
+      await R().actionReject(draftId);
+      E.sparesSuggestions=(E.sparesSuggestions||[]).filter(item=>String(item.id)!==String(draftId));
+      toast('پیشنهاد رد شد؛ هیچ اتصالی ثبت نشد.');
+    }catch(error){
+      const code=(error&&error.payload&&error.payload.error)||(error&&error.message)||'REQUEST_FAILED';
+      toast('رد پیشنهاد انجام نشد: '+code,1);
+    }finally{E.sparesSuggestBusy=null;await renderCurrentDetail();}
+  }
+  function spareEditSuggestion(draftId){
+    const draft=(E.sparesSuggestions||[]).find(item=>String(item.id)===String(draftId));
+    if(!draft){toast('پیشنهاد پیدا نشد.',1);return;}
+    const proposed=draft.proposed||{};
+    E.sparesItemResults=proposed.itemId?[{id:proposed.itemId,code:proposed.itemCode||'',name:proposed.itemName||proposed.itemId,available:null,unit:''}]:[];
+    spareFormModal('create',null);
+    const targetSelect=document.getElementById('spareTarget');
+    if(targetSelect&&proposed.targetId){targetSelect.value=proposed.targetId;spareTargetChanged();}
+    const itemSelect=document.getElementById('spareItemSelect');
+    if(itemSelect&&proposed.itemId)itemSelect.value=proposed.itemId;
+    const relation=document.getElementById('spareRelation');
+    if(relation&&proposed.relationType)relation.value=proposed.relationType;
+    const quantity=document.getElementById('spareQuantity');
+    if(quantity&&proposed.quantityRequired!=null)quantity.value=proposed.quantityRequired;
+    const notes=document.getElementById('spareNotes');
+    if(notes&&proposed.explanation)notes.value=proposed.explanation;
+  }
+
+  /* ---------- Mission D4 / Phase 11: QR + printable identity card (never a tab) ---------- */
+  const IDENTITY_MESSAGES={
+    QR_ENCODER_UNAVAILABLE:'موتور ساخت QR بارگذاری نشده است؛ صفحه را تازه‌سازی کنید. کد جعلی نمایش داده نمی‌شود.',
+    QR_BASE_UNAVAILABLE:'آدرس مطلق سامانه برای ساخت QR در دسترس نیست؛ از نشانی رسمی سامانه وارد شوید.',
+    QR_PAYLOAD_REQUIRED:'پیوند پرونده تجهیز ساخته نشد.',
+    EQUIPMENT_KEY_REQUIRED:'کد یا شناسه تجهیز برای ساخت QR موجود نیست.',
+    EQUIPMENT_DATA_REQUIRED:'دادهٔ واقعی تجهیز برای چاپ شناسنامه دریافت نشد.',
+    IDENTITY_MODULE_UNAVAILABLE:'ماژول شناسنامه چاپی بارگذاری نشده است؛ صفحه را تازه‌سازی کنید.',
+    POPUP_BLOCKED:'پنجره چاپ باز نشد؛ اجازه بازشدن پنجره (Pop-up) را برای این سایت فعال کنید.',
+    SERVER_REQUIRED:'اتصال به سرور برقرار نیست؛ شناسنامه فقط از دادهٔ واقعی سرور چاپ می‌شود.'
+  };
+  const identitySay=error=>{const code=error&&(error.payload&&error.payload.error||error.code||error.message);if(typeof console!=='undefined')console.warn('Equipment identity action failed',code||'request_failed');toast(IDENTITY_MESSAGES[code]||('عملیات شناسنامه/QR انجام نشد: '+(code||'REQUEST_FAILED')),1);};
+  function identityBase(){
+    if(window.BFGRuntime&&typeof window.BFGRuntime.sameOriginBase==='function'){
+      const base=window.BFGRuntime.sameOriginBase();
+      if(base)return String(base).replace(/\/+$/,'');
+    }
+    try{if(location&&/^https?:$/.test(location.protocol)&&location.origin)return location.origin;}catch(_){}
+    return '';
+  }
+  function identityFor(asset){
+    const identity=window.BFGEquipmentIdentity;
+    if(!identity)throw Object.assign(new Error('IDENTITY_MODULE_UNAVAILABLE'),{code:'IDENTITY_MODULE_UNAVAILABLE'});
+    const base=identityBase();
+    if(!base)throw Object.assign(new Error('QR_BASE_UNAVAILABLE'),{code:'QR_BASE_UNAVAILABLE'});
+    const link=identity.dossierLink(base,asset.code||asset.id);
+    const qr=identity.qrSvg(link,240);
+    return{identity,link,qr};
+  }
+  function identityOperationalLabel(asset){
+    const value=asset.operational_status;
+    if(!value)return null;
+    const found=OPERATIONAL_OPTIONS.find(item=>item.value===value);
+    return found?found.label:value;
+  }
+  function openPrintWindow(html){
+    const win=window.open('','_blank');
+    if(!win||!win.document){identitySay({code:'POPUP_BLOCKED'});return false;}
+    win.document.open();win.document.write(html);win.document.close();
+    try{win.focus();win.print();}catch(_){}
+    return true;
+  }
+  async function qrModal(id){
+    try{
+      const {data:a}=await R().get(id||E.detailKey);
+      const {link,qr}=identityFor(a);
+      modal(mhead('QR تجهیز — '+escText(a.name||a.code||''))+`<div class="m-body eqv2-qr-body">
+        <div class="eqv2-qr-frame">${qr}</div>
+        <div class="eqv2-qr-meta"><b class="eqv2-code">${escText(a.code||'—')}</b><div>${escText(a.name||'')}</div>
+          <div class="eqv2-qr-link" dir="ltr">${escText(link)}</div>
+          <p class="muted">با اسکن این کد توسط دوربین موبایل، پس از ورود کاربر، پرونده دیجیتال همین تجهیز باز می‌شود.</p></div>
+        <div class="m-foot"><button class="btn btn-primary" onclick="eqv2PrintQrLabels('${escText(a.id)}')">🖨 چاپ برچسب QR</button>
+          <button class="btn btn-ghost" onclick="eqv2OpenPassport('${escText(a.code||a.id)}')">📄 شناسنامه مستقل</button>
+          <button class="btn btn-ghost" onclick="eqv2PrintIdentity('${escText(a.id)}')">🖨 چاپ شناسنامه</button>
+          <button class="btn btn-ghost" onclick="closeModal()">بستن</button></div>
+      </div>`,true);
+    }catch(error){identitySay(error);}
+  }
+  async function printIdentity(id){
+    try{
+      const {data:a}=await R().get(id||E.detailKey);
+      const {identity,link,qr}=identityFor(a);
+      let sparesModel={state:'unavailable',rows:[]};
+      if(typeof R().spares==='function'){
+        try{
+          const result=await R().spares(a.id);
+          const parts=((result.data&&result.data.parts)||[]).filter(part=>!part.archived);
+          sparesModel={state:parts.length?'ok':'empty',rows:parts};
+        }catch(_){sparesModel={state:'unavailable',rows:[]};}
+      }
+      const html=identity.identityCardHtml({
+        asset:a,
+        labels:{status:statusInfo(a)[0],operationalStatus:identityOperationalLabel(a),
+          installDate:(a.install_date||a.install)?formatDate(a.install_date||a.install):null},
+        spares:sparesModel,link,qr,
+        printedBy:typeof ME!=='undefined'&&ME?(ME.name||ME.username||null):null,
+        printedAt:typeof jDateTime==='function'?jDateTime():null,
+        logo:typeof LOGO!=='undefined'?LOGO:null
+      });
+      openPrintWindow(html);
+    }catch(error){identitySay(error);}
+  }
+  async function printQrLabels(id){
+    try{
+      const {data:a}=await R().get(id||E.detailKey);
+      const {identity,link}=identityFor(a);
+      const labelQr=identity.qrSvg(link,120);
+      const html=identity.labelsSheetHtml({asset:a,link,qr:labelQr,logo:typeof LOGO!=='undefined'?LOGO:null},3);
+      openPrintWindow(html);
+    }catch(error){identitySay(error);}
+  }
+
+  // Builds the same real-data passport model used by single printing; shared by the in-app
+  // passport route and the batch printer so every surface shows identical PostgreSQL facts.
+  async function passportModelFor(a){
+    const {identity,link,qr}=identityFor(a);
+    let sparesModel={state:'unavailable',rows:[]};
+    if(typeof R().spares==='function'){
+      try{
+        const result=await R().spares(a.id);
+        const parts=((result.data&&result.data.parts)||[]).filter(part=>!part.archived);
+        sparesModel={state:parts.length?'ok':'empty',rows:parts};
+      }catch(_){sparesModel={state:'unavailable',rows:[]};}
+    }
+    return{identity,link,qr,model:{
+      asset:a,
+      labels:{status:statusInfo(a)[0],operationalStatus:identityOperationalLabel(a),
+        installDate:(a.install_date||a.install)?formatDate(a.install_date||a.install):null},
+      spares:sparesModel,link,qr,
+      printedBy:typeof ME!=='undefined'&&ME?(ME.name||ME.username||null):null,
+      printedAt:typeof jDateTime==='function'?jDateTime():null,
+      logo:typeof LOGO!=='undefined'?LOGO:null
+    }};
+  }
+
+  // Independent printable passport route. It renders inside the signed-in app shell and pulls
+  // every value through the authenticated Equipment APIs — a scanned link shows nothing before
+  // sign-in and never bypasses permission/scope.
+  async function openPassport(key,{push=true,fromRoute=false}={}){
+    if(!equipmentModuleAllowed())return;
+    const content=document.getElementById('content');
+    if(content)content.innerHTML='<div class="eqv2-loading">در حال دریافت شناسنامه تجهیز…</div>';
+    E.passportLoading=true;E.passportError=null;
+    try{
+      const {data:a}=await R().get(key);
+      const {identity,model}=await passportModelFor(a);
+      E.passport={key:a.code||a.id,id:a.id};
+      const target='/equipment/'+encodeURIComponent(a.code||a.id)+'/passport';
+      if(push&&location.pathname!==target)history.pushState({equipmentPassport:true,key:a.code||a.id},'',target);
+      else if(fromRoute&&location.pathname!==target)history.replaceState({equipmentPassport:true,key:a.code||a.id},'',target);
+      if(content)content.innerHTML=`<div class="eqv2-passport">
+        <div class="eqv2-passport-toolbar noprint">
+          <button class="btn btn-ghost" onclick="eqv2OpenDetail('${escText(a.code||a.id)}')">بازگشت به پرونده</button>
+          <button class="btn btn-primary" onclick="eqv2PrintIdentity('${escText(a.id)}')">🖨 چاپ شناسنامه A4</button>
+        </div>
+        <div class="eqv2-passport-sheet">${identity.identitySheetHtml(model)}</div>
+      </div>`;
+      window.scrollTo(0,0);
+    }catch(error){
+      E.passportError=(error&&error.payload&&error.payload.error)||(error&&error.message)||'PASSPORT_FAILED';
+      if(content)content.innerHTML=`<div class="eqv2-empty"><div><i>⚠️</i><b>شناسنامه تجهیز دریافت نشد</b><div>${escText(E.passportError)}</div><button class="btn btn-ghost" onclick="eqv2BackToEquipment()">بازگشت</button></div></div>`;
+    }finally{E.passportLoading=false;}
+  }
+
+  // Group A4 printing: fetch each selected passport sequentially through the same authenticated
+  // API, then print one real sheet per page. Failures are reported honestly, never invented.
+  async function printBatchIdentity(ids){
+    const list=Array.isArray(ids)?ids.filter(Boolean):[];
+    if(!list.length){toast('تجهیزی برای چاپ گروهی انتخاب نشده است.',1);return;}
+    if(list.length>50){toast('حداکثر ۵۰ شناسنامه در هر چاپ گروهی مجاز است.',1);return;}
+    if(E.batchPrintBusy)return;
+    E.batchPrintBusy=true;
+    toast(`در حال دریافت ${faText(list.length)} شناسنامه از سرور…`);
+    const models=[],failures=[];
+    try{
+      const identity=window.BFGEquipmentIdentity;
+      if(!identity)throw Object.assign(new Error('IDENTITY_MODULE_UNAVAILABLE'),{code:'IDENTITY_MODULE_UNAVAILABLE'});
+      for(const id of list){
+        try{
+          const {data:a}=await R().get(id);
+          const {model}=await passportModelFor(a);
+          models.push(model);
+        }catch(error){
+          const code=(error&&error.payload&&error.payload.error)||(error&&error.message)||'REQUEST_FAILED';
+          failures.push(`${id}: ${code}`);
+        }
+      }
+      if(!models.length){toast('هیچ شناسنامه‌ای دریافت نشد؛ چاپ انجام نشد.',1);return;}
+      const html=identity.identityBatchHtml(models,failures);
+      openPrintWindow(html);
+      if(failures.length)toast(`${faText(failures.length)} شناسنامه دریافت نشد و در صفحهٔ پایانی گزارش شد.`,1);
+    }catch(error){identitySay(error);}finally{E.batchPrintBusy=false;}
+  }
+  function batchPrintModal(){
+    const rows=E.rows||[];
+    if(!rows.length){toast('فهرست تجهیزات خالی است؛ ابتدا تجهیزات را بارگذاری کنید.',1);return;}
+    const options=rows.map(a=>`<label class="eqv2-col-opt"><input type="checkbox" value="${escText(a.id)}"> <span class="eqv2-code">${escText(a.code||'—')}</span> — ${escText(a.name||'بدون نام')}</label>`).join('');
+    modal(mhead('چاپ گروهی شناسنامه A4')+`<div class="m-body">
+      <div class="eqv2-wizard-note">حداکثر ۵۰ شناسنامه در هر چاپ گروهی. هر شناسنامه فقط از دادهٔ واقعی PostgreSQL و پس از دریافت موفق چاپ می‌شود؛ موارد ناموفق به‌صورت صادقانه گزارش می‌شوند.</div>
+      <div class="eqv2-check-cols eqv2-batch-list">${options}</div>
+      <div class="m-foot"><button class="btn btn-primary" onclick="eqv2BatchPrintRun()">🖨 چاپ انتخاب‌شده‌ها</button><button class="btn btn-ghost" onclick="closeModal()">انصراف</button></div>
+    </div>`,true);
+  }
+  function batchPrintRun(){
+    const ids=[...document.querySelectorAll('.eqv2-batch-list input:checked')].map(node=>node.value);
+    if(!ids.length){toast('حداقل یک تجهیز را انتخاب کنید.',1);return;}
+    closeModal();
+    printBatchIdentity(ids);
+  }
+
   function routeKey(){const match=location.pathname.match(/^\/equipment\/([^/]+)\/?$/);return match?decodeURIComponent(match[1]):null;}
+  function passportRouteKey(){const match=location.pathname.match(/^\/equipment\/([^/]+)\/passport\/?$/);return match?decodeURIComponent(match[1]):null;}
   async function openDetail(idOrCode,{push=true,fromRoute=false}={}){
     if(!equipmentModuleAllowed())return;
     if(E.routeBusy)return;E.routeBusy=true;
@@ -1277,12 +1864,17 @@
   }
   async function restoreRoute(){
     if(!equipmentModuleAllowed())return false;
-    const key=routeKey(),signedIn=typeof ME!=='undefined'&&ME;
-    if(!key||!signedIn)return false;
+    const signedIn=typeof ME!=='undefined'&&ME;
+    if(!signedIn)return false;
+    const passportKey=passportRouteKey();
+    const key=passportKey||routeKey();
+    if(!key)return false;
     if(typeof CUR!=='undefined')CUR='equipment';
     if(typeof buildMenu==='function')buildMenu();
     document.getElementById('sidebar')?.classList.remove('open');
-    await openDetail(key,{push:false,fromRoute:true});return true;
+    if(passportKey)await openPassport(passportKey,{push:false,fromRoute:true});
+    else await openDetail(key,{push:false,fromRoute:true});
+    return true;
   }
 
   function filter(key,value){E[key]=value;if(key==='factoryId')E.categoryId='';E.page=1;saveState();const toolbarNode=document.querySelector('.eqv2-toolbar');if(toolbarNode)toolbarNode.outerHTML=toolbar();load().then(restoreExplorerScroll).catch(showError);}
@@ -1707,6 +2299,14 @@
   window.eqv2StructureClose=structureClosePanel;window.eqv2StructureCrumb=structureCrumbTo;window.eqv2StructureArchivedToggle=structureArchivedToggle;
   window.eqv2StructureSuggest=structureSuggest;window.eqv2StructureApprove=structureApprove;window.eqv2StructureReject=structureReject;
   window.eqv2StructureEditSuggestion=structureEditSuggestion;window.eqv2StructureMoveSubmit=structureMoveSubmit;window.eqv2StructureCrossSearch=structureCrossSearch;
+  window.eqv2SpareAdd=spareAdd;window.eqv2SpareEdit=spareEdit;window.eqv2SpareItemSearch=spareItemSearch;window.eqv2SpareSubmit=spareSubmit;
+  window.eqv2SpareArchive=spareArchive;window.eqv2SpareRestore=spareRestore;window.eqv2SparesArchivedToggle=sparesArchivedToggle;
+  window.eqv2SpareTargetChanged=spareTargetChanged;
+  window.eqv2SparesRefresh=()=>loadSpares(E.detailId).catch(spareSay);
+  window.eqv2SpareSuggest=spareSuggest;window.eqv2SpareApprove=spareApprove;window.eqv2SpareReject=spareReject;window.eqv2SpareEditSuggestion=spareEditSuggestion;
+  window.eqv2QrModal=qrModal;window.eqv2PrintIdentity=printIdentity;window.eqv2PrintQrLabels=printQrLabels;
+  window.eqv2PrintBatchIdentity=printBatchIdentity;window.eqv2OpenPassport=openPassport;
+  window.eqv2BatchPrintModal=batchPrintModal;window.eqv2BatchPrintRun=batchPrintRun;
   const previousEquipmentListeners=window.__bfgEquipmentV2Listeners;
   if(previousEquipmentListeners&&typeof window.removeEventListener==='function'){
     if(typeof previousEquipmentListeners.domain==='function')window.removeEventListener('bfg:domain-event',previousEquipmentListeners.domain);
@@ -1714,11 +2314,16 @@
   }
   const equipmentDomainEvent=event=>{
     const payload=event&&event.detail;
-    if(!payload||payload.type!=='equipment.structure.changed')return;
-    if(!E.detail||String(E.structure?.rootId)!==String(payload.aggregateId))return;
-    refreshStructure({keepPanel:true}).catch(()=>{});
+    if(!payload||!E.detail)return;
+    if(payload.type==='equipment.structure.changed'){
+      if(String(E.structure?.rootId)!==String(payload.aggregateId))return;
+      refreshStructure({keepPanel:true}).catch(()=>{});
+    }else if(payload.type==='equipment.spares.changed'){
+      if(String(E.detailId)!==String(payload.aggregateId))return;
+      if(E.tab==='spares')loadSpares(E.detailId).catch(()=>{});
+    }
   };
-  const equipmentPopState=()=>{const key=routeKey();if(key)openDetail(key,{push:false,fromRoute:true});else if(E.detail)backToEquipment({historyMode:'none'});};
+  const equipmentPopState=()=>{const passportKey=passportRouteKey();if(passportKey){openPassport(passportKey,{push:false,fromRoute:true});return;}const key=routeKey();if(key)openDetail(key,{push:false,fromRoute:true});else if(E.detail||E.passport)backToEquipment({historyMode:'none'});};
   if(typeof window.addEventListener==='function'){
     window.addEventListener('bfg:domain-event',equipmentDomainEvent);
     window.addEventListener('popstate',equipmentPopState);

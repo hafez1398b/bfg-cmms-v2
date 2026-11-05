@@ -110,7 +110,13 @@ test('migration 017 SQL contract repairs B1BT rows from actual depth, not displa
   assert.ok(schemaStart >= 0, 'schema.sql must contain the complete migration 017 block');
   assert.ok(phase3aStart > schemaStart, 'Migration 018 must follow the canonical Migration 017 contract in schema.sql');
   assert.equal(schema.slice(schemaStart, phase3aStart).trim(), migration.trim(), 'schema.sql must retain Migration 017 unchanged before the Phase 3-A block');
-  assert.equal(schema.slice(phase3aStart).trim(), migration018.trim(), 'schema.sql must end with the exact Migration 018 contract');
+  // Mission D4 appends the Migration 019 spare-part lifecycle mirror after Migration 018.
+  const migration019 = read('migrations/019_equipment_spares_lifecycle.sql');
+  const sparesMarker = '-- Mission D4 / Phase 3: critical spare parts lifecycle in the equipment dossier.';
+  const sparesStart = schema.indexOf(sparesMarker);
+  assert.ok(sparesStart > phase3aStart, 'Migration 019 must follow the Phase 3-A block in schema.sql');
+  assert.equal(schema.slice(phase3aStart, sparesStart).trim(), migration018.trim(), 'schema.sql must retain the exact Migration 018 contract before Migration 019');
+  assert.equal(schema.slice(sparesStart).trim(), migration019.trim(), 'schema.sql must end with the exact Migration 019 contract');
 
   // This catches the production failure: structure reads these fields from root_equipment.
   assert.match(migration,
