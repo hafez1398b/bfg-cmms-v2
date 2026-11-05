@@ -12,6 +12,11 @@ const ACTIONS = {
     destination: 'equipment.structure', permission: 'equipment.structure.suggest',
     approvalPermission: 'equipment.structure.approve_ai',
     required: ['name', 'nodeKind', 'parentId', 'rootEquipmentId']
+  },
+  'equipment.spares.link': {
+    destination: 'equipment.spares', permission: 'equipment.spares.suggest',
+    approvalPermission: 'equipment.spares.approve_ai',
+    required: ['rootEquipmentId', 'targetId', 'itemId']
   }
 };
 const VERIFIED_SOURCES = new Set(['file', 'text', 'document', 'user-confirmed-form', 'import-session']);
@@ -74,6 +79,11 @@ function assessDraft(input) {
   if (input.actionType === 'equipment.create' && ['subsystem', 'main-component', 'sub-component'].includes(proposed.nodeKind)) throw coded(422, 'STRUCTURE_ACTION_REQUIRED');
   if (input.actionType === 'equipment.structure.add') {
     if (!['subsystem', 'main-component', 'sub-component'].includes(proposed.nodeKind)) missing.push('nodeKind');
+    if (!source || !cleanText(source.ref, 180) || !source.kind) missing.push('verifiedSource');
+    if (!evidence.length) missing.push('evidence');
+  }
+  if (input.actionType === 'equipment.spares.link') {
+    if (proposed.relationType && !['key-spare', 'general-spare'].includes(proposed.relationType)) missing.push('relationType');
     if (!source || !cleanText(source.ref, 180) || !source.kind) missing.push('verifiedSource');
     if (!evidence.length) missing.push('evidence');
   }

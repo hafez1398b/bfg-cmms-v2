@@ -191,3 +191,44 @@ td.eqv2-structure-actions .eqv2-structure-row-actions{display:inline-flex;align-
   .eqv2-structure-drawer-actions [data-structure-action="save"]{min-width:0}
   .eqv2-structure-search{min-width:100%}
 }
+
+/* Mission D4 / Phase 3: critical spare parts table + link form. */
+.eqv2-spares-wrap{margin-top:8px}
+.eqv2-spares-table{min-width:980px}
+.eqv2-spares-table td{vertical-align:top}
+.eqv2-spares-table tr.is-archived td{opacity:.72}
+.eqv2-spare-stock{display:grid;gap:2px}
+.eqv2-spare-stock small{color:var(--text-2);font-size:9px}
+.eqv2-spare-stock.is-short b{color:var(--danger,#d94747)}
+.eqv2-spare-actions{white-space:nowrap}
+.eqv2-spare-actions .btn{margin:1px}
+.eqv2-spare-search{display:flex;gap:7px}
+.eqv2-spare-search input{flex:1;min-width:0}
+.eqv2-spare-form-error{margin-top:10px;padding:9px 11px;border:1px solid color-mix(in srgb,var(--danger,#d94747) 35%,var(--border));border-radius:9px;background:color-mix(in srgb,var(--danger,#d94747) 9%,var(--surface));font-size:11px;line-height:1.8}
+
+/* Mission D4 / Phase 11: QR modal (printable identity card lives in its own print window). */
+.eqv2-qr-body{text-align:center}
+.eqv2-qr-frame{width:230px;height:230px;margin:0 auto;background:#fff;border-radius:14px;padding:12px;border:1.5px solid var(--border)}
+.eqv2-qr-meta{margin-top:12px;display:grid;gap:4px;justify-items:center}
+.eqv2-qr-link{direction:ltr;font-size:10.5px;color:var(--text-2);word-break:break-all;max-width:100%}
+
+/* Mission D4: Selene spare-link suggestion cards (Analyze→Suggest→Approval→Save). */
+.eqv2-spares-suggestions{margin-top:10px}
+.eqv2-suggestion-card{border:1px solid var(--border);border-radius:11px;padding:11px 13px;margin-top:9px;background:var(--surface);display:grid;gap:7px}
+.eqv2-suggestion-head{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.eqv2-suggestion-meta{display:flex;flex-wrap:wrap;gap:5px 14px;font-size:10px;color:var(--text-2)}
+.eqv2-suggestion-explanation{font-size:11px;line-height:1.8;margin:0}
+.eqv2-suggestion-evidence{margin:0;padding-inline-start:18px;font-size:10.5px;color:var(--text-2);line-height:1.8}
+.eqv2-suggestion-actions{display:flex;gap:6px;flex-wrap:wrap}
+
+/* Mission D4: independent printable passport route + group A4 printing. */
+.eqv2-passport{display:grid;gap:12px;justify-items:center;padding:10px 0}
+.eqv2-passport-toolbar{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+.eqv2-passport-sheet{width:100%;max-width:210mm;background:#fff;color:#10202f;border-radius:8px;overflow:auto;box-shadow:0 2px 14px rgba(16,32,47,.12)}
+.eqv2-passport-sheet .sheet{margin:0 auto;box-shadow:none}
+.eqv2-batch-list{max-height:340px;overflow:auto;display:grid;gap:4px}
+@media(max-width:780px){
+  .eqv2-spares-table{min-width:860px;font-size:10px}
+  .eqv2-qr-frame{width:200px;height:200px}
+  .eqv2-passport-sheet{max-width:100%}
+}

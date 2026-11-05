@@ -10,6 +10,8 @@ const { createEquipmentIntakeRouter } = require('./equipment-intake-routes');
 const { createSeleneActionRouter } = require('./selene-action-routes');
 const structure = require('./equipment-structure');
 const suggestions = require('./structure-suggestions');
+const spares = require('./equipment-spares');
+const sparesSuggestions = require('./spares-suggestions');
 
 function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry, security }) {
   const router = express.Router();
@@ -302,6 +304,82 @@ function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry, securi
     } catch (error) { next(error); }
   });
 
+  // Mission D4 / Phase 3: critical spare parts of the dossier. Links always reference real
+  // inventory items; stock and last purchase are read-only ledger facts. Writes are
+  // transactional, permission-checked, audited and published through event_outbox.
+  async function spareWrite(res, next, operation) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await operation(client);
+      await client.query('COMMIT');
+      res.status(result.statusCode || 200).json(result.body);
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {});
+      next(error);
+    } finally { client.release(); }
+  }
+
+  router.get('/:id/spares', async (req, res, next) => {
+    try {
+      const data = await spares.listSpares({
+        pool, security, user: req.user, equipmentId: req.params.id,
+        includeArchived: req.query.includeArchived === 'true'
+      });
+      res.json({ data, source: 'postgresql' });
+    } catch (error) { next(error); }
+  });
+
+  router.post('/:id/spares', async (req, res, next) => {
+    await spareWrite(res, next, async client => {
+      const data = await spares.linkSparePart({
+        client, pool, security, user: req.user, equipmentId: req.params.id, input: req.body || {}
+      });
+      return { statusCode: 201, body: { data, committed: true, source: 'postgresql' } };
+    });
+  });
+
+  router.patch('/:id/spares/:itemId', async (req, res, next) => {
+    await spareWrite(res, next, async client => {
+      const data = await spares.updateSparePart({
+        client, pool, security, user: req.user, equipmentId: req.params.id,
+        itemId: req.params.itemId, input: req.body || {}
+      });
+      return { body: { data, committed: true, source: 'postgresql' } };
+    });
+  });
+
+  router.delete('/:id/spares/:itemId', async (req, res, next) => {
+    await spareWrite(res, next, async client => {
+      const result = await spares.archiveSparePart({
+        client, pool, security, user: req.user, equipmentId: req.params.id,
+        itemId: req.params.itemId, input: req.body || {}
+      });
+      return { body: { ...result, source: 'postgresql' } };
+    });
+  });
+
+  router.post('/:id/spares/:itemId/restore', async (req, res, next) => {
+    await spareWrite(res, next, async client => {
+      const result = await spares.restoreSparePart({
+        client, pool, security, user: req.user, equipmentId: req.params.id,
+        itemId: req.params.itemId, input: req.body || {}
+      });
+      return { body: { ...result, source: 'postgresql' } };
+    });
+  });
+
+  // Selene only drafts spare-part link proposals here; the write happens exclusively through
+  // the controlled action executor after explicit user confirmation.
+  router.post('/:id/spares/suggestions', async (req, res, next) => {
+    try {
+      const data = await sparesSuggestions.suggestSpares({
+        pool, registry: aiRegistry, security, user: req.user, rootEquipmentId: req.params.id
+      });
+      res.status(201).json({ data, source: 'postgresql' });
+    } catch (error) { next(error); }
+  });
+
   router.get('/:id', requireEquipment('view'), async (req, res, next) => {
     try {
       const { rows } = await pool.query(
@@ -328,9 +406,9 @@ function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry, securi
           COALESCE((SELECT jsonb_agg(jsonb_build_object(
             'id',i.id,'code',i.code,'name',i.name,'unit',i.unit,'stock',i.stock,
             'minimum',i.min_stock,'price',i.price,'relation_type',rel.relation_type,
-            'quantity_required',rel.quantity_required,'notes',rel.notes
+            'quantity_required',rel.quantity_required,'notes',rel.notes,'row_version',rel.row_version
           ) ORDER BY i.name) FROM asset_spare_parts rel JOIN items i ON i.id=rel.item_id
-            WHERE rel.asset_id=a.id AND i.deleted_at IS NULL),'[]'::jsonb) spare_parts,
+            WHERE rel.asset_id=a.id AND rel.deleted_at IS NULL AND i.deleted_at IS NULL),'[]'::jsonb) spare_parts,
           '[]'::jsonb children,
           COALESCE((SELECT jsonb_agg(jsonb_build_object(
             'id',n.id,'code',n.code,'name',n.name,'period_days',n.period_days,

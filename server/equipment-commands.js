@@ -7,6 +7,7 @@ const {
 } = require('./equipment-service');
 const { HISTORY_LABEL } = require('./selene-actions');
 const structure = require('./equipment-structure');
+const spares = require('./equipment-spares');
 
 async function audit(client, user, action, entity, note, before, after) {
   await client.query(
@@ -203,6 +204,19 @@ async function applyControlledAction(client, user, draft, options = {}) {
         parentId: draft.proposed.parentId || draft.targetId,
         parentRowVersion: draft.recordVersion
       }
+    });
+  }
+  if (draft.actionType === 'equipment.spares.link') {
+    // Approval re-enters the same Domain API service as a manual link: permission, scope,
+    // target-kind rule, real-item check, row_version, audit and realtime are all re-applied.
+    return spares.linkSparePart({
+      client,
+      pool: options.pool,
+      security: options.security,
+      user,
+      equipmentId: draft.proposed.rootEquipmentId,
+      permission: 'equipment.spares.approve_ai',
+      input: { ...draft.proposed }
     });
   }
   throw coded(422, 'ACTION_NOT_ALLOWED');

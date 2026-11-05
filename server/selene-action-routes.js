@@ -14,7 +14,7 @@ function sendError(res, error) {
 function createSeleneActionRouter({ pool, service, io, security }) {
   const authorize = async (user, operation) => {
     if (security && typeof security.hasPermission === 'function') return security.hasPermission(user, operation);
-    if (operation.startsWith('equipment.structure.')) {
+    if (operation.startsWith('equipment.structure.') || operation.startsWith('equipment.spares.')) {
       const { rows } = await pool.query(
         `SELECT 1 FROM role_permissions WHERE role=$1 AND granted=true
          AND (permission=$2 OR permission='*') LIMIT 1`, [user.role, operation]
@@ -58,7 +58,7 @@ function createSeleneActionRouter({ pool, service, io, security }) {
   router.post('/drafts/:id/execute', async (req, res) => {
     try {
       const result = await actions.executeDraft(req.user, req.params.id, req.body || {});
-      if (result.committed && result.data && result.actionType !== 'equipment.structure.add') {
+      if (result.committed && result.data && !['equipment.structure.add', 'equipment.spares.link'].includes(result.actionType)) {
         io?.emit('equipment-changed', { action: 'selene-save', id: result.data.id });
       }
       res.json(result);

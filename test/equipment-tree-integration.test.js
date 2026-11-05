@@ -122,7 +122,12 @@ test('dossier has exactly the authoritative eleven sections and no passport-prin
   assert.equal((content.innerHTML.match(/role="tab"/g) || []).length, 11);
   assert.match(content.innerHTML, /eqv2-compact-header/);
   assert.match(content.innerHTML, /مشخصات فنی/);
-  assert.doesNotMatch(content.innerHTML, /چاپ شناسنامه|QR/);
+  // Mission D4 / Phase 11: QR and the printable identity card are independent header actions
+  // fed by the real dossier — they must never become a twelfth tab.
+  assert.match(content.innerHTML, /eqv2QrModal\('eq-1'\)/);
+  assert.match(content.innerHTML, /eqv2PrintIdentity\('eq-1'\)/);
+  const tabStrip = content.innerHTML.slice(content.innerHTML.indexOf('eqv2-detail-tabs'), content.innerHTML.indexOf('eqv2-detail-body'));
+  assert.doesNotMatch(tabStrip, /چاپ|QR/);
   assert.match(content.innerHTML, /eqv2-breadcrumb/);
 });
 

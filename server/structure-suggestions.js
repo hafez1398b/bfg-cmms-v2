@@ -37,7 +37,7 @@ async function buildStructureContext(pool, rootId) {
     ),
     pool.query(
       `SELECT i.code,i.name,rel.relation_type FROM asset_spare_parts rel JOIN items i ON i.id=rel.item_id
-       WHERE rel.asset_id=$1 AND i.deleted_at IS NULL ORDER BY i.name LIMIT 40`, [root.id]
+       WHERE rel.asset_id=$1 AND rel.deleted_at IS NULL AND i.deleted_at IS NULL ORDER BY i.name LIMIT 40`, [root.id]
     ),
     pool.query(
       `SELECT COALESCE(value->>'title', value->>'name') AS title, COALESCE(value->>'status','') AS status
