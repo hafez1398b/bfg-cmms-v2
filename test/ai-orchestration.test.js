@@ -81,3 +81,24 @@ test('AI migration and frontend keep secrets server-side and require human appro
   assert.match(providers,/process\.env/);assert.match(read('server/ai-service.js'),/pending_approval/);
   assert.match(read('server.js'),/\/api\/ai/);
 });
+
+test('legacy AI UI is fail-closed and delegates requests to the authenticated AI Gateway',()=>{
+  const html=read('public/index.html'),client=read('public/ai/ai-client.js'),policy=read('public/platform-v2/runtime-policy.js'),routes=read('server/ai-routes.js'),service=read('server/ai-service.js');
+  const aiUi=html.slice(html.indexOf('REAL AI MAINTENANCE ASSISTANT'),html.indexOf('/* ---------------- menu + router */'));
+  assert.doesNotMatch(html,/DB\.aiCfg\.(?:apiKey|sttKey|baseUrl|sttUrl)/);
+  assert.doesNotMatch(html,/localAI|نمونه STT|الگوی پیشنهادی سامانه/);
+  assert.doesNotMatch(aiUi,/fetch\(/i);
+  assert.doesNotMatch(aiUi,/الگوی پیشنهادی سامانه|legacy\((?:q|inp)\)/);
+  assert.match(html,/window\.AIBackend\.chat/);
+  assert.match(client,/bfgApi\('\/api\/ai\/analyze'/);
+  assert.match(client,/AbortController/);
+  assert.match(client,/equipmentId/);
+  assert.match(client,/const state=window\.AIBackend=/);
+  assert.match(client,/pending_approval|در انتظار تأیید انسانی/);
+  assert.match(policy,/scrubSecrets/);
+  assert.match(routes,/console\.error\('AI API:', error\.code/);
+  assert.match(routes,/Number\(error\.status\)\|\|500/);
+  assert.doesNotMatch(service,/apiKey|sttKey|process\.env/);
+  assert.match(service,/response_metadata/);
+  assert.match(service,/recommendationCount/);
+});

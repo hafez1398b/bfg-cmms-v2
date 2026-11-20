@@ -99,13 +99,19 @@ test('client storage policy fails closed and never keeps AI keys', () => {
   assert.equal(storage.getItem('bfg_cmms_v1'), null);
 
   policy.applyConfig({ environment: 'development', executionMode: 'local-development', allowLocalCompatibility: true });
+  const legacyCredential = 'obsolete-client-credential', legacyEndpoint = 'obsolete-endpoint';
   storage.setItem('bfg_cmms_v1', JSON.stringify({
-    settings: { ai: { key: 'sk-browser', model: 'demo' } },
-    aiCfg: { apiKey: 'sk-browser', sttKey: 'stt-secret', provider: 'openai' }
+    settings: { ai: { key: legacyCredential, model: 'retired-model', endpoint: legacyEndpoint } },
+    aiCfg: { apiKey: legacyCredential, sttKey: legacyCredential, provider: 'legacy-provider', baseUrl: legacyEndpoint, model: 'retired-model', sttProvider: 'legacy-provider' }
   }));
   const saved = JSON.parse(storage.getItem('bfg_cmms_v1'));
   assert.equal(saved.settings.ai.key, '');
-  assert.equal(saved.settings.ai.model, 'demo');
+  assert.equal(saved.settings.ai.model, undefined);
+  assert.equal(saved.settings.ai.endpoint, undefined);
+  assert.equal(saved.aiCfg.provider, 'backend');
+  assert.equal(saved.aiCfg.baseUrl, undefined);
+  assert.equal(saved.aiCfg.model, undefined);
+  assert.equal(saved.aiCfg.sttProvider, 'browser');
   assert.equal(saved.aiCfg.apiKey, '');
   assert.equal(saved.aiCfg.sttKey, '');
   assert.equal(policy.isAiSecretField('apiKey'), true);

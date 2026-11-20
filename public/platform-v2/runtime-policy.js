@@ -32,7 +32,7 @@
       leaves: [], chats: {}, costEntries: [],
       settings: {
         docCode: '', docDate: '', reqRequired: {},
-        ai: { provider: 'backend', endpoint: '', model: '', key: '', vision: false },
+        ai: { provider: 'backend', model: '', vision: false },
         qrBase: '',
         creator: { show: true, name: 'دکتر دهفولی - حافظ بایرامیان', role: 'طراحی، تحلیل و معماری سامانه CMMS/EAM' },
         channels: {
@@ -47,7 +47,7 @@
       savedFilters: [], backups: [], backupCfg: { freq: 'daily', time: '02:00', dest: 'سرور مرکزی', keep: 30 },
       logins: [], msgGroups: [], docMeta: {}, planEvents: [], recMeta: {},
       auditX: [], trash: [], notifSvc: {}, notifLog: [], escalations: [], escRuns: [],
-      aiCfg: { provider: 'backend', baseUrl: '', apiKey: '', sttKey: '', model: '', visionModel: '', status: 'server', lastMsg: 'کلیدهای هوش مصنوعی فقط روی سرور مرکزی نگهداری می‌شوند' },
+      aiCfg: { provider: 'backend', sttProvider: 'browser', punctuate: true, keepAudio: false, status: 'server', lastMsg: 'اعتبارنامه‌های هوش مصنوعی فقط روی سرور مرکزی نگهداری می‌شوند' },
       workflows: [], wfRuns: [],
       panelCfg: { pattern: '', plant: '', seq: 1, pad: 3, autoChk: false, mandatory: false, voltages: [], statuses: [] },
       recNotes: [], comments: [], recFiles: [], purchaseReqs: [],
@@ -75,11 +75,17 @@
     return name === 'key' && (parent === 'ai' || parent === 'aicfg');
   }
 
+  const RETIRED_AI_CONFIG_FIELDS = new Set(['endpoint', 'baseurl', 'stturl', 'model', 'visionmodel', 'temperature', 'maxtokens', 'timeout']);
   function scrubSecrets(value, parentKey) {
     if (!value || typeof value !== 'object') return value;
     if (Array.isArray(value)) { value.forEach(item => scrubSecrets(item, parentKey)); return value; }
+    const parent = String(parentKey || '').toLowerCase();
     Object.keys(value).forEach(key => {
+      const name = String(key).toLowerCase();
       if (isAiSecretField(key, parentKey)) { value[key] = ''; return; }
+      if ((parent === 'ai' || parent === 'aicfg') && RETIRED_AI_CONFIG_FIELDS.has(name)) { delete value[key]; return; }
+      if ((parent === 'ai' || parent === 'aicfg') && name === 'provider') { value[key] = 'backend'; return; }
+      if ((parent === 'ai' || parent === 'aicfg') && name === 'sttprovider') { value[key] = 'browser'; return; }
       if (value[key] && typeof value[key] === 'object') scrubSecrets(value[key], key);
     });
     return value;

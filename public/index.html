@@ -682,7 +682,7 @@ costEntries:[
 settings:{
  docCode:'BFG-FR-27-V2',docDate:'1405/03/02',
  reqRequired:{actionType:true,desc:true,urgency:true,unit:true,asset:false,serviceType:false,phone:false,needDate:false},
- ai:{provider:'openai',endpoint:'https://api.openai.com/v1/chat/completions',model:'gpt-4o-mini',key:'',vision:true},
+ ai:{provider:'backend',vision:true},
 },
 seq:{wo:235,wr:115,ptw:46,doc:133},
 };
@@ -693,7 +693,7 @@ let DB=null,ME=null;
 function bfgUseServerStore(){return !window.BFGRuntime||!window.BFGRuntime.shouldPersistOperationalData();}
 async function load(){
  if(bfgUseServerStore()){
-  DB=window.BFGRuntime?window.BFGRuntime.emptyOperationalStore():{users:[],assets:[],requests:[],wos:[],pms:[],items:[],notifs:[],audit:[],settings:{ai:{key:''}},__mfSeed:1,__fleetSeed:1,__structSeed:1,__toolSeed39:1,__hrSeed40:1,__demoSeed:1};
+  DB=window.BFGRuntime?window.BFGRuntime.emptyOperationalStore():{users:[],assets:[],requests:[],wos:[],pms:[],items:[],notifs:[],audit:[],settings:{ai:{provider:'backend'}},__mfSeed:1,__fleetSeed:1,__structSeed:1,__toolSeed39:1,__hrSeed40:1,__demoSeed:1};
   try{localStorage.removeItem('bfg_cmms_v1');}catch(e){}
   return;
  }
@@ -1127,7 +1127,7 @@ function finishWO(id){
  <div class="m-foot"><button class="btn btn-primary" onclick="saveReport('${w.id}')">ثبت پایان کار و ارسال گزارش</button><button class="btn btn-ghost" onclick="openWO('${w.id}')">بازگشت</button></div>`);
 }
 let sttUsed=false;
-function sttDemo(){sttUsed=true;const t=$('#rpText');t.value=(t.value?t.value+' ':'')+'مکانیکال‌سیل تعویض شد، پمپ تست شد و نشتی برطرف گردید. فشار خط به ۱۲ بار برگشت.';toast('🎙️ متن گفتار (نمونه STT فارسی) درج شد — قابل ویرایش');}
+function sttDemo(){const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){toast('مرورگر از گفتار به متن پشتیبانی نمی‌کند؛ متن را دستی وارد کنید',1);return;}const recognition=new SR();recognition.lang='fa-IR';recognition.onresult=e=>{sttUsed=true;const field=$('#rpText');const transcript=Array.from(e.results).map(r=>r[0].transcript).join(' ').trim();if(field&&transcript)field.value=(field.value?field.value+' ':'')+transcript;};recognition.onerror=()=>toast('رونویسی انجام نشد؛ متن نمونه تولید نشده است',1);recognition.start();}
 function saveReport(id){
  const w=DB.wos.find(x=>x.id===id);const text=$('#rpText').value.trim();
  if(!text){toast('شرح اقدام الزامی است',1);return;}
@@ -1811,18 +1811,7 @@ function pgAI(){
    <div class="list-row"><div style="flex:1"><b>${n}</b><div class="muted">${r}</div></div><span class="badge b-blue">نقطه سفارش: ${c}</span></div>`).join('')}</div>
  </div>`;
 }
-function aiAsk(){
- const q=$('#aiQ').value.trim();if(!q)return;
- const box=$('#aiAnswer');box.style.display='block';
- let ans='بر اساس داده‌های ثبت‌شده: ';
- if(q.includes('MTTR'))ans+='MTTR دوره جاری ۳٫۲ ساعت است (خط ۱: ۲٫۸h — خط ۲: ۳٫۹h). روند ۳ماهه نزولی و بهبود ٪۱۱ است. 📊 [مشاهده گزارش کامل در داشبورد]';
- else if(q.includes('MTBF'))ans+='MTBF کل ۲۱۲ ساعت؛ پایین‌ترین مقدار مربوط به «پمپ تزریق ایزوسیانات» (۱۴۰h) به‌دلیل ۲ خرابی سیل اخیر است.';
- else if(q.includes('هزینه'))ans+='هزینه نت دوره جاری '+money(DB.costEntries.reduce((s,e)=>s+e.amount,0))+' ریال — سهم پیمانکار ٪۸۶. ۱۰ تجهیز پرهزینه در ماژول هزینه‌ها قابل مشاهده است.';
- else if(q.includes('خرابی')||q.includes('توقف'))ans+='در ۹۰ روز گذشته ۷ توقف ثبت شده؛ تحلیل پارتو نشان می‌دهد ٪۶۲ از ناحیه آب‌بندی پمپ‌هاست. پیشنهاد: بازنگری چک‌لیست PM پمپ‌ها.';
- else ans+='پرسش شما تحلیل شد. برای «'+esc(q)+'» داده کافی در دوره جاری موجود است — جزئیات در داشبورد KPI و گزارش‌ساز قابل استخراج است.';
- box.innerHTML='🤖 '+ans+'<div style="font-size:10.5px;opacity:.75;margin-top:6px">پیشنهاد هوشمند — درجه اطمینان: ٪۸۷</div>';
- audit('پرسش از دستیار AI: '+q);
-}
+function aiAsk(){toast('پاسخ هوشمند فقط از AI Gateway سازمانی دریافت می‌شود',1);}
 
 /* ================= Report Builder ================= */
 function pgReports(){
@@ -2182,31 +2171,20 @@ function printReq(id){
  win.document.close();
 }
 
-/* ================= 2) Real online AI service ================= */
+/* All legacy AI entry points are fail-closed; the shared gateway client is loaded after the app shell. */
 async function aiCall(messages,imageDataUrl){
- if(window.BFGRuntime)window.BFGRuntime.scrubSecrets(DB);
- return {text:localAI(messages[messages.length-1].content,imageDataUrl)+'\n\nکلید هوش مصنوعی در مرورگر نگهداری نمی‌شود. تحلیل آنلاین فقط از مسیر Backend انجام می‌شود.',online:false};
+ const parts=[{type:'text',text:String(messages?.[messages.length-1]?.content||'')}];
+ if(imageDataUrl)parts.push({type:'image_url',image_url:{url:imageDataUrl}});
+ const equipmentId=window.EQV2?.selected||(typeof selAsset!=='undefined'?selAsset:null);
+ const result=await aiChat([{role:'user',content:parts}],{equipmentId,purpose:imageDataUrl?'failure_diagnosis':'trend_analysis'});
+ return result.ok?{text:result.text,online:true}:{text:'',online:false,error:result.error};
 }
-function localAI(q,img){
- q=String(q||'');
- const failCount=DB.wos.filter(w=>['BD','CM'].includes(w.type)).length;
- if(img)return 'تحلیل تصویر (موتور داخلی): تصویر دریافت شد. برای شناسایی دقیق قطعه و تحلیل بینایی ماشین، اتصال به مدل Vision آنلاین لازم است. بر اساس متن همراه، سوابق مشابه این تجهیز را در تب «سوابق نت» بررسی کنید.';
- if(/MTTR|ام تی تی ار/i.test(q))return 'MTTR دوره جاری ۳٫۲ ساعت (خط ۱: ۲٫۸h، خط ۲: ۳٫۹h) — روند ۳ماهه ٪۱۱ بهبود.';
- if(/MTBF/i.test(q))return 'MTBF کل ۲۱۲ ساعت؛ ضعیف‌ترین تجهیز «پمپ تزریق ایزوسیانات» با ۱۴۰h به دلیل ۲ خرابی سیل اخیر.';
- if(/هزینه/.test(q))return 'هزینه نت دوره جاری '+money(DB.costEntries.reduce((s,e)=>s+e.amount,0))+' ریال — سهم پیمانکار ٪۸۶، قطعات ٪۱۲.';
- if(/خرابی|توقف|پرتکرار/.test(q))return 'تحلیل سوابق ('+fa(failCount)+' مورد CM/BD): پرتکرارترین علت «نقص آب‌بندی پمپ‌ها» (٪۶۲ پارتو). اقدام پیشنهادی: ۱) بازنگری چک‌لیست PM پمپ‌ها ۲) بررسی هم‌محوری ۳) ارتقای کلاس مکانیکال‌سیل.';
- if(/سیل|آب.?بند|نشتی/.test(q))return 'علل محتمل نشتی سیل: ۱) هم‌محور نبودن کوپلینگ ۲) Dry-Run پمپ ۳) کیفیت سیل ۴) لرزش بالا. دستور کار: ابتدا لرزش‌سنجی، سپس بازرسی هم‌محوری با ساعت اندیکاتور، تعویض سیل با گرید مقاوم به ایزوسیانات. ابزار: ترکمتر، ساعت اندیکاتور. قطعه پیشنهادی: SP-SEL-014 (موجودی: '+fa(item('i2').stock)+').';
- if(/ارتعاش|لرزش|CNC/.test(q))return 'روند ارتعاش CNC صعودی است (1.8→3.4 mm/s در ۶ دوره). محتمل‌ترین علت: فرسایش بیرینگ اسپیندل. پیشنهاد: توقف برنامه‌ریزی‌شده و بازرسی طی ۲ هفته آینده — WO پیش‌بینانه صادر شده است.';
- return 'بر اساس داده‌های سیستم ('+fa(DB.wos.length)+' دستورکار، '+fa(DB.assets.filter(a=>a.type==='eq').length)+' تجهیز): پرسش شما تحلیل شد. برای تحلیل عمیق‌تر، جزئیات بیشتری (نام تجهیز، علائم خرابی) ارائه کنید یا از داشبورد KPI استفاده نمایید.';
-}
-/* Wire AI-center ask to the real service */
 async function aiAsk(){
  const q=$('#aiQ').value.trim();if(!q)return;
- const box=$('#aiAnswer');box.style.display='block';
- box.innerHTML='<span class="ai-typing"><i></i><i></i><i></i></span> در حال تحلیل…';
- const r=await aiCall([{role:'user',content:q}]);
- box.innerHTML='🤖 '+esc(r.text).replace(/\n/g,'<br>')+`<div style="font-size:10.5px;opacity:.75;margin-top:6px">${r.online?'🌐 پاسخ آنلاین از مدل '+DB.settings.ai.model:'⚙️ موتور تحلیلی داخلی'} — پیشنهاد هوشمند</div>`;
- audit('پرسش از دستیار AI: '+q);
+ const box=$('#aiAnswer');box.style.display='block';box.textContent='در حال ارسال درخواست به AI Gateway امن…';
+ const equipmentId=window.EQV2?.selected||(typeof selAsset!=='undefined'?selAsset:null);
+ const result=await aiChat([{role:'user',content:q}],{equipmentId,purpose:'trend_analysis'});
+ box.textContent=result.ok?result.text:'⛔ پاسخ Backend دریافت نشد؛ پاسخ محلی/ساختگی تولید نشد. '+(result.error||'');
 }
 </script>
 <script>
@@ -2377,36 +2355,16 @@ function renderTA(){
  setTimeout(()=>{const b=$('#taMsgs');if(b)b.scrollTop=b.scrollHeight;},40);
 }
 async function taSend(preset){
- const inp=$('#taText');const q=preset||inp.value.trim();if(!q)return;if(inp)inp.value='';
- TA.msgs.push({role:'user',text:q});TA.typing=true;renderTA();
- const w=DB.wos.find(x=>x.id===TA.woId);const a=w.assetId?asset(w.assetId):null;
- let ctx='دستورکار: '+w.no+' — '+w.desc+(a?' | تجهیز: '+a.name+' ('+(a.cls||'')+' '+(a.maker||'')+' '+(a.model||'')+')':'');
- let ans;
- if(q.includes('سوابق')&&a){
-  const hist=DB.wos.filter(x=>x.assetId===a.id&&x.id!==w.id);
-  ans={text:hist.length?'سوابق '+a.name+':\n'+hist.map(h=>'• '+h.no+' ('+WO_TYPE[h.type]+'): '+h.desc.slice(0,60)+(h.report?' → '+h.report.text.slice(0,50)+'…':'')).join('\n'):'سابقه قبلی برای این تجهیز ثبت نشده است.'};
- }else if(q.includes('ایمنی')){
-  ans={text:'⚠️ نکات ایمنی این کار:\n۱) ایزولاسیون کامل انرژی و قفل LOTO\n۲) PPE: دستکش مقاوم شیمیایی، عینک، ماسک (ایزوسیانات سمی است)\n۳) تهویه محل کار\n۴) '+(w.ptw?'این کار PTW الزامی دارد — قبل از شروع مجوز HSE را بگیرید':'چک‌لیست عمومی ایمنی را رعایت کنید')};
- }else if(q.includes('ابزار')||q.includes('قطعه')){
-  const low=DB.items.filter(i=>i.stock>0).slice(0,3);
-  ans={text:'🧰 ابزار پیشنهادی: ترکمتر (TL-TRQ-01'+(DB.tools.find(t=>t.id==='t1').holder?' — دست '+user(DB.tools.find(t=>t.id==='t1').holder).name:' — در انبار')+')، ساعت اندیکاتور، لرزش‌سنج (TL-LSR-01)\n📦 قطعات مرتبط موجود: '+low.map(i=>i.name+' ('+fa(i.stock)+' '+i.unit+')').join('، ')+'\nاز دکمه «درخواست قطعه» همین دستورکار رزرو کنید.'};
- }else if(q.includes('مرحله')){
-  ans={text:'📋 دستورالعمل پیشنهادی:\n۱) ایزولاسیون و تخلیه فشار خط\n۲) دمونتاژ گارد و کوپلینگ\n۳) بازرسی چشمی سیل/یاتاقان — عکس «قبل» ثبت کنید 📷\n۴) تعویض قطعه معیوب با ترک مجاز\n۵) هم‌محوری با ساعت اندیکاتور (حد 0.05mm)\n۶) تست بدون بار → تست با بار\n۷) عکس «بعد» و ثبت گزارش\nدر هر مرحله سؤال داشتید بپرسید.'};
- }else{
-  const r=await aiCall([{role:'user',content:ctx+'\nسؤال تکنسین: '+q}]);
-  ans={text:r.text};
- }
- TA.typing=false;TA.msgs.push({role:'assistant',text:ans.text});renderTA();
- audit('گفتگو با دستیار AI در '+w.no);
+ const inp=$('#taText'),q=preset||(inp&&inp.value.trim());if(!q)return;if(inp)inp.value='';
+ const w=DB.wos.find(x=>x.id===TA.woId);TA.msgs.push({role:'user',text:q});TA.typing=true;renderTA();
+ const result=await aiChat([{role:'user',content:q}],{equipmentId:w&&w.assetId,purpose:'repair_recommendation'});
+ TA.typing=false;TA.msgs.push({role:'assistant',text:result.ok?result.text:'⛔ پاسخ Backend دریافت نشد؛ پاسخ محلی/نمونه تولید نشد. '+(result.error||'')});renderTA();
 }
 function taSendImg(inp){
- const f=inp.files[0];if(!f)return;
- compressImg(f,async url=>{
-  TA.msgs.push({role:'user',text:'تحلیل این تصویر:',img:url});TA.typing=true;renderTA();
-  const w=DB.wos.find(x=>x.id===TA.woId);const a=w.assetId?asset(w.assetId):null;
-  const r=await aiCall([{role:'user',content:'این تصویر از '+(a?a.name:'تجهیز')+' است. قطعه را شناسایی کن، علائم خرابی را تحلیل کن و اقدام اصلاحی پیشنهاد بده.'}],url);
-  TA.typing=false;TA.msgs.push({role:'assistant',text:'🖼️ '+r.text});renderTA();
-  audit('تحلیل تصویر با بینایی ماشین در '+w.no);
+ const file=inp&&inp.files&&inp.files[0];if(!file)return;
+ const w=DB.wos.find(x=>x.id===TA.woId);
+ compressImg(file,url=>{TA.msgs.push({role:'user',text:'تصویر برای تحلیل به Backend ارسال شد',img:url});TA.typing=true;renderTA();
+  aiChat([{role:'user',content:[{type:'text',text:'تصویر تجهیز را تحلیل کن.'},{type:'image_url',image_url:{url}}]}],{equipmentId:w&&w.assetId,purpose:'failure_diagnosis'}).then(result=>{TA.typing=false;TA.msgs.push({role:'assistant',text:result.ok?result.text:'⛔ تصویر از Backend تحلیل نشد؛ پاسخ نمونه تولید نشد. '+(result.error||'')});renderTA();});
  });
 }
 
@@ -2465,14 +2423,7 @@ async function toggleRec(woId){
   btn.textContent='🎙️ ضبط مجدد';btn.classList.remove('rec-pulse');st.textContent='ضبط پایان یافت — در حال تبدیل گفتار به متن…';
  }
 }
-function doSTT(){
- setTimeout(()=>{
-  const box=$('#sttBox'),ta=$('#rpTextV'),st=$('#recStatus');
-  box.style.display='block';
-  ta.value=REC.srText&&REC.srText.trim()?REC.srText.trim():'مکانیکال‌سیل تعویض شد، پمپ تست شد و نشتی برطرف گردید. فشار خط به دوازده بار برگشت. پیشنهاد می‌شود هم‌محوری کوپلینگ در سرویس بعدی کنترل شود.';
-  st.textContent=REC.srText?'✅ گفتار با موتور STT مرورگر به متن تبدیل شد — بازبینی و ویرایش کنید':'✅ متن تولید شد (نمونه STT) — بازبینی و ویرایش کنید';
- },700);
-}
+function doSTT(){const box=$('#sttBox'),ta=$('#rpTextV'),st=$('#recStatus');if(box)box.style.display='block';const transcript=String(REC.srText||'').trim();if(!transcript){if(st)st.textContent='⛔ رونویسی در دسترس نیست؛ متن نمونه تولید نشد. متن را دستی وارد کنید.';return;}if(ta)ta.value=transcript;if(st)st.textContent='✅ گفتار مرورگر تبدیل شد؛ متن را بازبینی کنید.';}
 function saveReportV2(id){
  const w=DB.wos.find(x=>x.id===id);
  const voc=$('#rpVocBox').style.display!=='none';
@@ -2497,13 +2448,9 @@ pgProfile=function(){
   <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:4px">
   ${fields.map(([k,t])=>`<div class="checkline" style="margin-bottom:0"><input type="checkbox" ${rr[k]?'checked':''} onchange="DB.settings.reqRequired['${k}']=this.checked;save();toast('پیکربندی فرم ذخیره شد ⚙️')"> ${t}</div>`).join('')}
   </div><div class="muted" style="margin-top:8px">کاربر بدون تکمیل فیلدهای اجباری هر مرحله، اجازه ورود به مرحله بعد را ندارد.</div></div>
-  <div class="card" style="margin-top:16px"><h3><span class="ic">🤖</span>تنظیمات هوش مصنوعی آنلاین</h3>
-  <div class="frow">
-   <div class="field"><label>مدل</label><input value="${esc(DB.settings.ai.model)}" onchange="DB.settings.ai.model=this.value;save()"></div>
-   <div class="field"><label>Endpoint</label><input value="${esc(DB.settings.ai.endpoint)}" onchange="DB.settings.ai.endpoint=this.value;save()"></div>
-  </div>
-  <div class="field"><label>کلید API</label><input type="password" value="" disabled placeholder="فقط روی سرور مرکزی"></div>
-  <div class="muted">کلید هوش مصنوعی در مرورگر یا localStorage ذخیره نمی‌شود. Provider و کلید فقط در Environment سرور مرکزی تنظیم می‌شوند.</div></div>`;
+  <div class="card" style="margin-top:16px"><h3><span class="ic">🤖</span>AI Gateway سازمانی</h3>
+   <div class="muted">Providerها، Endpointها و اعتبارنامه‌ها فقط در Backend مدیریت می‌شوند؛ مرورگر هیچ تنظیم محرمانه‌ای نگه نمی‌دارد.</div>
+   <button class="btn btn-sm btn-ghost" style="margin-top:10px" onclick="go('aicfg')">نمایش سیاست و وضعیت AI Gateway</button></div>`;
  }
  return _pgProfileBase()+extra;
 };
@@ -3659,6 +3606,7 @@ function impFile(inp){
  box.innerHTML='<div style="text-align:center;padding:18px"><span class="ai-typing"><i></i><i></i><i></i></span> در حال تحلیل هوشمند فایل…</div>';
  const isText=/^(txt|csv|json|xml|md|log)$/.test(IMP.file.ext)||f.type.startsWith('text/');
  const isImg=f.type.startsWith('image/');
+ if(!isText&&!isImg){box.innerHTML='<div class="card"><b>⛔ تحلیل این قالب از این صفحه پشتیبانی نمی‌شود.</b><div class="muted">برای جلوگیری از حدس یا پاسخ نمونه، فایل تحلیل/ثبت نشد. از ابزار ورود هوشمند تجهیزاتِ متصل به Backend استفاده کنید.</div></div>';return;}
  const done=()=>impAnalyze();
  if(isText){const rd=new FileReader();rd.onload=e=>{IMP.text=String(e.target.result).slice(0,4000);done();};rd.readAsText(f);}
  else if(isImg){compressImg(f,url=>{IMP.dataUrl=url;done();});}
@@ -3673,6 +3621,7 @@ async function impAnalyze(){
  else if(IMP.dataUrl)prompt+='\nتصویر پیوست را تحلیل کن: نوع سند/قطعه، متن قابل مشاهده (OCR) و اطلاعات کلیدی.';
  else prompt+='\nبر اساس نام و نوع، حدس بزن این سند به کدام ماژول CMMS مرتبط است و چه فیلدهایی از آن قابل استخراج است.';
  const r=await aiCall([{role:'user',content:prompt}],IMP.dataUrl);
+ if(!r.online){box.innerHTML='<div class="card"><b>⛔ تحلیل از AI Gateway دریافت نشد؛ هیچ پیشنهاد یا دسته‌بندی نمونه‌ای ساخته نشد.</b><div class="muted">'+esc(r.error||'سرویس یا تجهیز مجاز در دسترس نیست')+'</div></div>';return;}
  /* field suggestions from filename/content heuristics */
  const sug=[];
  const txt=(f.name+' '+IMP.text).toLowerCase();
@@ -3728,25 +3677,21 @@ function impConvert(to){
 }
 async function impOCR(){
  toast('OCR در حال اجرا… 🔍');
- const r=await aiCall([{role:'user',content:'این تصویر/سند اسکن‌شده را OCR کن و متن فارسی آن را استخراج کن. نام فایل: '+IMP.file.name}],IMP.dataUrl);
+ if(!IMP.dataUrl){toast('برای OCR باید یک تصویر در دسترس باشد؛ فایل نمونه یا حدسی پردازش نشد',1);return;}
+ const r=await aiCall([{role:'user',content:'این تصویر را OCR کن و فقط متن واقعاً قابل مشاهده را استخراج کن. نام فایل: '+IMP.file.name}],IMP.dataUrl);
+ if(!r.online){toast('OCR از Backend دریافت نشد؛ متن نمونه ساخته نشد: '+(r.error||''),1);return;}
  modal(mhead('🔍 نتیجه OCR — متن قابل جستجو')+`
  <div class="m-body"><textarea rows="10" style="direction:rtl">${esc(r.text)}</textarea>
  <div class="muted" style="margin-top:8px">متن استخراج‌شده به متادیتای سند افزوده و در جستجوی تمام‌متن استفاده می‌شود.</div></div>
  <div class="m-foot"><button class="btn btn-primary" onclick="closeModal();toast('متن OCR در سوابق سند ذخیره شد ✅')">ذخیره</button><button class="btn btn-ghost" onclick="closeModal()">بستن</button></div>`);
  audit('OCR سند '+IMP.file.name);
 }
-function impSTT(){
- toast('تبدیل گفتار به متن… 🎙️');
- setTimeout(()=>{
-  modal(mhead('🎙️ متن استخراج‌شده از فایل صوتی')+`
-  <div class="m-body"><textarea rows="7">گزارش صوتی: بازدید دوره‌ای انجام شد، وضعیت تجهیز نرمال است، صدای غیرعادی از یاتاقان سمت کوپلینگ شنیده می‌شود — پیشنهاد لرزش‌سنجی در اولین فرصت.</textarea>
-  <div class="muted" style="margin-top:8px">فایل صوتی اصلی + متن هر دو در سوابق ذخیره می‌شوند.</div></div>
-  <div class="m-foot"><button class="btn btn-primary" onclick="closeModal();toast('صوت و متن ذخیره شد ✅')">ذخیره</button></div>`);
- },700);
-}
+function impSTT(){toast('رونویسی فایل صوتی در این ابزار پشتیبانی نمی‌شود؛ از گزارش صوتیِ دستورکار با موتور گفتار مرورگر استفاده کنید.',1);}
 async function impSummarize(){
  toast('AI در حال خلاصه‌سازی…');
- const r=await aiCall([{role:'user',content:'این سند را خلاصه مدیریتی کن (فارسی، ۳-۴ خط): '+IMP.file.name+'\n'+(IMP.text||'').slice(0,1500)}]);
+ if(!IMP.text){toast('متن قابل تحلیل موجود نیست؛ خلاصه حدسی ساخته نشد',1);return;}
+ const r=await aiCall([{role:'user',content:'این سند را بر اساس متن پیوست خلاصه مدیریتی کن: '+IMP.file.name+'\n'+IMP.text.slice(0,1500)}]);
+ if(!r.online){toast('خلاصه از Backend دریافت نشد؛ پاسخ ساختگی تولید نشد: '+(r.error||''),1);return;}
  modal(mhead('🧠 خلاصه هوشمند سند')+`
  <div class="m-body"><div style="font-size:13px;line-height:2.1;background:var(--surface-2);border-radius:11px;padding:14px 17px">🤖 ${esc(r.text).replace(/\n/g,'<br>')}</div></div>
  <div class="m-foot"><button class="btn btn-ghost" onclick="closeModal()">بستن</button></div>`);
@@ -3760,7 +3705,7 @@ pgDocs=function(){
   .replace('<div class="grid g3" style="margin-bottom:16px">',
    `<div class="card" style="margin-bottom:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
     <div class="list-ic" style="background:var(--blue-bg);font-size:19px">🧠</div>
-    <div style="flex:1"><b>ورود هوشمند اسناد</b><div class="muted">تشخیص نوع، استخراج محتوا (OCR/STT)، پیشنهاد فیلدها، تشخیص تکراری — با تأیید شما ثبت می‌شود</div></div>
+    <div style="flex:1"><b>ورود هوشمند اسناد</b><div class="muted">تحلیل متن/تصویر واقعی فقط از AI Gateway، با تجهیز مجاز و تأیید انسانی</div></div>
     <button class="btn btn-accent" onclick="smartImport()">📥 ورود هوشمند</button></div>
    <div class="grid g3" style="margin-bottom:16px">`);
 };
@@ -8196,168 +8141,24 @@ save();
    ADDITIVE ONLY
    ====================================================================== */
 
-/* ================= AI / STT provider settings ================= */
-if(!DB.aiCfg){
- DB.aiCfg={
-  provider:'offline',            /* offline | openai | azure | gemini | custom */
-  baseUrl:'',apiKey:'',model:'gpt-4o-mini',visionModel:'gpt-4o-mini',
-  temperature:0.2,maxTokens:900,timeout:45,
-  sttProvider:'browser',         /* browser | whisper | azure-stt | google-stt | custom */
-  sttUrl:'',sttKey:'',sttModel:'whisper-1',sttLang:'fa',
-  punctuate:true,keepAudio:true,
-  status:'offline',lastCheck:null,lastMsg:'سرویس ابری پیکربندی نشده — حالت دانش داخلی فعال است',
-  calls:0,fails:0
- };
- save();
-}
-const AI_PROVIDERS={
- offline:{t:'حالت آفلاین — دانش داخلی سامانه',url:'',hint:'بدون نیاز به اینترنت؛ پاسخ‌ها از سوابق تجهیز و پایگاه دانش داخلی بسپار فوم غرب ساخته می‌شود.'},
- openai:{t:'OpenAI (سازگار با Chat Completions)',url:'https://api.openai.com/v1',hint:'کلید sk-… و مدل مانند gpt-4o-mini'},
- azure:{t:'Azure OpenAI',url:'https://<resource>.openai.azure.com',hint:'Endpoint منبع Azure + کلید + نام Deployment در فیلد مدل'},
- gemini:{t:'Google Gemini',url:'https://generativelanguage.googleapis.com/v1beta',hint:'کلید API گوگل + مدل gemini-1.5-flash'},
- custom:{t:'سرویس داخلی / سازگار OpenAI (On-Premise)',url:'',hint:'آدرس سرویس فقط در Environment سرور تنظیم می‌شود و داخل کلاینت ثابت یا ذخیره نمی‌شود.'},
-};
-const STT_PROVIDERS={
- browser:{t:'موتور مرورگر (Web Speech API — fa-IR)',hint:'بدون هزینه و بدون ارسال داده به بیرون؛ نیازمند مرورگر سازگار'},
- whisper:{t:'OpenAI Whisper (audio/transcriptions)',hint:'دقت بالا برای فارسی؛ آدرس: https://api.openai.com/v1'},
- 'azure-stt':{t:'Azure Speech to Text',hint:'Endpoint منطقه‌ای Azure Speech + کلید'},
- 'google-stt':{t:'Google Speech-to-Text',hint:'کلید API گوگل کلود'},
- custom:{t:'سرویس داخلی (Whisper خودمیزبان)',hint:'مثلاً faster-whisper روی سرور سازمان'},
-};
+/* Browser AI configuration is intentionally non-secret; provider configuration lives on the server. */
+if(!DB.aiCfg)DB.aiCfg={provider:'backend',sttProvider:'browser',punctuate:true,keepAudio:false,status:'server'};
+const AI_PROVIDERS={backend:{t:'AI Gateway سازمانی'}};
+const STT_PROVIDERS={browser:{t:'موتور گفتار مرورگر (fa-IR)',hint:'بدون کلید یا اعتبارنامه مرورگری'}};
+function aiOnline(){return !!(window.AIBackend&&window.AIBackend.isAvailable&&window.AIBackend.isAvailable());}
 
-function aiOnline(){return DB.aiCfg.provider!=='offline'&&!!DB.aiCfg.apiKey&&!!aiBase();}
-function aiBase(){return (DB.aiCfg.baseUrl||AI_PROVIDERS[DB.aiCfg.provider].url||'').replace(/\/$/,'');}
-function aiStatusChip(){
- const c=DB.aiCfg;
- if(c.provider==='offline')return `<span class="badge b-gray" title="${esc(c.lastMsg||'')}">⚪ آفلاین — دانش داخلی سامانه</span>`;
- if(!c.apiKey||!aiBase())return `<span class="badge b-orange">🟡 سرویس انتخاب شده اما کلید/آدرس ناقص است</span>`;
- if(c.status==='ok')return `<span class="badge b-green">🟢 متصل به ${esc(AI_PROVIDERS[c.provider].t)}</span>`;
- if(c.status==='fail')return `<span class="badge b-red" title="${esc(c.lastMsg||'')}">🔴 خطای اتصال — پاسخ از دانش داخلی</span>`;
- return `<span class="badge b-blue">🔵 پیکربندی‌شده — تست نشده</span>`;
-}
-
-/* ================= AI settings page ================= */
-function pgAICfg(){
- if(!can('profile','view'))return head('تنظیمات هوش مصنوعی','دسترسی محدود')+`<div class="card empty"><div class="big">🔒</div>دسترسی مجاز نیست</div>`;
- const ed=['admin','mgr'].includes(ME.role)&&can('profile','edit');
- const c=DB.aiCfg;
- const f=(k,l,ph,pw,type)=>`<div class="field"><label>${l}</label><input type="${pw?'password':(type||'text')}" value="${esc(c[k]??'')}" placeholder="${esc(ph||'')}" ${ed?'':'disabled'} onchange="aiSet('${k}',this.value)"></div>`;
- return head('تنظیمات هوش مصنوعی و تبدیل گفتار به متن','تنظیمات › هوش مصنوعی',
-  `${ed?`<button class="btn btn-ghost" onclick="aiTest()">🧪 تست اتصال AI</button><button class="btn btn-ghost" onclick="sttTest()">🎙️ تست سرویس STT</button>`:''}`)+`
- <div class="card" style="margin-bottom:14px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-  ${aiStatusChip()}
-  <span class="muted" style="flex:1;min-width:200px">${esc(c.lastMsg||'')}</span>
-  ${c.lastCheck?`<span class="muted" style="font-size:11px">آخرین بررسی: ${jDateTime(c.lastCheck)}</span>`:''}
-  <span class="badge b-gray">فراخوانی موفق: ${fa(c.calls||0)}</span><span class="badge b-gray">خطا: ${fa(c.fails||0)}</span>
- </div>
- <div class="grid g2">
-  <div class="card"><h3><span class="ic">🤖</span>سرویس مدل زبانی / بینایی ماشین</h3>
-   <div class="field"><label>ارائه‌دهنده سرویس</label>
-    <select ${ed?'':'disabled'} onchange="aiSet('provider',this.value);go('aicfg')">
-     ${Object.entries(AI_PROVIDERS).map(([k,v])=>`<option value="${k}" ${c.provider===k?'selected':''}>${v.t}</option>`).join('')}</select>
-    <div class="muted" style="font-size:11px;margin-top:4px">${esc(AI_PROVIDERS[c.provider].hint)}</div></div>
-   ${c.provider!=='offline'?`
-   ${f('baseUrl','آدرس سرویس (Base URL)',AI_PROVIDERS[c.provider].url)}
-   <div class="muted">کلید API در مرورگر یا localStorage ذخیره نمی‌شود و فقط روی سرور مرکزی نگهداری می‌شود.</div>
-   <div class="frow">${f('model','مدل متنی','gpt-4o-mini')}${f('visionModel','مدل تحلیل تصویر','gpt-4o-mini')}</div>
-   <div class="frow">${f('temperature','دقت/خلاقیت (Temperature)','0.2',0,'number')}${f('maxTokens','حداکثر توکن پاسخ','900',0,'number')}</div>
-   ${f('timeout','مهلت پاسخ (ثانیه)','45',0,'number')}
-   <button class="btn btn-accent" ${ed?'':'disabled'} onclick="aiTest()">🧪 تست اتصال و ثبت وضعیت</button>
-   `:`<div class="muted">در حالت آفلاین، دستیار هوشمند «بسپار فوم غرب» با پایگاه دانش داخلی، سوابق تعمیر همان تجهیز، قطعات مصرفی و چک‌لیست‌های ثبت‌شده پاسخ می‌دهد. برای فعال‌سازی تحلیل تصویر واقعی، سرویس ابری یا داخلی را انتخاب کنید.</div>`}
-  </div>
-  <div class="card"><h3><span class="ic">🎙️</span>سرویس تبدیل گفتار به متن (STT فارسی)</h3>
-   <div class="field"><label>سرویس تبدیل گفتار به متن</label>
-    <select ${ed?'':'disabled'} onchange="aiSet('sttProvider',this.value);go('aicfg')">
-     ${Object.entries(STT_PROVIDERS).map(([k,v])=>`<option value="${k}" ${c.sttProvider===k?'selected':''}>${v.t}</option>`).join('')}</select>
-    <div class="muted" style="font-size:11px;margin-top:4px">${esc(STT_PROVIDERS[c.sttProvider].hint)}</div></div>
-   ${c.sttProvider!=='browser'?`
-   ${f('sttUrl','آدرس سرویس STT','')}
-   <div class="muted">کلید سرویس گفتار در مرورگر ذخیره نمی‌شود.</div>
-   <div class="frow">${f('sttModel','مدل رونویسی','whisper-1')}${f('sttLang','زبان','fa')}</div>`:''}
-   <div class="checkline"><input type="checkbox" ${c.punctuate?'checked':''} ${ed?'':'disabled'} onchange="aiSet('punctuate',this.checked)"> اصلاح خودکار علائم نگارشی و اعداد فارسی</div>
-   <div class="checkline"><input type="checkbox" ${c.keepAudio?'checked':''} ${ed?'':'disabled'} onchange="aiSet('keepAudio',this.checked)"> ذخیره هم‌زمان فایل صوتی به‌همراه متن نهایی</div>
-   <button class="btn btn-accent" style="margin-top:8px" ${ed?'':'disabled'} onclick="sttTest()">🎙️ تست سرویس رونویسی</button>
-   <div class="muted" style="margin-top:10px;font-size:11.5px">متن تبدیل‌شده همیشه پیش از ذخیره در اختیار کاربر قرار می‌گیرد و قابل ویرایش است؛ فایل صوتی و متن نهایی هر دو در دستورکار بایگانی می‌شوند.</div>
-  </div>
- </div>
- <div class="card" style="margin-top:16px"><h3><span class="ic">🧠</span>دامنه دانش دستیار تعمیرات بسپار فوم غرب</h3>
-  <div class="muted">دستیار در هر پاسخ از این منابع داخلی استفاده می‌کند: مشخصات فنی تجهیز، سوابق کامل دستورکارهای همان تجهیز، علل خرابی ثبت‌شده، قطعات مصرف‌شده، موجودی انبار، چک‌لیست‌های PM، الزامات HSE/PTW و راهنمای ایمنی صنعت فوم پلی‌اورتان.</div>
-  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
-   <span class="badge b-blue">${fa(DB.assets.length)} تجهیز</span><span class="badge b-blue">${fa(DB.wos.length)} دستورکار</span>
-   <span class="badge b-blue">${fa(DB.items.length)} قلم انبار</span><span class="badge b-blue">${fa((DB.ptws||[]).length)} مجوز کار</span>
-  </div>
- </div>`;
-}
-function aiSet(k,v){
- if(!['admin','mgr'].includes(ME.role)){toast('فقط مدیر سیستم مجاز است',1);return;}
- if(window.BFGRuntime&&window.BFGRuntime.isAiSecretField(k,'aiCfg')){toast('کلید هوش مصنوعی فقط روی سرور مرکزی نگهداری می‌شود و در مرورگر ذخیره نمی‌شود',1);return;}
- const before={[k]:k.includes('Key')?'•••':DB.aiCfg[k]};
- DB.aiCfg[k]=v;
- if(k==='provider'){DB.aiCfg.status='idle';DB.aiCfg.baseUrl=AI_PROVIDERS[v].url||'';DB.aiCfg.lastMsg=v==='offline'?'حالت دانش داخلی فعال است':'سرویس انتخاب شد — تست اتصال را اجرا کنید';}
- if(k==='apiKey'||k==='baseUrl')DB.aiCfg.status='idle';
- auditX('config','ai','تنظیمات هوش مصنوعی',before,{[k]:k.includes('Key')?'•••':v},'تغییر پیکربندی AI/STT');
- save();toast('ذخیره شد ✅');
-}
+function aiStatusChip(){return aiOnline()?'<span class="badge b-green">AI Gateway آماده و مجاز</span>':'<span class="badge b-gray">AI Gateway در دسترس/مجاز نیست</span>';}
+function aiSet(){toast('تنظیمات Provider و اعتبارنامه‌ها فقط از پنل امن Backend مدیریت می‌شوند',1);}
 async function aiTest(){
- const c=DB.aiCfg;
- if(c.provider==='offline'){c.status='offline';c.lastMsg='حالت آفلاین — دانش داخلی سامانه فعال است';c.lastCheck=new Date().toISOString();save();toast('حالت آفلاین فعال است — پاسخ‌ها از دانش داخلی تولید می‌شود');go('aicfg');return;}
- if(!c.apiKey||!aiBase()){c.status='fail';c.lastMsg='کلید API یا آدرس سرویس وارد نشده است';c.lastCheck=new Date().toISOString();save();toast('⛔ کلید API یا آدرس سرویس ناقص است',1);go('aicfg');return;}
- toast('⏳ در حال تست اتصال به سرویس هوش مصنوعی…');
- const r=await aiChat([{role:'user',content:'فقط کلمه OK را بازگردان.'}],{maxTokens:12});
- c.lastCheck=new Date().toISOString();
- if(r.ok){c.status='ok';c.lastMsg='اتصال برقرار است — پاسخ نمونه: '+String(r.text).slice(0,60);toast('✅ اتصال به سرویس هوش مصنوعی برقرار شد');}
- else{c.status='fail';c.lastMsg=r.error||'خطای نامشخص';toast('⛔ اتصال برقرار نشد: '+(r.error||''),1);}
- auditX('config','ai','تست اتصال AI',null,{status:c.status},c.lastMsg);
- save();go('aicfg');
+ if(!window.AIBackend||typeof window.AIBackend.test!=='function'){toast('AI Gateway در دسترس نیست',1);return;}
+ toast('⏳ بررسی وضعیت AI Gateway…');const result=await window.AIBackend.test();
+ toast(result.ok?'✅ AI Gateway پاسخ می‌دهد؛ Provider مجاز و آماده: '+result.providers.join('، '):'⛔ AI Gateway آماده نیست: '+result.error,result.ok?0:1);
+ auditX('read','ai','بررسی وضعیت AI Gateway',null,{ok:result.ok},'بررسی وضعیت سرور بدون ارسال کلید از مرورگر');
 }
-
-/* ================= generic AI chat call (multi-provider) ================= */
 async function aiChat(messages,opts){
- opts=opts||{};
  if(window.BFGRuntime)window.BFGRuntime.scrubSecrets(DB);
- return {ok:false,error:'کلید هوش مصنوعی در مرورگر نگهداری نمی‌شود. تحلیل آنلاین فقط از Backend انجام می‌شود.'};
- const c=DB.aiCfg;
- if(c.provider==='offline')return{ok:false,error:'حالت آفلاین',offline:true};
- if(!c.apiKey||!aiBase())return{ok:false,error:'پیکربندی ناقص است'};
- const ctl=new AbortController();const to=setTimeout(()=>ctl.abort(),(+c.timeout||45)*1000);
- try{
-  let url,headers={'Content-Type':'application/json'},body;
-  if(c.provider==='gemini'){
-   url=aiBase()+'/models/'+(opts.model||c.model)+':generateContent?key='+encodeURIComponent(c.apiKey);
-   body={contents:messages.map(m=>({role:m.role==='assistant'?'model':'user',
-     parts:Array.isArray(m.content)?m.content.map(p=>p.type==='image_url'
-       ?{inline_data:{mime_type:'image/jpeg',data:String(p.image_url.url).split(',')[1]||''}}
-       :{text:p.text}):[{text:m.content}]})),
-    generationConfig:{temperature:+c.temperature||0.2,maxOutputTokens:opts.maxTokens||+c.maxTokens||900}};
-  }else if(c.provider==='azure'){
-   url=aiBase()+'/openai/deployments/'+(opts.model||c.model)+'/chat/completions?api-version=2024-06-01';
-   headers['api-key']=c.apiKey;
-   body={messages,temperature:+c.temperature||0.2,max_tokens:opts.maxTokens||+c.maxTokens||900};
-  }else{
-   url=aiBase()+'/chat/completions';
-   headers['Authorization']='Bearer '+c.apiKey;
-   body={model:opts.model||c.model,messages,temperature:+c.temperature||0.2,max_tokens:opts.maxTokens||+c.maxTokens||900};
-  }
-  const res=await fetch(url,{method:'POST',headers,body:JSON.stringify(body),signal:ctl.signal});
-  clearTimeout(to);
-  if(!res.ok){
-   let d='';try{d=(await res.text()).slice(0,200);}catch(e){}
-   c.fails=(c.fails||0)+1;c.status='fail';c.lastMsg='HTTP '+res.status+' — '+d;save();
-   return{ok:false,error:'HTTP '+res.status+' '+d};
-  }
-  const j=await res.json();
-  let text='';
-  if(c.provider==='gemini')text=(((j.candidates||[])[0]||{}).content||{}).parts?.map(p=>p.text).join('')||'';
-  else text=(((j.choices||[])[0]||{}).message||{}).content||'';
-  c.calls=(c.calls||0)+1;c.status='ok';c.lastMsg='آخرین فراخوانی موفق بود';c.lastCheck=new Date().toISOString();save();
-  return{ok:true,text};
- }catch(e){
-  clearTimeout(to);
-  c.fails=(c.fails||0)+1;c.status='fail';
-  c.lastMsg=(e&&e.name==='AbortError')?'مهلت پاسخ سرویس به پایان رسید':'دسترسی به سرویس ممکن نشد ('+(e&&e.message||'')+')';
-  save();
-  return{ok:false,error:c.lastMsg};
- }
+ if(!window.AIBackend||typeof window.AIBackend.chat!=='function')return{ok:false,error:'AI Gateway در دسترس نیست'};
+ return window.AIBackend.chat(messages,opts||{});
 }
 
 /* ================= STT ENGINE v2 ================= */
@@ -8395,57 +8196,14 @@ function sttPolish(raw){
  return t.trim();
 }
 /* cloud transcription */
-async function sttCloud(blob){
- const c=DB.aiCfg;
- if(c.sttProvider==='browser')return{ok:false,error:'موتور مرورگر انتخاب شده است'};
- const url=(c.sttUrl||'').replace(/\/$/,'');
- if(!url||!c.sttKey)return{ok:false,error:'آدرس یا کلید سرویس STT وارد نشده است'};
- try{
-  const ctl=new AbortController();const to=setTimeout(()=>ctl.abort(),90000);
-  let endpoint,headers={},body;
-  if(c.sttProvider==='whisper'||c.sttProvider==='custom'){
-   endpoint=url+'/audio/transcriptions';
-   headers={'Authorization':'Bearer '+c.sttKey};
-   body=new FormData();
-   body.append('file',blob,'report.webm');
-   body.append('model',c.sttModel||'whisper-1');
-   body.append('language',c.sttLang||'fa');
-   body.append('prompt','گزارش فنی تعمیرات کارخانه فوم پلی‌اورتان، اصطلاحات: مکانیکال‌سیل، بلبرینگ، کوپلینگ، ایزوسیانات، پلی‌ال، هیدرولیک، اینورتر.');
-  }else if(c.sttProvider==='azure-stt'){
-   endpoint=url+'/speech/recognition/conversation/cognitiveservices/v1?language=fa-IR&format=detailed';
-   headers={'Ocp-Apim-Subscription-Key':c.sttKey,'Content-Type':'audio/webm; codecs=opus'};
-   body=blob;
-  }else{ /* google */
-   endpoint=url+'/v1/speech:recognize?key='+encodeURIComponent(c.sttKey);
-   const b64=await new Promise(res=>{const fr=new FileReader();fr.onload=()=>res(String(fr.result).split(',')[1]);fr.readAsDataURL(blob);});
-   headers={'Content-Type':'application/json'};
-   body=JSON.stringify({config:{languageCode:'fa-IR',enableAutomaticPunctuation:true},audio:{content:b64}});
-  }
-  const res=await fetch(endpoint,{method:'POST',headers,body,signal:ctl.signal});
-  clearTimeout(to);
-  if(!res.ok)return{ok:false,error:'HTTP '+res.status};
-  const j=await res.json();
-  let text=j.text||j.DisplayText||
-   (j.results&&j.results.map(r=>((r.alternatives||[])[0]||{}).transcript||'').join(' '))||
-   ((j.NBest&&j.NBest[0])||{}).Display||'';
-  return text?{ok:true,text}:{ok:false,error:'پاسخ سرویس فاقد متن بود'};
- }catch(e){return{ok:false,error:(e&&e.name==='AbortError')?'مهلت رونویسی تمام شد':'دسترسی به سرویس STT ممکن نشد'};}
+async function sttCloud(){
+ return {ok:false,error:'رونویسی ابری مرورگری غیرفعال است؛ از موتور گفتار مرورگر استفاده کنید.'};
 }
 async function sttTest(){
- const c=DB.aiCfg;
- if(c.sttProvider==='browser'){
-  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-  toast(SR?'✅ موتور گفتار مرورگر در دسترس است (fa-IR)':'⛔ مرورگر شما از Web Speech API پشتیبانی نمی‌کند',SR?0:1);
-  return;
- }
- if(!c.sttUrl||!c.sttKey){toast('⛔ آدرس و کلید سرویس STT را وارد کنید',1);return;}
- toast('⏳ تست سرویس رونویسی…');
- try{
-  const silent=new Blob([new Uint8Array(1200)],{type:'audio/webm'});
-  const r=await sttCloud(silent);
-  toast(r.ok?'✅ سرویس رونویسی پاسخ داد':'🟡 سرویس در دسترس است اما پاسخ معتبر نداد: '+(r.error||''),r.ok?0:1);
- }catch(e){toast('⛔ خطا در تست سرویس رونویسی',1);}
- auditX('config','ai','تست سرویس STT',null,null,STT_PROVIDERS[c.sttProvider].t);
+ const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+ const supported=!!SR;
+ toast(supported?'✅ موتور گفتار مرورگر در دسترس است (fa-IR)':'⛔ مرورگر از Web Speech API پشتیبانی نمی‌کند',supported?0:1);
+ auditX('read','ai','بررسی موتور گفتار مرورگر',null,{supported},'هیچ کلید یا درخواست ابری از مرورگر ارسال نشد');
 }
 
 /* ---------- upgraded recording + transcription UI inside WO report ---------- */
@@ -8479,32 +8237,19 @@ let REC2={blob:null,url:null,dur:0,raw:'',t0:0};
   },60);
  };
 })();
-/* override doSTT with the v2 pipeline (cloud → browser → guided fallback) */
+/* Speech transcription uses browser recognition only; never substitute sample text. */
 (function(){
  if(typeof doSTT!=='function')return;
- const legacy=doSTT;
  doSTT=async function(){
   const box=document.getElementById('sttBox'),ta=document.getElementById('rpTextV'),st=document.getElementById('recStatus');
-  if(!box||!ta){legacy();return;}
+  if(!box||!ta)return;
   box.style.display='block';
-  const blob=(REC.chunks&&REC.chunks.length)?new Blob(REC.chunks,{type:'audio/webm'}):REC2.blob;
-  REC2.blob=blob||null;REC2.url=REC.audioUrl||REC2.url;
-  let text='',src='';
-  if(DB.aiCfg.sttProvider!=='browser'&&blob&&blob.size>1000){
-   if(st)st.textContent='⏳ ارسال فایل صوتی به سرویس رونویسی '+STT_PROVIDERS[DB.aiCfg.sttProvider].t+'…';
-   const r=await sttCloud(blob);
-   if(r.ok){text=r.text;src='سرویس ابری '+STT_PROVIDERS[DB.aiCfg.sttProvider].t;}
-   else if(st)st.textContent='🟡 سرویس ابری پاسخ نداد ('+(r.error||'')+') — استفاده از موتور مرورگر';
-  }
-  if(!text&&REC.srText&&REC.srText.trim()){text=REC.srText.trim();src='موتور گفتار مرورگر (fa-IR)';}
-  if(!text){
-   text='مکانیکال‌سیل تعویض شد، پمپ تست شد و نشتی برطرف گردید. فشار خط به ۱۲ بار بازگشت. پیشنهاد می‌شود هم‌محوری کوپلینگ در سرویس بعدی کنترل شود.';
-   src='الگوی پیشنهادی سامانه (میکروفون/سرویس در دسترس نبود) — لطفاً ویرایش کنید';
-  }
-  REC2.raw=text;
-  ta.value=sttPolish(text);
-  if(st)st.innerHTML='✅ تبدیل انجام شد — منبع: <b>'+esc(src)+'</b> — متن قابل ویرایش است';
-  auditX('create','wos','گزارش صوتی',null,{chars:ta.value.length,source:src},'تبدیل گفتار به متن');
+  const text=String(REC.srText||'').trim();
+  if(!text){if(st)st.textContent='⛔ رونویسی انجام نشد؛ متن نمونه تولید نشده است. از پشتیبانی گفتار مرورگر استفاده کنید یا متن را دستی وارد کنید.';return;}
+  REC2.blob=(REC.chunks&&REC.chunks.length)?new Blob(REC.chunks,{type:'audio/webm'}):REC2.blob;
+  REC2.url=REC.audioUrl||REC2.url;REC2.raw=text;ta.value=sttPolish(text);
+  if(st)st.textContent='✅ گفتار مرورگر تبدیل شد — متن را بازبینی کنید.';
+  auditX('create','wos','گزارش گفتاری',null,{chars:ta.value.length},'تبدیل با موتور گفتار مرورگر');
  };
 })();
 function stt2Polish(){
@@ -8525,15 +8270,15 @@ function stt2File(inp){
  REC.srText='';
  doSTT();
 }
-async function stt2Enhance(){
+async function stt2Enhance(workOrderId){
  const ta=document.getElementById('rpTextV');if(!ta||!ta.value.trim()){toast('ابتدا متنی تولید یا وارد کنید',1);return;}
- if(!aiOnline()){toast('🟡 سرویس AI متصل نیست — فقط اصلاح نگارشی داخلی انجام شد',1);ta.value=sttPolish(ta.value);return;}
+ if(!aiOnline()){toast('⛔ سرویس AI مجاز/آماده نیست؛ متن تغییری نکرد',1);return;}
  toast('⏳ بازنویسی فنی متن با هوش مصنوعی…');
  const r=await aiChat([
   {role:'system',content:'شما ویراستار فنی گزارش‌های تعمیرات صنعتی فارسی هستید. متن خام رونویسی‌شده را بدون افزودن اطلاعات جدید، با رعایت علائم نگارشی، نیم‌فاصله و اصطلاحات صحیح مکانیک/برق بازنویسی کن. فقط متن نهایی را برگردان.'},
-  {role:'user',content:ta.value}]);
+  {role:'user',content:ta.value}],{equipmentId:(DB.wos.find(w=>w.id===workOrderId)||{}).assetId,purpose:'repair_recommendation'});
  if(r.ok&&r.text){ta.value=sttPolish(r.text.trim());toast('✅ متن با هوش مصنوعی بازنویسی شد — بازبینی کنید');}
- else{ta.value=sttPolish(ta.value);toast('🟡 سرویس پاسخ نداد — اصلاح داخلی اعمال شد',1);}
+ else toast('⛔ سرویس AI پاسخ نداد؛ متن تغییری نکرد ('+(r.error||'')+')',1);
 }
 /* store audio + raw transcript alongside final text */
 (function(){
@@ -8601,12 +8346,11 @@ const AI_SYS='شما «دستیار هوشمند تعمیرات بسپار فو�
 /* wrap the existing WO assistant: keep persona, add real service + status chip */
 (function(){
  if(typeof taSend!=='function')return;
- const legacy=taSend;
  taSend=async function(preset){
   const inp=document.getElementById('taText');
   const q=preset||(inp?inp.value.trim():'');
   if(!q)return;
-  if(!aiOnline()){legacy(preset);return;}
+  if(!aiOnline()){TA.typing=false;TA.msgs.push({role:'assistant',text:'⛔ AI Gateway مجاز یا آماده نیست؛ پاسخ ساختگی یا محلی تولید نشد.'});renderTA();return;}
   if(inp)inp.value='';
   TA.msgs.push({role:'user',text:q});TA.typing=true;renderTA();
   const w=DB.wos.find(x=>x.id===TA.woId);
@@ -8614,12 +8358,11 @@ const AI_SYS='شما «دستیار هوشمند تعمیرات بسپار فو�
   const r=await aiChat([
    {role:'system',content:AI_SYS},
    {role:'user',content:'داده‌های سامانه (استفاده کن):\n'+aiAssetContext(w)},
-   ...hist]);
+   ...hist],{equipmentId:w&&w.assetId,purpose:'repair_recommendation'});
   TA.typing=false;
   if(r.ok&&r.text)TA.msgs.push({role:'assistant',text:r.text});
   else{
-   TA.msgs.push({role:'assistant',text:'🟡 اتصال به سرویس هوش مصنوعی برقرار نشد ('+(r.error||'')+'). پاسخ زیر از پایگاه دانش داخلی سامانه تولید می‌شود:'});
-   renderTA();legacy(q);return;
+   TA.msgs.push({role:'assistant',text:'⛔ تحلیل از Backend دریافت نشد؛ برای جلوگیری از پاسخ ساختگی، پاسخ محلی جایگزین نشد. '+(r.error||'')});renderTA();return;
   }
   renderTA();
   auditX('create','ai','دستیار دستورکار',null,{q:q.slice(0,80)},'پرسش از سرویس هوش مصنوعی متصل');
@@ -8628,9 +8371,8 @@ const AI_SYS='شما «دستیار هوشمند تعمیرات بسپار فو�
 /* vision analysis */
 (function(){
  if(typeof taSendImg!=='function')return;
- const legacy=taSendImg;
  taSendImg=function(inp){
-  if(!aiOnline()){legacy(inp);return;}
+  if(!aiOnline()){toast('⛔ AI Gateway مجاز یا آماده نیست؛ تصویر تحلیل نشد',1);return;}
   const f=inp.files[0];if(!f)return;
   const fr=new FileReader();
   fr.onload=async()=>{
@@ -8642,12 +8384,12 @@ const AI_SYS='شما «دستیار هوشمند تعمیرات بسپار فو�
     {role:'user',content:[
      {type:'text',text:'تصویر تجهیز زیر را تحلیل کن: قطعات قابل مشاهده را نام ببر، خرابی‌های محتمل و علت ریشه‌ای را تشخیص بده، روش تعمیر مرحله‌به‌مرحله، هشدارهای ایمنی و ابزار/قطعات لازم را بنویس.\n\nداده‌های سامانه:\n'+aiAssetContext(w)},
      {type:'image_url',image_url:{url:dataUrl}}]}],
-    {model:DB.aiCfg.visionModel||DB.aiCfg.model});
+    {equipmentId:w&&w.assetId,purpose:'failure_diagnosis'});
    TA.typing=false;
    if(r.ok&&r.text)TA.msgs.push({role:'assistant',text:'🖼️ تحلیل تصویر:\n'+r.text});
-   else{TA.msgs.push({role:'assistant',text:'🟡 تحلیل تصویر با سرویس ابری ممکن نشد ('+(r.error||'')+') — تحلیل داخلی:'});renderTA();legacy(inp);return;}
+   else{TA.msgs.push({role:'assistant',text:'⛔ تحلیل تصویر از Backend دریافت نشد؛ تحلیل ساختگی/محلی ارائه نمی‌شود. '+(r.error||'')});renderTA();return;}
    renderTA();
-   auditX('create','ai','تحلیل تصویر تجهیز',null,null,'بینایی ماشین — '+(DB.aiCfg.visionModel||DB.aiCfg.model));
+   auditX('create','ai','تحلیل تصویر تجهیز',null,null,'تحلیل از AI Gateway سازمانی');
   };
   fr.readAsDataURL(f);
  };
@@ -8680,20 +8422,17 @@ const AI_SYS='شما «دستیار هوشمند تعمیرات بسپار فو�
 /* AI center: connect real service to the free-text question box */
 (function(){
  if(typeof aiAsk!=='function')return;
- const legacy=aiAsk;
  aiAsk=async function(){
   const q=(document.getElementById('aiQ')||{}).value;
   if(!q||!q.trim())return;
-  if(!aiOnline()){legacy();return;}
-  const box=document.getElementById('aiAnswer');box.style.display='block';
+  const box=document.getElementById('aiAnswer');
+  if(!aiOnline()){if(box){box.style.display='block';box.innerHTML='⛔ AI Gateway مجاز یا آماده نیست؛ پاسخ ساختگی یا محلی تولید نشد.';}return;}box.style.display='block';
   box.innerHTML='⏳ در حال تحلیل با سرویس هوش مصنوعی…';
-  const ctx='آمار سامانه: '+fa(DB.wos.length)+' دستورکار، '+fa(DB.assets.length)+' تجهیز، '+fa(DB.items.length)+' قلم انبار. '+
-   'دستورکارهای باز: '+DB.wos.filter(w=>!['closed','cancel'].includes(w.status)).length+'. '+
-   'اقلام زیر نقطه سفارش: '+DB.items.filter(i=>i.stock<i.min).map(i=>i.name).join('، ')+'. '+
-   'آخرین ۱۰ دستورکار: '+DB.wos.slice(-10).map(w=>`${w.no}/${w.type}/${w.status}/${(w.title||'').slice(0,40)}`).join(' | ');
-  const r=await aiChat([{role:'system',content:AI_SYS},{role:'user',content:ctx+'\n\nپرسش مدیر: '+q}]);
+  const ctx='پرسش مدیر: '+q;
+  const selected=window.EQV2?.selected||(typeof selAsset!=='undefined'?selAsset:null);
+  const r=await aiChat([{role:'system',content:AI_SYS},{role:'user',content:ctx+'\n\nپرسش مدیر: '+q}],{equipmentId:selected,purpose:'trend_analysis'});
   if(r.ok&&r.text)box.innerHTML='🤖 '+esc(r.text).replace(/\n/g,'<br>')+'<div style="font-size:10.5px;opacity:.75;margin-top:6px">پاسخ از سرویس متصل — تأیید انسانی الزامی است</div>';
-  else{box.innerHTML='🟡 سرویس در دسترس نبود — پاسخ از دانش داخلی:';legacy();}
+  else box.innerHTML='⛔ پاسخ از Backend دریافت نشد؛ برای جلوگیری از پاسخ ساختگی، fallback محلی اجرا نشد. '+esc(r.error||'');
   auditX('create','ai','مرکز هوش مصنوعی',null,{q:q.slice(0,80)},'پرسش تحلیلی');
  };
 })();
@@ -8711,7 +8450,7 @@ const AI_SYS='شما «دستیار هوشمند تعمیرات بسپار فو�
     ${['admin','mgr'].includes(ME.role)?`<button class="btn btn-sm btn-accent" onclick="go('aicfg')">⚙️ تنظیمات و کلید API</button>
     <button class="btn btn-sm btn-ghost" onclick="aiTest()">🧪 تست اتصال</button>`:''}
    </div>
-   <div class="muted" style="margin-top:8px;font-size:11.5px">در صورت عدم دسترسی به سرویس، دستیار به‌صورت خودکار از پایگاه دانش داخلی و سوابق تجهیزات پاسخ می‌دهد و وضعیت به‌صورت شفاف نمایش داده می‌شود.</div>
+   <div class="muted" style="margin-top:8px;font-size:11.5px">در صورت عدم دسترسی یا مجوز سرویس، درخواست متوقف می‌شود و پاسخ جایگزین ساختگی تولید نمی‌شود.</div>
   </div>`;
   return chain().replace('<div class="card" style="margin-bottom:16px;background:linear-gradient',panel+'<div class="card" style="margin-bottom:16px;background:linear-gradient');
  };
@@ -8741,12 +8480,12 @@ runQA=function(){
  const t=_runQAV35();
  t.push(['موتور STT v2 (ابری/مرورگر + اصلاح نگارشی فارسی)',typeof sttPolish==='function'&&typeof sttCloud==='function',STT_PROVIDERS[DB.aiCfg.sttProvider].t]);
  t.push(['ویرایش متن پیش از ذخیره + آرشیو صوت و متن',typeof stt2Polish==='function','فایل صوتی + متن خام + متن نهایی']);
- t.push(['اتصال دستیار تعمیرات به سرویس AI واقعی',typeof aiChat==='function',aiOnline()?'متصل: '+AI_PROVIDERS[DB.aiCfg.provider].t:'آفلاین — دانش داخلی']);
+ t.push(['اتصال دستیار تعمیرات به سرویس AI واقعی',typeof aiChat==='function',aiOnline()?'AI Gateway مجاز و آماده':'بدون دسترسی؛ بدون fallback محلی']);
  t.push(['تحلیل تصویر تجهیز (بینایی ماشین)',typeof taSendImg==='function','قطعات/خرابی/RCA/ایمنی/ابزار']);
- t.push(['نمایش شفاف وضعیت اتصال + ورود کلید API توسط مدیر',typeof pgAICfg==='function','۵ ارائه‌دهنده AI + ۵ سرویس STT']);
+ t.push(['نمایش سیاست و وضعیت AI Gateway',typeof pgAICfg==='function','مدیریت Provider/اعتبارنامه‌ها فقط در Backend؛ STT مرورگری']);
  return t;
 };
-DB.audit.unshift({t:new Date().toISOString(),u:'سیستم',x:'v3.6: موتور گفتار به متن نسخه ۲ + اتصال دستیار تعمیرات به سرویس هوش مصنوعی واقعی فعال شد'});
+DB.audit.unshift({t:new Date().toISOString(),u:'سیستم',x:'AI Gateway سروری fail-closed فعال شد؛ بدون کلید مرورگری یا پاسخ نمونه'});
 save();
 </script>
 <style id="bfgResponsive36">
