@@ -34,6 +34,12 @@
     }catch(error){return{ok:false,error:error.payload?.message||error.message,code:error.payload?.error};}
   }
   state.chat=backendAIChat;
+  state.chatWithData=async function({queryType,question,equipmentId}={}){
+    if(!hasSession())throw new Error('برای پرس‌وجوی PostgreSQL با حساب Backend وارد شوید.');
+    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),20000);
+    try{return await bfgApi('/api/ai/chat-with-data',{method:'POST',body:JSON.stringify({queryType,question,equipmentId}),signal:controller.signal});}
+    finally{clearTimeout(timer);}
+  };
   state.isAvailable=()=>!!state.status&&Object.entries(state.status.providers||{}).some(([name,item])=>item.configured&&(state.status.policies||[]).some(policy=>policy.provider===name&&policy.enabled));
   state.test=async()=>{try{await refresh(false);if(state.error)throw state.error;const providers=Object.entries(state.status?.providers||{}).filter(([name,item])=>item.configured&&(state.status.policies||[]).some(policy=>policy.provider===name&&policy.enabled)).map(([name])=>name);return providers.length?{ok:true,providers}:{ok:false,error:'هیچ Provider پیکربندی‌شده و مجازی وجود ندارد.'};}catch(error){return{ok:false,error:error.message||'AI Gateway در دسترس نیست'};}};
   window.aiChat=backendAIChat;

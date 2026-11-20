@@ -3,8 +3,9 @@ const express=require('express');
 const {v4:uuid}=require('uuid');
 const {analyze,requireEquipmentScope}=require('./ai-service');
 const {equipmentHealth}=require('./equipment-health-service');
+const {chatWithData}=require('./ai-chat-service');
 
-function createAIRouter({pool,authenticateToken,authorize,registry}){
+function createAIRouter({pool,authenticateToken,authorize,hasPermission,registry}){
   const router=express.Router();router.use(authenticateToken);
   router.get('/status',authorize('ai.use'),async(_req,res,next)=>{try{const policies=await pool.query('SELECT provider,enabled,allowed_purposes,allow_sensitive_context,allow_search,data_region_note,row_version,updated_at FROM ai_provider_policies ORDER BY provider');res.json({backend:true,providers:registry.status(),policies:policies.rows,policy:{humanApprovalRequired:true,keysExposedToClient:false,kpiEngine:'deterministic'}});}catch(error){next(error);}});
   router.patch('/providers/:provider',authorize('ai.configure'),async(req,res,next)=>{
@@ -22,6 +23,7 @@ function createAIRouter({pool,authenticateToken,authorize,registry}){
       await client.query('COMMIT');res.json({data:updated.rows[0]});
     }catch(error){await client.query('ROLLBACK').catch(()=>{});next(error);}finally{client.release();}
   });
+  router.post('/chat-with-data',authorize('ai.use'),async(req,res,next)=>{try{res.json(await chatWithData({pool,user:req.user,input:req.body||{},hasPermission}));}catch(error){next(error);}});
   router.post('/analyze',authorize('equipment.view'),authorize('ai.use'),async(req,res,next)=>{try{res.status(201).json({data:await analyze({pool,registry,user:req.user,input:req.body})});}catch(error){next(error);}});
   router.get('/equipment/:id/health',authorize('equipment.view'),async(req,res,next)=>{try{res.json({data:await equipmentHealth(pool,req.user,req.params.id,requireEquipmentScope)});}catch(error){next(error);}});
   router.patch('/recommendations/:id/review',authorize('ai.review'),async(req,res,next)=>{

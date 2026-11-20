@@ -1779,39 +1779,27 @@ function approveLeave(id){const l=DB.leaves.find(x=>x.id===id);l.status='approve
 
 /* ================= AI Center ================= */
 function pgAI(){
- return head('مرکز هوش مصنوعی','هوش مصنوعی')+`
- <div class="card" style="margin-bottom:16px;background:linear-gradient(135deg,var(--primary),var(--accent));color:#fff;border:none">
-  <h3 style="color:#fff"><span class="ic" style="color:#fff">🤖</span>دستیار هوشمند نت — Chat with Data (FR-AI-05)</h3>
-  <div style="display:flex;gap:9px;margin-top:8px;flex-wrap:wrap">
-   <input id="aiQ" placeholder="مثلاً: MTTR خط ۱ در سه ماه گذشته چقدر بود؟" style="flex:1;min-width:220px;background:rgba(255,255,255,.94);border:none">
-   <button class="btn" style="background:#fff;color:var(--primary)" onclick="aiAsk()">پرسش</button>
-  </div>
-  <div id="aiAnswer" style="margin-top:12px;display:none;background:rgba(255,255,255,.14);border-radius:11px;padding:13px 16px;font-size:13px;backdrop-filter:blur(4px)"></div>
- </div>
- <div class="grid g2" style="margin-bottom:16px">
-  <div class="card"><h3><span class="ic">📈</span>پیش‌بینی خرابی ۳۰ روز آینده (FR-AI-01)</h3>
-   ${[['دستگاه برش CNC فوم','۶۸','روند ارتعاش اسپیندل + سابقه بیرینگ','var(--red)'],['پمپ تزریق ایزوسیانات','۴۱','سابقه خرابی سیل — تازه تعمیر شده','var(--orange)'],['کمپرسور GA-75','۱۲','پارامترها نرمال — PM منظم','var(--green)']].map(([n,p,r,c])=>`
-   <div class="list-row"><div style="flex:1"><b>${n}</b><div class="muted">${r}</div></div>
-   <div style="text-align:center"><b style="color:${c};font-size:17px">٪${p}</b><div class="muted" style="font-size:10px">احتمال خرابی</div></div></div>`).join('')}
-   <div class="muted" style="margin-top:8px">💡 برچسب «پیشنهاد هوشمند» — اقدام اجرایی فقط با تأیید انسانی (اصل فصل ۲۲).</div></div>
-  <div class="card"><h3><span class="ic">📉</span>تشخیص ناهنجاری — ارتعاش CNC (mm/s)</h3>
-   ${lineChart([1.8,1.9,2.1,2.4,2.9,3.4],'#d93030')}
-   <div style="display:flex;gap:8px;margin-top:9px;flex-wrap:wrap">
-    <span class="badge b-red">🔺 عبور از حد Warning (3.0)</span>
-    <button class="btn btn-sm btn-accent" onclick="go('wos')">مشاهده WO پیش‌بینانه</button>
-   </div></div>
- </div>
- <div class="grid g2">
-  <div class="card"><h3><span class="ic">📝</span>گزارش ماهانه هوشمند (FR-AI-09)</h3>
-   <div style="font-size:13px;background:var(--surface-2);border-radius:11px;padding:14px 16px;line-height:2">
-   «در ${jMonth(new Date())}‌ماه، در مجموع ${fa(DB.wos.length)} دستورکار ثبت شد که ${fa(DB.wos.filter(w=>w.type==='PM').length)} مورد پیشگیرانه بود. Downtime نسبت به ماه قبل ٪۱۸ کاهش یافت. نقطه تمرکز پیشنهادی: آب‌بندی پمپ‌های تزریق (٪۶۲ توقفات) و تسریع پروژه پایش ارتعاش آنلاین.»</div>
-   <button class="btn btn-sm btn-ghost" style="margin-top:9px" onclick="window.print()">🖨️ درج در گزارش مدیریتی</button></div>
-  <div class="card"><h3><span class="ic">📦</span>بهینه‌سازی موجودی (FR-AI-07)</h3>
-   ${[['مکانیکال‌سیل CR-32','۲ → ۳','مصرف فصلی بالا + Lead Time طولانی'],['روغن هیدرولیک H46','۸۰ → ۱۰۰','PM های فصل آینده'],['بلبرینگ SKF 6205','۶ → ۶','بدون تغییر — مصرف پایدار']].map(([n,c,r])=>`
-   <div class="list-row"><div style="flex:1"><b>${n}</b><div class="muted">${r}</div></div><span class="badge b-blue">نقطه سفارش: ${c}</span></div>`).join('')}</div>
- </div>`;
+ return head('مرکز هوش مصنوعی','هوش مصنوعی')+`<div class="card" style="margin-bottom:16px">
+  <h3>🤖 Chat with Data — فقط پرس‌وجوی خواندنی از PostgreSQL</h3>
+  <p class="muted">پرسش‌ها با کاتالوگ پرس‌وجوهای ثابت پاسخ داده می‌شوند؛ SQL مدل اجرا نمی‌شود و این بخش هیچ تغییری در داده ایجاد نمی‌کند.</p>
+  <div class="frow"><div class="field"><label for="aiQueryType">نوع محدوده پرسش</label><select id="aiQueryType" onchange="document.getElementById('aiScopeHint').textContent=this.value==='equipment'?'درخواست تجهیز‌محور نیازمند انتخاب تجهیز در سامانه است.':'پرسش در محدوده مجاز سازمانی اجرا می‌شود.'"><option value="global">سراسری / پرتفوی مجاز</option><option value="equipment">محدود به تجهیز انتخاب‌شده</option></select></div></div>
+  <div id="aiScopeHint" class="muted">پرسش در محدوده مجاز سازمانی اجرا می‌شود.</div>
+  <div style="display:flex;gap:9px;margin-top:8px;flex-wrap:wrap"><input id="aiQ" placeholder="مثلاً: فقط براساس PostgreSQL بگو چند تجهیز ثبت شده است" style="flex:1;min-width:220px"><button class="btn btn-primary" onclick="aiAsk()">پرسش</button></div>
+  <div id="aiAnswer" style="margin-top:12px;display:none;background:var(--surface-2);border-radius:11px;padding:13px 16px;font-size:13px"></div>
+ </div><div class="grid g2"><div class="card"><h3>پیش‌بینی‌ها و شاخص‌های هوشمند</h3><p><b>پیش‌بینی خرابی ۳۰ روز آینده:</b> N/A — PostgreSQL و شواهد تأییدشدهٔ کافی برای محاسبهٔ این پیش‌بینی در دسترس نیست.</p><p><b>تشخیص ناهنجاری:</b> N/A — دادهٔ سنسور و شواهد معتبر در این نما متصل نشده است.</p></div><div class="card"><h3>گزارش ماهانه و موجودی</h3><p><b>شاخص‌های گزارش ماهانه:</b> N/A — شواهد PostgreSQL برای محاسبه در این نما موجود نیست.</p><p><b>بهینه‌سازی موجودی:</b> N/A — تا زمان محاسبه از موجودی واقعی مجاز، عددی نمایش داده نمی‌شود.</p></div></div>`;
 }
-function aiAsk(){toast('پاسخ هوشمند فقط از AI Gateway سازمانی دریافت می‌شود',1);}
+async function aiAsk(){
+ const question=(document.getElementById('aiQ')||{}).value||'',box=document.getElementById('aiAnswer');if(!question.trim())return;
+ const queryType=(document.getElementById('aiQueryType')||{}).value||'global';
+ const equipmentId=window.EQV2?.selected||(typeof selAsset!=='undefined'?selAsset:null);
+ box.style.display='block';box.textContent='در حال اجرای پرس‌وجوی مجاز و فقط‌خواندنی…';
+ if(queryType==='equipment'&&!equipmentId){box.textContent='ابتدا تجهیز را انتخاب کنید';return;}
+ try{
+  const result=await AIBackend.chatWithData({queryType,question,equipmentId});
+  const evidence=(result.evidence||[]).map(item=>esc(`${item.sourceType}: ${item.sourceIds?.length?item.sourceIds.join(', '):'بدون Source ID'} · query ${item.queryId}`)).join('<br>')||'بدون شواهد';
+  box.innerHTML=`<b>${esc(result.answer||'N/A — داده کافی ثبت نشده است')}</b><div class="muted" style="margin-top:8px">وضعیت: ${esc(result.status||'unknown')} · اطمینان: ${result.confidence==null?'N/A':Math.round(result.confidence*100)+'٪'} · Provider/Model: ${esc(result.provider||'N/A')} / ${esc(result.model||'N/A')}</div><div class="muted" style="margin-top:6px">منشأ: ${esc(result.provenance?.source||'PostgreSQL')} · ${esc(result.provenance?.queryId||'بدون پرس‌وجوی داده')}</div><div style="margin-top:6px;font-size:11px">${evidence}</div>`;
+ }catch(error){box.textContent=error.payload?.error==='EQUIPMENT_REQUIRED'?'ابتدا تجهیز را انتخاب کنید':('پرس‌وجو انجام نشد: '+(error.payload?.error||error.message));}
+}
 
 /* ================= Report Builder ================= */
 function pgReports(){
@@ -8417,23 +8405,6 @@ const AI_SYS='شما «دستیار هوشمند تعمیرات بسپار فو�
     if(bar&&bar.parentNode)bar.parentNode.insertBefore(d,bar.nextSibling);else body.appendChild(d);
    }
   },30);
- };
-})();
-/* AI center: connect real service to the free-text question box */
-(function(){
- if(typeof aiAsk!=='function')return;
- aiAsk=async function(){
-  const q=(document.getElementById('aiQ')||{}).value;
-  if(!q||!q.trim())return;
-  const box=document.getElementById('aiAnswer');
-  if(!aiOnline()){if(box){box.style.display='block';box.innerHTML='⛔ AI Gateway مجاز یا آماده نیست؛ پاسخ ساختگی یا محلی تولید نشد.';}return;}box.style.display='block';
-  box.innerHTML='⏳ در حال تحلیل با سرویس هوش مصنوعی…';
-  const ctx='پرسش مدیر: '+q;
-  const selected=window.EQV2?.selected||(typeof selAsset!=='undefined'?selAsset:null);
-  const r=await aiChat([{role:'system',content:AI_SYS},{role:'user',content:ctx+'\n\nپرسش مدیر: '+q}],{equipmentId:selected,purpose:'trend_analysis'});
-  if(r.ok&&r.text)box.innerHTML='🤖 '+esc(r.text).replace(/\n/g,'<br>')+'<div style="font-size:10.5px;opacity:.75;margin-top:6px">پاسخ از سرویس متصل — تأیید انسانی الزامی است</div>';
-  else box.innerHTML='⛔ پاسخ از Backend دریافت نشد؛ برای جلوگیری از پاسخ ساختگی، fallback محلی اجرا نشد. '+esc(r.error||'');
-  auditX('create','ai','مرکز هوش مصنوعی',null,{q:q.slice(0,80)},'پرسش تحلیلی');
  };
 })();
 /* AI center: connection panel */

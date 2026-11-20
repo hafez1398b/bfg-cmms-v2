@@ -135,7 +135,7 @@ app.use('/api/equipment', createEquipmentRouter({ pool, io, authenticateToken, a
 app.use('/api', createMaintenanceRouter({ pool, security, requestStorageDir:process.env.REQUEST_ATTACHMENT_DIR || path.join(__dirname, 'storage', 'request-files') }));
 app.use('/api', createInventoryRouter({ pool, security, storageDir: process.env.ATTACHMENT_DIR || path.join(__dirname, 'storage', 'work-order-files') }));
 app.use('/api/notifications', createNotificationRouter({ pool, authenticateToken, authorize }));
-app.use('/api/ai', createAIRouter({ pool, authenticateToken, authorize, registry:aiProviders }));
+app.use('/api/ai', createAIRouter({ pool, authenticateToken, authorize, hasPermission, registry:aiProviders }));
 
 // SPA fallback keeps bookmarkable Equipment Detail URLs refresh-safe.
 app.get('/equipment/:equipmentKey', (_req, res) => {
