@@ -131,7 +131,7 @@ app.use('/api/users', createUserRouter({ pool, authenticateToken, hasPermission 
 // collection cannot trigger module-state or domain-data queries.
 app.use('/api', createModuleGate({ pool, sessions, service: moduleService }));
 
-app.use('/api/equipment', createEquipmentRouter({ pool, io, authenticateToken, aiRegistry: aiProviders, security }));
+app.use('/api/equipment', createEquipmentRouter({ pool, io, authenticateToken, aiRegistry: aiProviders, security, requestStorageDir:process.env.REQUEST_ATTACHMENT_DIR || path.join(__dirname, 'storage', 'request-files') }));
 app.use('/api', createMaintenanceRouter({ pool, security, requestStorageDir:process.env.REQUEST_ATTACHMENT_DIR || path.join(__dirname, 'storage', 'request-files') }));
 app.use('/api', createInventoryRouter({ pool, security, storageDir: process.env.ATTACHMENT_DIR || path.join(__dirname, 'storage', 'work-order-files') }));
 app.use('/api/notifications', createNotificationRouter({ pool, authenticateToken, authorize }));

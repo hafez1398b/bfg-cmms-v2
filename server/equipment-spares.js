@@ -348,37 +348,18 @@ async function linkSparePart({ client, pool, security, user, equipmentId, input,
   const item = await assertRealItem(client, values.itemId);
   const existing = await lockLink(client, target.id, values.itemId);
   if (existing && !existing.deleted_at) throw coded(409, 'SPARE_LINK_EXISTS');
-  let row;
-  if (existing) {
-    // A previously archived link is reactivated explicitly instead of creating a duplicate
-    // row; the full before/after stays in audit_x.
-    const updated = await client.query(
-      `UPDATE asset_spare_parts
-       SET relation_type=$3,quantity_required=$4,notes=$5,deleted_at=NULL,deleted_by=NULL,delete_reason=NULL,
-         updated_by=$6,updated_at=now(),row_version=row_version+1
-       WHERE asset_id=$1 AND item_id=$2 AND deleted_at IS NOT NULL AND row_version=$7
-       RETURNING *`,
-      [target.id, values.itemId, values.relationType || 'key-spare',
-        values.quantityRequired == null ? null : values.quantityRequired, values.notes || null,
-        user.id, Number(existing.row_version)]
-    );
-    if (!updated.rows[0]) throw coded(409, 'VERSION_CONFLICT');
-    row = updated.rows[0];
-    await writeAudit(client, user, 'spare-link-reactivate', root.id, values.itemId,
-      'اتصال بایگانی‌شدهٔ قطعه یدکی با دادهٔ جدید فعال شد', linkSnapshot(existing), linkSnapshot(row));
-  } else {
-    const inserted = await client.query(
-      `INSERT INTO asset_spare_parts(asset_id,item_id,relation_type,quantity_required,notes,created_by,updated_by,updated_at)
-       VALUES($1,$2,$3,$4,$5,$6,$6,now())
-       RETURNING *`,
-      [target.id, values.itemId, values.relationType || 'key-spare',
-        values.quantityRequired == null ? null : values.quantityRequired, values.notes || null, user.id]
-    );
-    row = inserted.rows[0];
-    await writeAudit(client, user, 'spare-link', root.id, values.itemId,
-      'قطعه یدکی واقعی انبار به پرونده تجهیز متصل شد', null, linkSnapshot(row));
-  }
-  await publishSparesEvent(client, user, root, existing ? 'reactivate' : 'link', row);
+  if (existing) throw coded(409, 'SPARE_RESTORE_REQUIRED');
+  const inserted = await client.query(
+    `INSERT INTO asset_spare_parts(asset_id,item_id,relation_type,quantity_required,notes,created_by,updated_by,updated_at)
+     VALUES($1,$2,$3,$4,$5,$6,$6,now())
+     RETURNING *`,
+    [target.id, values.itemId, values.relationType || 'key-spare',
+      values.quantityRequired == null ? null : values.quantityRequired, values.notes || null, user.id]
+  );
+  const row = inserted.rows[0];
+  await writeAudit(client, user, 'spare-link', root.id, values.itemId,
+    'قطعه یدکی واقعی انبار به پرونده تجهیز متصل شد', null, linkSnapshot(row));
+  await publishSparesEvent(client, user, root, 'link', row);
   return { ...(await readLinkRow(client, root.id, target.id, item.id)), committed: true };
 }
 

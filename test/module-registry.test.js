@@ -423,9 +423,9 @@ test('migration failures log only the PostgreSQL code and filename and keep the 
 
 test('numbered migrations are idempotent and the fresh schema includes the registry', () => {
   const files = updates.listMigrationFiles(path.join(root, 'migrations'));
-  assert.deepEqual(files.map(file => file.version), ['002', '003', '004', '005', '006', '007', '008', '009', '010', '011', '012', '013', '014', '015', '016', '017', '018', '019']);
-  assert.equal(files.at(-1).filename, '019_equipment_spares_lifecycle.sql');
-  assert.equal(files.at(-1).version, '019');
+  assert.deepEqual(files.map(file => file.version), ['002', '003', '004', '005', '006', '007', '008', '009', '010', '011', '012', '013', '014', '015', '016', '017', '018', '019', '020']);
+  assert.equal(files.at(-1).filename, '020_structure_review.sql');
+  assert.equal(files.at(-1).version, '020');
   // Mission D4 / Phase 3: spare-part links gain lifecycle columns and specialized permissions.
   // The migration stays additive, re-runnable and free of any destructive statement.
   const sparesMigration = read('migrations/019_equipment_spares_lifecycle.sql');

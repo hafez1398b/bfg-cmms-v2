@@ -13,6 +13,7 @@ function sendError(res, error) {
 
 function createSeleneActionRouter({ pool, service, io, security }) {
   const authorize = async (user, operation) => {
+    if (operation === 'equipment.structure.suggest' || operation === 'equipment.structure.approve_ai') return false; // Replaced by versioned dossier review.
     if (security && typeof security.hasPermission === 'function') return security.hasPermission(user, operation);
     if (operation.startsWith('equipment.structure.') || operation.startsWith('equipment.spares.')) {
       const { rows } = await pool.query(

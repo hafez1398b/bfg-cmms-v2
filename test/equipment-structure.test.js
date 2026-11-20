@@ -1001,73 +1001,30 @@ test('26-27 an independent structure drawer creates a subsystem and returns to t
   assert.equal(context.EQV2.structureDrawerView, null);
 });
 
-test('28-30 Selene structure suggestions remain drafts until a human confirms them', async () => {
-  const user = { id: 'u-1', name: 'Selene', role: 'mgr' };
-  const applied = [];
-  const api = createSeleneActions({
-    repository: memoryRepository(),
-    commands: { async apply(client, actor, draft) { applied.push(draft.actionType); return { id: 'node-1' }; } },
-    authorize: () => true
-  });
-  const draft = await api.createDraft(user, {
-    actionType: 'equipment.structure.add',
-    proposed: { rootEquipmentId: 'eq-root', nodeKind: 'subsystem', name: 'پیشنهاد سلن', parentId: 'eq-root' },
-    source: { kind: 'document', ref: 'run-1', verified: false },
-    evidence: [{ field: 'name', value: 'پیشنهاد سلن', origin: 'provider-suggestion' }],
-    confidence: 0.7
-  });
-  assert.equal(draft.status, 'pending');
-  assert.equal(draft.destination, 'equipment.structure');
-  assert.equal(applied.length, 0);
-  await assert.rejects(() => api.executeDraft(user, draft.id, {}), error => error.code === 'CONFIRMATION_REQUIRED');
-  const incomplete = await api.createDraft(user, {
-    actionType: 'equipment.structure.add',
-    proposed: { rootEquipmentId: 'eq-root', nodeKind: 'subsystem', name: 'ناقص' },
-    source: { kind: 'document', ref: 'run-2', verified: false }, evidence: []
-  });
-  assert.equal(incomplete.status, 'incomplete');
-  assert.ok(incomplete.missingFields.includes('parentId'));
-  assert.ok(incomplete.missingFields.includes('evidence'));
-  await assert.rejects(() => api.confirmDraft(user, incomplete.id), error => error.code === 'DRAFT_INCOMPLETE');
-  const confirmation = await api.confirmDraft(user, draft.id);
-  const result = await api.executeDraft(user, draft.id, { confirmationId: confirmation.id, requestId: 'req-structure-1' });
-  assert.equal(result.committed, true);
-  assert.equal(result.actionType, 'equipment.structure.add');
-  assert.deepEqual(applied, ['equipment.structure.add']);
+test('legacy Selene structure suggestions are disabled in favor of server-bound evidence review', async () => {
+  const api = createSeleneActions({ repository: memoryRepository(), commands: { async apply(){ throw new Error('must not execute'); } }, authorize: () => true });
+  for (const verified of [false,true]) {
+    await assert.rejects(() => api.createDraft({id:'u-1',role:'mgr'}, {
+      actionType:'equipment.structure.add',
+      proposed:{rootEquipmentId:'eq-root',nodeKind:'subsystem',name:'client supplied',parentId:'eq-root'},
+      source:{kind:'document',ref:'client-controlled',verified},
+      evidence:[{field:'name',value:'client supplied'}]
+    }), error => error.code==='STRUCTURE_REVIEW_REQUIRED');
+  }
 });
 
-test('29 the controlled action path rechecks the approval permission before writing', async () => {
-  const checked = [];
-  const client = structurePool();
-  const security = { hasPermission: async (user, permission) => { checked.push(permission); return permission === 'equipment.structure.approve_ai'; } };
-  const row = await applyControlledAction(client, { id: 'u-1', role: 'mgr', name: 'mgr' }, {
-    actionType: 'equipment.structure.add',
-    proposed: { rootEquipmentId: 'eq-root', nodeKind: 'subsystem', name: 'تأیید شده', code: 'APR-1', parentId: 'eq-root' },
-    recordVersion: 3
-  }, { pool: client, security });
-  assert.equal(row.ext.nodeKind, 'subsystem');
-  assert.ok(checked.includes('equipment.structure.approve_ai'));
-  assert.equal(checked.includes('equipment.structure.create'), false);
-  const denied = structurePool();
-  await assert.rejects(
-    () => applyControlledAction(denied, { id: 'u-2', role: 'mgr', name: 'mgr' }, {
-      actionType: 'equipment.structure.add',
-      proposed: { rootEquipmentId: 'eq-root', nodeKind: 'subsystem', name: 'بدون مجوز', parentId: 'eq-root' },
-      recordVersion: 3
-    }, { pool: denied, security: { hasPermission: async () => false } }),
-    error => error.code === 'PERMISSION_DENIED'
-  );
+test('29 a legacy structure approval cannot bypass versioned review, even with approve permission', async () => {
+  await assert.rejects(() => applyControlledAction(structurePool(), {id:'u-1',role:'mgr'},
+    {actionType:'equipment.structure.add'}, {security:{hasPermission:async()=>true}}),
+    error => error.code==='STRUCTURE_REVIEW_REQUIRED');
 });
 
 test('31 without an active provider the manual structure flow stays fully available', async () => {
   const pool = structurePool();
   await withApi(pool, 'mgr', async base => {
     const suggestion = await fetch(`${base}/eq-root/structure/suggestions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
-    assert.equal(suggestion.status, 201);
-    const body = await suggestion.json();
-    assert.equal(body.data.provider, null);
-    assert.equal(body.data.notice, 'NO_CAPABLE_PROVIDER');
-    assert.deepEqual(body.data.suggestions, []);
+    assert.equal(suggestion.status, 410);
+    assert.equal((await suggestion.json()).error,'STRUCTURE_REVIEW_REQUIRED');
     const manual = await fetch(`${base}/`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ nodeKind: 'subsystem', name: 'دستی', code: 'MAN-1', parentId: 'eq-root', parentRowVersion: 3 })

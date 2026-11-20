@@ -64,7 +64,7 @@ test('schema.sql contains exactly one contract block identical to Migration 018,
   assert.ok(sparesStart > start, 'Migration 019 must follow the Phase 3-A block in schema.sql');
   const contractBlock = schema.slice(start, sparesStart).trim();
   assert.equal(contractBlock, migration.trim());
-  assert.equal(schema.slice(sparesStart).trim(), migration019.trim(), 'schema.sql must end with the exact Migration 019 contract');
+  assert.equal(schema.slice(sparesStart, schema.indexOf('-- Version-bound Selene')).trim(), migration019.trim(), 'schema.sql must preserve the exact Migration 019 contract');
 
   for (const source of [contractBlock]) {
     assert.doesNotMatch(source, /\bwork_order_id\b/i);

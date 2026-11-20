@@ -451,7 +451,7 @@ test('D4 link: unknown or archived inventory items are rejected and nothing is w
   });
 });
 
-test('D4 link: duplicate active link is 409; an archived link is explicitly reactivated with its own audit', async () => {
+test('D4 link: duplicate active link is 409; an archived link requires explicit restore', async () => {
   const pool = sparesPool();
   seedLink(pool, { asset_id: 'eq-main' });
   await withApi(pool, 'mgr', async base => {
@@ -468,13 +468,11 @@ test('D4 link: duplicate active link is 409; an archived link is explicitly reac
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ itemId: 'item-1', relationType: 'general-spare', quantityRequired: 1 })
     });
-    assert.equal(response.status, 201);
-    const stored = archivedPool.links.get('eq-root:item-1');
-    assert.equal(stored.deleted_at, null);
-    assert.equal(stored.relation_type, 'general-spare');
-    assert.equal(stored.row_version, 4);
-    assert.ok(archivedPool.state.audit.some(row => row.action === 'spare-link-reactivate'));
-    assert.equal(archivedPool.state.outbox[0].payload.action, 'reactivate');
+    assert.equal(response.status, 409);
+    assert.equal((await response.json()).error, 'SPARE_RESTORE_REQUIRED');
+    assert.equal(archivedPool.links.get('eq-root:item-1').row_version, 3);
+    assert.equal(archivedPool.state.audit.length, 0);
+    assert.equal(archivedPool.state.outbox.length, 0);
   });
 });
 

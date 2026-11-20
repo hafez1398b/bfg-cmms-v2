@@ -710,26 +710,7 @@
     const st=E.structure;if(!st)return'';
     const caps=st.capabilities||{};
     if(!caps.suggest&&!caps.approveAi)return'';
-    const rows=(st.suggestions||[]).map(draft=>{
-      const proposed=draft.proposed||{};
-      const parent=proposed.parentId?structureNodeById(proposed.parentId):null;
-      return`<article class="eqv2-structure-suggestion">
-        <div><b>${escText(STRUCTURE_KIND_LABEL[proposed.nodeKind]||proposed.nodeKind||'')}</b> — ${escText(proposed.name||'بدون نام')}
-          <span class="eqv2-code">${escText(proposed.code||'کد پیشنهادی ندارد')}</span></div>
-        <p>محل ثبت پیشنهادی: ${escText(parent?(parent.name||parent.code):'تجهیز انتخاب‌شده')} · توضیح: ${escText(proposed.explanation||'توضیح ثبت نشده')}</p>
-        <p>منبع: ${escText((draft.source&&draft.source.kind)||'ثبت نشده')}/${escText((draft.source&&draft.source.ref)||'')} · اطمینان: ${draft.confidence==null?notRecorded:faText(Math.round(draft.confidence*100))+'٪'} · وضعیت: ${escText(draft.status||'')}</p>
-        <p>شواهد: ${faText((draft.evidence||[]).length)} مورد · فیلدهای ناقص: ${(draft.missingFields||[]).length?escText(draft.missingFields.join('، ')):'ندارد'}</p>
-        <div class="eqv2-structure-actions">
-          ${caps.update?`<button type="button" class="btn btn-sm btn-ghost" onclick="eqv2StructureEditSuggestion('${escText(draft.id)}')">ویرایش</button>`:''}
-          ${caps.approveAi?`<button type="button" class="btn btn-sm btn-primary" onclick="eqv2StructureApprove('${escText(draft.id)}')">تأیید و ثبت کنترل‌شده</button>
-          <button type="button" class="btn btn-sm btn-ghost" onclick="eqv2StructureReject('${escText(draft.id)}')">رد</button>`:''}
-        </div></article>`;
-    }).join('');
-    return`<section class="eqv2-subsection eqv2-structure-suggestions"><h3>پیشنهاد سلن برای ساختار</h3>
-      <p class="muted">سلن فقط پیش‌نویس پیشنهاد می‌دهد؛ هیچ پیشنهادی بدون تأیید شما ثبت نمی‌شود و کد یا قطعهٔ ناموجود حدس زده نمی‌شود.</p>
-      ${caps.suggest?`<button type="button" class="btn btn-sm btn-ghost" onclick="eqv2StructureSuggest()">پیشنهاد سلن</button>`:''}
-      ${E.structureSuggestNotice?`<div class="eqv2-wizard-note">${escText(STRUCTURE_MESSAGES[E.structureSuggestNotice]||E.structureSuggestNotice)}</div>`:''}
-      ${rows||'<div class="eqv2-wizard-note">پیش‌نویس پیشنهادی باز نیست.</div>'}</section>`;
+    return `<bfg-structure-review class="eqv2-subsection" data-id="${escText(st.rootId)}" ${caps.approveAi?'can-confirm':''}></bfg-structure-review>`;
   }
   function structureSection(a){
     const st=E.structure;
@@ -763,7 +744,7 @@
       ${focusWarningNode?`<span class="badge b-orange eqv2-structure-legacy-warning">${escText(structureRowWarningLabel(focusWarningNode))}</span>`:''}
       <div class="eqv2-detail-grid">
         ${[['نوع',focusNode.canonicalKind===null?`سطح نامعتبر (عمق ${faText(focusNode.level||0)})`:(STRUCTURE_KIND_LABEL[focusNode.nodeKind]||focusNode.nodeKind)],['کد',focusNode.code],['نام',focusNode.name],
-          ['نوع قطعه',focusNode.componentType],['برند',focusNode.brand],['سازنده',focusNode.manufacturer||focusNode.maker],
+          ['آخرین تأیید سلن',focusNode.review?(Number(focusNode.review.version)===focusNode.rowVersion?'تأییدشده':'نسخهٔ قبلی تأیید شده'):null],['منشأ',focusNode.review?.sourceType],['شاهد',focusNode.review?.evidenceType],['شناسه ممیزی',focusNode.review?.id],['نوع قطعه',focusNode.componentType],['برند',focusNode.brand],['سازنده',focusNode.manufacturer||focusNode.maker],
           ['مدل',focusNode.model],['شماره قطعه',focusNode.partNumber],['تعداد',focusNode.requiredQuantity==null?null:faText(focusNode.requiredQuantity)+(focusNode.unit?' '+focusNode.unit:'')],
           ['وضعیت',structureStatusLabel(focusNode.status)],['بحرانیت',focusNode.crit],['تعداد بخش فعال',faText(structureActiveSectionCount(focusNode))],
           ['قلم انبار مرتبط',focusNode.inventoryItem?`${focusNode.inventoryItem.code||''} — ${focusNode.inventoryItem.name||''}`:null],
@@ -1177,42 +1158,6 @@
       toast('بخش با مجوز، دلیل و Audit بازیابی شد.');
       await refreshStructure({keepPanel:true});
     }catch(error){structureSay(error);}
-  }
-  async function structureSuggest(){
-    const st=E.structure;if(!st)return;
-    E.structureSuggestNotice=null;
-    try{
-      const result=await R().structureSuggestions(st.rootId||E.detailId);
-      if(result.data&&result.data.notice)E.structureSuggestNotice=result.data.notice;
-      await refreshStructure({keepPanel:true});
-      if(!result.data.notice)toast('پیشنهادها فقط به‌صورت پیش‌نویس ثبت شدند؛ بدون تأیید شما چیزی اعمال نمی‌شود.');
-    }catch(error){structureSay(error);}
-  }
-  async function structureApprove(draftId){
-    try{
-      const confirmation=await R().actionConfirm(draftId);
-      const requestId=window.crypto&&window.crypto.randomUUID?window.crypto.randomUUID():`st-${draftId}-${Date.now()}`;
-      const result=await R().actionExecute(draftId,{confirmationId:confirmation.data.id,requestId});
-      if(!result||result.committed!==true)throw Object.assign(new Error('NOT_COMMITTED'),{payload:{error:'NOT_COMMITTED'}});
-      toast('پیشنهاد پس از تأیید شما و بررسی دوباره مجوز ثبت شد.');
-      await refreshStructure({keepPanel:true});
-    }catch(error){structureSay(error);}
-  }
-  async function structureReject(draftId){
-    try{
-      await R().actionReject(draftId);
-      await refreshStructure({keepPanel:true});
-    }catch(error){structureSay(error);}
-  }
-  function structureEditSuggestion(draftId){
-    const draft=(E.structure&&E.structure.suggestions||[]).find(item=>item.id===draftId);
-    if(!draft)return;
-    const proposed=draft.proposed||{};
-    const parent=proposed.parentId?structureNodeById(proposed.parentId):structureNodeById(E.structure.root.id);
-    if(!parent)return;
-    if(!window.BFGStructureDrawerController.isValidParent(proposed.nodeKind,parent)){structureSay({message:'STRUCTURE_PARENT_KIND_INVALID'});return;}
-    E.structurePendingReject=draftId;
-    openStructureForm({mode:'create',kind:proposed.nodeKind,parent,prefill:proposed});
   }
   function structureFocusNode(id){
     const node=structureNodeById(id);if(!node)return;
@@ -2297,8 +2242,8 @@
   window.eqv2StructureActionMenuToggle=structureActionMenuToggle;window.eqv2StructureActionMenuKeydown=structureActionMenuKeydown;
   window.eqv2StructureExpandAll=structureToggleAll;window.eqv2StructureSearch=structureSearch;
   window.eqv2StructureClose=structureClosePanel;window.eqv2StructureCrumb=structureCrumbTo;window.eqv2StructureArchivedToggle=structureArchivedToggle;
-  window.eqv2StructureSuggest=structureSuggest;window.eqv2StructureApprove=structureApprove;window.eqv2StructureReject=structureReject;
-  window.eqv2StructureEditSuggestion=structureEditSuggestion;window.eqv2StructureMoveSubmit=structureMoveSubmit;window.eqv2StructureCrossSearch=structureCrossSearch;
+  window.eqv2RefreshReviewedStructure=()=>refreshStructure({keepPanel:true}).catch(structureSay);
+  window.eqv2StructureMoveSubmit=structureMoveSubmit;window.eqv2StructureCrossSearch=structureCrossSearch;
   window.eqv2SpareAdd=spareAdd;window.eqv2SpareEdit=spareEdit;window.eqv2SpareItemSearch=spareItemSearch;window.eqv2SpareSubmit=spareSubmit;
   window.eqv2SpareArchive=spareArchive;window.eqv2SpareRestore=spareRestore;window.eqv2SparesArchivedToggle=sparesArchivedToggle;
   window.eqv2SpareTargetChanged=spareTargetChanged;

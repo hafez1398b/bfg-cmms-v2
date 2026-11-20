@@ -116,7 +116,7 @@ test('migration 017 SQL contract repairs B1BT rows from actual depth, not displa
   const sparesStart = schema.indexOf(sparesMarker);
   assert.ok(sparesStart > phase3aStart, 'Migration 019 must follow the Phase 3-A block in schema.sql');
   assert.equal(schema.slice(phase3aStart, sparesStart).trim(), migration018.trim(), 'schema.sql must retain the exact Migration 018 contract before Migration 019');
-  assert.equal(schema.slice(sparesStart).trim(), migration019.trim(), 'schema.sql must end with the exact Migration 019 contract');
+  assert.equal(schema.slice(sparesStart, schema.indexOf('-- Version-bound Selene')).trim(), migration019.trim(), 'schema.sql must preserve the exact Migration 019 contract');
 
   // This catches the production failure: structure reads these fields from root_equipment.
   assert.match(migration,
