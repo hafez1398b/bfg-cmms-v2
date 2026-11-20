@@ -38,7 +38,7 @@ async function buildContext(client,user,equipmentId){
     client.query(`SELECT id,failure_no,occurred_at,condition,symptoms,description,failure_type,failure_mode,cause,effect,severity,frequency,detectability,risk_score,downtime_minutes,status,provenance_status FROM failures WHERE equipment_id=$1 AND deleted_at IS NULL ORDER BY occurred_at DESC LIMIT 50`,[asset.id]),
     client.query(`SELECT id,title,interval_days,last_run,spec,kind,status,checklist,ext FROM pm_plans WHERE asset_id=$1 AND deleted_at IS NULL ORDER BY title LIMIT 100`,[asset.id]),
     client.query(`SELECT id,no,type,descr,urgency,impact,status,form,created_at FROM requests WHERE asset_id=$1 AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 30`,[asset.id]),
-    client.query(`SELECT i.id,i.code,i.name,i.unit,i.stock,i.min_stock,i.price,rel.relation_type FROM asset_spare_parts rel JOIN items i ON i.id=rel.item_id WHERE rel.asset_id=$1 AND i.deleted_at IS NULL ORDER BY i.name LIMIT 100`,[asset.id])
+    client.query(`SELECT i.id,i.code,i.name,i.unit,i.stock,i.min_stock,i.price,rel.relation_type FROM asset_spare_parts rel JOIN items i ON i.id=rel.item_id WHERE rel.asset_id=$1 AND rel.deleted_at IS NULL AND i.deleted_at IS NULL ORDER BY i.name LIMIT 100`,[asset.id])
   ]);
   const context={asset,workOrders:workOrders.rows,failures:failures.rows,pmPlans:pms.rows,requests:requests.rows,spareParts:spares.rows};
   const sourceIds={asset:[asset.id],work_order:workOrders.rows.map(x=>x.id),failure:failures.rows.map(x=>String(x.id)),pm:pms.rows.map(x=>x.id),request:requests.rows.map(x=>x.id),spare_part:spares.rows.map(x=>x.id)};

@@ -131,7 +131,7 @@ app.use('/api/users', createUserRouter({ pool, authenticateToken, hasPermission 
 // collection cannot trigger module-state or domain-data queries.
 app.use('/api', createModuleGate({ pool, sessions, service: moduleService }));
 
-app.use('/api/equipment', createEquipmentRouter({ pool, io, authenticateToken, aiRegistry: aiProviders, security }));
+app.use('/api/equipment', createEquipmentRouter({ pool, io, authenticateToken, aiRegistry: aiProviders, security, requestStorageDir:process.env.REQUEST_ATTACHMENT_DIR || path.join(__dirname, 'storage', 'request-files') }));
 app.use('/api', createMaintenanceRouter({ pool, security, requestStorageDir:process.env.REQUEST_ATTACHMENT_DIR || path.join(__dirname, 'storage', 'request-files') }));
 app.use('/api', createInventoryRouter({ pool, security, storageDir: process.env.ATTACHMENT_DIR || path.join(__dirname, 'storage', 'work-order-files') }));
 app.use('/api/notifications', createNotificationRouter({ pool, authenticateToken, authorize }));
@@ -139,6 +139,12 @@ app.use('/api/ai', createAIRouter({ pool, authenticateToken, authorize, registry
 
 // SPA fallback keeps bookmarkable Equipment Detail URLs refresh-safe.
 app.get('/equipment/:equipmentKey', (_req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+// Mission D4: the printable passport is an independent, bookmarkable route. It serves only the
+// application shell — every passport value is fetched afterwards through the authenticated and
+// scope-checked Equipment APIs, so a scanned/shared link never exposes data before sign-in.
+app.get('/equipment/:equipmentKey/passport', (_req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 

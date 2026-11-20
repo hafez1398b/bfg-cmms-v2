@@ -314,6 +314,7 @@ function buildStructureTree(root, rows = []) {
       parentId: row.parent_id,
       rootEquipmentId: String(root.id),
       rowVersion: row.row_version,
+      review: source.review || null,
       archived: !!row.deleted_at,
       hasChildren: row.has_children,
       childCount: row.children_count,
@@ -768,6 +769,10 @@ async function getStructure({ pool, security, user, rootEquipmentId, includeArch
          AND structure.depth<$3 AND NOT structure.cycle
      )
      SELECT structure.*,
+       (SELECT jsonb_build_object('id',audit.id,'at',audit.t,'evidenceType',audit.review->'evidence'->>'type',
+          'sourceType',audit.review->'source'->>'type','version',audit.after->>'row_version')
+        FROM audit_x audit WHERE audit.mod='selene-structure' AND audit.entity=structure.id
+          AND audit.review IS NOT NULL ORDER BY audit.t DESC,audit.id LIMIT 1) AS review,
        EXISTS(SELECT 1 FROM assets lower_row WHERE lower_row.parent=structure.id
          AND lower_row.type='eq' AND ($2::boolean OR lower_row.deleted_at IS NULL)) AS has_children,
        (SELECT count(*)::int FROM assets lower_row WHERE lower_row.parent=structure.id
@@ -828,26 +833,6 @@ async function getStructure({ pool, security, user, rootEquipmentId, includeArch
     approveAi: 'equipment.structure.approve_ai',
     inventoryView: 'inventory.view'
   })) capabilities[key] = await hasPermission({ ...permissionContext, permission });
-  let suggestions = [];
-  if (capabilities.suggest || capabilities.approveAi) {
-    const result = await pool.query(
-      `SELECT id,action_type,destination,proposed,source,evidence,confidence,missing_fields,conflicting_fields,
-        status,record_version,target_id,created_by,created_at,updated_at,row_version
-       FROM selene_action_drafts
-       WHERE action_type='equipment.structure.add' AND proposed->>'rootEquipmentId'=$1
-         AND status IN ('incomplete','conflict','pending')
-         AND ($2::boolean OR created_by=$3)
-       ORDER BY updated_at DESC LIMIT 100`,
-      [root.id, capabilities.approveAi, user.id]
-    );
-    suggestions = result.rows.map(row => ({
-      id: row.id, actionType: row.action_type, destination: row.destination, proposed: row.proposed,
-      source: row.source, evidence: row.evidence, confidence: row.confidence == null ? null : Number(row.confidence),
-      missingFields: row.missing_fields, conflictingFields: row.conflicting_fields, status: row.status,
-      recordVersion: row.record_version == null ? null : Number(row.record_version), targetId: row.target_id,
-      createdBy: row.created_by, createdAt: row.created_at, updatedAt: row.updated_at, rowVersion: Number(row.row_version)
-    }));
-  }
   return {
     rootEquipmentId: root.id,
     root: { id: root.id, code: root.code, name: root.name, nodeKind: 'equipment', rowVersion: Number(root.row_version) || 1 },
@@ -860,7 +845,7 @@ async function getStructure({ pool, security, user, rootEquipmentId, includeArch
     nodeCount: built.nodeCount,
     includeArchived: !!includeArchived,
     capabilities,
-    suggestions
+    suggestions: []
   };
 }
 
