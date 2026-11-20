@@ -12,6 +12,11 @@ const ACTIONS = {
     destination: 'equipment.structure', permission: 'equipment.structure.suggest',
     approvalPermission: 'equipment.structure.approve_ai',
     required: ['name', 'nodeKind', 'parentId', 'rootEquipmentId']
+  },
+  'equipment.spares.link': {
+    destination: 'equipment.spares', permission: 'equipment.spares.suggest',
+    approvalPermission: 'equipment.spares.approve_ai',
+    required: ['rootEquipmentId', 'targetId', 'itemId']
   }
 };
 const VERIFIED_SOURCES = new Set(['file', 'text', 'document', 'user-confirmed-form', 'import-session']);
@@ -52,6 +57,7 @@ function sourceRejected(source) {
 }
 
 function assessDraft(input) {
+  if (input && input.actionType === 'equipment.structure.add') throw coded(409, 'STRUCTURE_REVIEW_REQUIRED');
   const action = ACTIONS[input && input.actionType];
   if (!action) throw coded(422, 'ACTION_NOT_ALLOWED');
   const proposed = input.proposed && typeof input.proposed === 'object' && !Array.isArray(input.proposed) ? { ...input.proposed } : {};
@@ -74,6 +80,11 @@ function assessDraft(input) {
   if (input.actionType === 'equipment.create' && ['subsystem', 'main-component', 'sub-component'].includes(proposed.nodeKind)) throw coded(422, 'STRUCTURE_ACTION_REQUIRED');
   if (input.actionType === 'equipment.structure.add') {
     if (!['subsystem', 'main-component', 'sub-component'].includes(proposed.nodeKind)) missing.push('nodeKind');
+    if (!source || !cleanText(source.ref, 180) || !source.kind) missing.push('verifiedSource');
+    if (!evidence.length) missing.push('evidence');
+  }
+  if (input.actionType === 'equipment.spares.link') {
+    if (proposed.relationType && !['key-spare', 'general-spare'].includes(proposed.relationType)) missing.push('relationType');
     if (!source || !cleanText(source.ref, 180) || !source.kind) missing.push('verifiedSource');
     if (!evidence.length) missing.push('evidence');
   }
@@ -105,6 +116,10 @@ function assessDraft(input) {
     recordVersion: input.recordVersion == null || input.recordVersion === '' ? null : Number(input.recordVersion),
     targetId: input.targetId ? String(input.targetId) : null
   };
+}
+
+function draftHash(row) {
+  return crypto.createHash('sha256').update(JSON.stringify(publicDraft(row))).digest('hex');
 }
 
 function publicDraft(row) {
@@ -202,6 +217,8 @@ function createSeleneActions({ repository, commands, authorize, accessDraft, now
         draftId: draft.id,
         userId: user.id,
         recordVersion: draft.recordVersion,
+        draftVersion: draft.rowVersion,
+        stateHash: draftHash(draft),
         requestId: null,
         expiresAt: new Date(now().getTime() + ttlMs).toISOString(),
         usedAt: null,
@@ -216,7 +233,7 @@ function createSeleneActions({ repository, commands, authorize, accessDraft, now
     const draft = await repository.getDraft(id);
     await assertDraftAccess(user, draft, 'reject');
     if (draft.status === 'executed') throw coded(409, 'DRAFT_CLOSED');
-    const row = await repository.updateDraft(id, { status: 'rejected', updatedAt: now().toISOString(), rowVersion: Number(draft.rowVersion) + 1 });
+    const row = await repository.updateDraft(id, { ...draft, status: 'rejected', updatedAt: now().toISOString(), rowVersion: Number(draft.rowVersion) + 1 });
     return publicDraft(row);
   }
 
@@ -241,6 +258,7 @@ function createSeleneActions({ repository, commands, authorize, accessDraft, now
       await deny(user, ACTIONS[draft.actionType].approvalPermission || ACTIONS[draft.actionType].permission);
       if (draft.status !== 'pending') throw coded(draft.status === 'incomplete' ? 422 : 409, draft.status === 'incomplete' ? 'DRAFT_INCOMPLETE' : 'DRAFT_CLOSED');
       if (Number(confirmation.recordVersion) !== Number(draft.recordVersion) && !(confirmation.recordVersion == null && draft.recordVersion == null)) throw coded(409, 'VERSION_CONFLICT');
+      if (confirmation.draftVersion !== draft.rowVersion || confirmation.stateHash !== draftHash(draft)) throw coded(409, 'VERSION_CONFLICT');
       const applied = await commands.apply(tx.client, user, clone(draft));
       await tx.markUsed(confirmation.id, requestId, now().toISOString());
       await tx.markExecuted(draft.id, now().toISOString());
@@ -332,6 +350,8 @@ function pgRepository(pool) {
   const mapConfirmation = row => row && ({
     id: row.id,
     draftId: row.draft_id,
+    draftVersion: Number(row.draft_version),
+    stateHash: row.state_hash,
     userId: row.user_id,
     recordVersion: row.record_version == null ? null : Number(row.record_version),
     requestId: row.request_id,
@@ -355,9 +375,10 @@ function pgRepository(pool) {
     },
     async updateDraft(id, patch) {
       const { rows } = await pool.query(
-        `UPDATE selene_action_drafts SET proposed=$2,source=$3,evidence=$4,confidence=$5,missing_fields=$6,conflicting_fields=$7,status=$8,record_version=$9,target_id=$10,updated_at=$11,row_version=$12 WHERE id=$1 RETURNING *`,
+        `UPDATE selene_action_drafts SET proposed=$2,source=$3,evidence=$4,confidence=$5,missing_fields=$6,conflicting_fields=$7,status=$8,record_version=$9,target_id=$10,updated_at=$11,row_version=$12 WHERE id=$1 AND row_version=$12::bigint-1 RETURNING *`,
         [id, JSON.stringify(patch.proposed), JSON.stringify(patch.source), JSON.stringify(patch.evidence), patch.confidence, JSON.stringify(patch.missingFields || []), JSON.stringify(patch.conflictingFields || []), patch.status, patch.recordVersion, patch.targetId, patch.updatedAt, patch.rowVersion]
       );
+      if (!rows[0]) throw coded(409, 'VERSION_CONFLICT');
       return mapDraft(rows[0]);
     },
     async transaction(work) {
@@ -371,8 +392,8 @@ function pgRepository(pool) {
           requestExists: async requestId => !!(await client.query('SELECT 1 FROM selene_action_confirmations WHERE request_id=$1', [requestId])).rows[0],
           insertConfirmation: async row => {
             await client.query(
-              `INSERT INTO selene_action_confirmations(id,draft_id,user_id,record_version,request_id,expires_at,used_at,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,
-              [row.id, row.draftId, row.userId, row.recordVersion, row.requestId, row.expiresAt, row.usedAt, row.createdAt]
+              `INSERT INTO selene_action_confirmations(id,draft_id,user_id,record_version,request_id,expires_at,used_at,created_at,draft_version,state_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+              [row.id, row.draftId, row.userId, row.recordVersion, row.requestId, row.expiresAt, row.usedAt, row.createdAt, row.draftVersion, row.stateHash]
             );
           },
           markUsed: async (id, requestId, usedAt) => {

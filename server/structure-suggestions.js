@@ -37,7 +37,7 @@ async function buildStructureContext(pool, rootId) {
     ),
     pool.query(
       `SELECT i.code,i.name,rel.relation_type FROM asset_spare_parts rel JOIN items i ON i.id=rel.item_id
-       WHERE rel.asset_id=$1 AND i.deleted_at IS NULL ORDER BY i.name LIMIT 40`, [root.id]
+       WHERE rel.asset_id=$1 AND rel.deleted_at IS NULL AND i.deleted_at IS NULL ORDER BY i.name LIMIT 40`, [root.id]
     ),
     pool.query(
       `SELECT COALESCE(value->>'title', value->>'name') AS title, COALESCE(value->>'status','') AS status
@@ -133,86 +133,6 @@ function normalizeSuggestion(raw, context) {
   return { proposed, evidence, confidence: Number.isFinite(Number(source.confidence)) ? Math.max(0, Math.min(1, Number(source.confidence))) : null };
 }
 
-async function suggestStructures({ pool, registry, security, user, rootEquipmentId }) {
-  await structure.assertPermission({ pool, security, user }, 'equipment.structure.suggest');
-  const root = await structure.rootEquipmentById(pool, rootEquipmentId);
-  await structure.assertEquipmentScope(pool, user, root.id);
-  const context = await buildStructureContext(pool, root.id);
-  const media = [];
-  const candidates = typeof registry?.candidates === 'function'
-    ? registry.candidates({ media, purpose: 'equipment_intake', preferred: 'deepseek' })
-      .filter(provider => provider.name === 'deepseek' || provider.name === 'local')
-    : [];
-  let provider = null;
-  let model = null;
-  let notice = null;
-  let rawSuggestions = [];
-  for (const candidate of candidates) {
-    const { rows } = await pool.query('SELECT provider,enabled,allowed_purposes,allow_sensitive_context FROM ai_provider_policies WHERE provider=$1', [candidate.name]);
-    const policy = rows[0];
-    const purposes = Array.isArray(policy?.allowed_purposes) ? policy.allowed_purposes : [];
-    if (!policy?.enabled) { notice = notice || 'AI_PROVIDER_DISABLED_BY_POLICY'; continue; }
-    if (!purposes.includes('equipment_intake') && !purposes.includes('wizard_suggestion')) { notice = notice || 'AI_PURPOSE_DENIED_BY_POLICY'; continue; }
-    if (candidate.name !== 'local' && !policy.allow_sensitive_context) { notice = notice || 'CLOUD_CONTEXT_NOT_APPROVED'; continue; }
-    try {
-      const result = await candidate.generate({
-        system: 'You are Selene, the controlled equipment structure assistant of an industrial CMMS. Return JSON only. Suggest internal structure nodes only from AUTHORIZED_CONTEXT facts. Never invent codes, brands, models or parts. Suggestions are drafts for human approval, never saved records.',
-        prompt: buildPrompt(context),
-        media
-      });
-      provider = candidate.name;
-      model = result.model || null;
-      rawSuggestions = parseSuggestions(result.text);
-      notice = null;
-      break;
-    } catch (error) {
-      notice = error.code || 'NO_CAPABLE_PROVIDER';
-    }
-  }
-  if (!provider && !notice) notice = 'NO_CAPABLE_PROVIDER';
-
-  const drafts = [];
-  for (const raw of rawSuggestions) {
-    const normalized = normalizeSuggestion(raw, context);
-    if (!normalized) continue;
-    const assessed = assessDraft({
-      actionType: 'equipment.structure.add',
-      proposed: normalized.proposed,
-      source: { kind: provider === 'local' ? 'text' : 'document', ref: `structure-suggestion:${model || provider}`, verified: false },
-      evidence: normalized.evidence,
-      confidence: normalized.confidence
-    });
-    const row = await pool.query(
-      `INSERT INTO selene_action_drafts(id,action_type,destination,proposed,source,evidence,confidence,missing_fields,conflicting_fields,status,record_version,target_id,created_by,created_at,updated_at,row_version)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,1) RETURNING *`,
-      [uuid(), assessed.actionType, assessed.destination, JSON.stringify(assessed.proposed), JSON.stringify(assessed.source),
-        JSON.stringify(assessed.evidence), assessed.confidence, JSON.stringify(assessed.missingFields),
-        JSON.stringify(assessed.conflictingFields), assessed.status, assessed.recordVersion, assessed.targetId,
-        user.id, new Date().toISOString(), new Date().toISOString()]
-    ).catch(error => {
-      if (error && error.code === '42P01') throw coded(503, 'SELENE_DRAFTS_UNAVAILABLE');
-      throw error;
-    });
-    drafts.push(publicDraft({
-      id: row.rows[0].id, actionType: row.rows[0].action_type, destination: row.rows[0].destination,
-      proposed: row.rows[0].proposed, source: row.rows[0].source, evidence: row.rows[0].evidence,
-      confidence: row.rows[0].confidence == null ? null : Number(row.rows[0].confidence),
-      missingFields: row.rows[0].missing_fields, conflictingFields: row.rows[0].conflicting_fields,
-      status: row.rows[0].status, recordVersion: row.rows[0].record_version, targetId: row.rows[0].target_id,
-      rowVersion: Number(row.rows[0].row_version), createdBy: row.rows[0].created_by,
-      createdAt: row.rows[0].created_at, updatedAt: row.rows[0].updated_at
-    }));
-  }
-  await pool.query(
-    `INSERT INTO audit_x(id,t,u,uid,role,action,mod,entity,note,before,after)
-     VALUES($1,now(),$2,$3,$4,$5,'equipment-structure',$6,$7,NULL,$8)`,
-    [uuid(), user.name || user.username || user.id, user.id, user.role || '', 'structure-suggest', root.id,
-      provider ? 'پیشنهاد ساختار از دادهٔ مجاز تهیه و فقط پیش‌نویس شد' : 'پیشنهاد ساختار تهیه نشد؛ سرویس تحلیل در دسترس یا فعال نیست',
-      JSON.stringify({ provider, model, notice, drafts: drafts.length })]
-  ).catch(() => {});
-  return { provider, model, notice, suggestions: drafts, insufficient: notice ? true : drafts.length === 0 };
-}
-
 async function searchInventoryItems({ pool, security, user, query, limit = 50 }) {
   const allowed = security && typeof security.hasPermission === 'function'
     ? await security.hasPermission(user, 'inventory.view')
@@ -261,4 +181,4 @@ async function searchInventoryItems({ pool, security, user, query, limit = 50 })
   }));
 }
 
-module.exports = { suggestStructures, searchInventoryItems, buildStructureContext, normalizeSuggestion, parseSuggestions };
+module.exports = { searchInventoryItems, buildStructureContext, normalizeSuggestion, parseSuggestions };

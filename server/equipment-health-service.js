@@ -38,7 +38,7 @@ async function equipmentHealth(pool,user,equipmentId,requireScope){
       client.query(`SELECT NULLIF(times->>'durationHours','')::numeric duration_hours FROM work_orders WHERE asset_id=$1 AND status IN ('closed','done','completed') AND deleted_at IS NULL AND confirmation_status='confirmed'`,[asset.id]),
       client.query(`SELECT count(*)::int total,count(*) FILTER(WHERE last_run IS NOT NULL AND last_run+(interval_days||' days')::interval>=now())::int compliant FROM pm_plans WHERE asset_id=$1 AND status='active' AND deleted_at IS NULL`,[asset.id]),
       client.query(`SELECT count(*)::int total,count(*) FILTER(WHERE overall_status IN ('passed','acceptable'))::int passed FROM checklist_executions WHERE equipment_id=$1 AND status='completed'`,[asset.id]).catch(error=>error.code==='42P01'?{rows:[{total:0,passed:0}]}:Promise.reject(error)),
-      client.query(`SELECT i.stock,i.min_stock FROM asset_spare_parts r JOIN items i ON i.id=r.item_id WHERE r.asset_id=$1 AND i.deleted_at IS NULL`,[asset.id])
+      client.query(`SELECT i.stock,i.min_stock FROM asset_spare_parts r JOIN items i ON i.id=r.item_id WHERE r.asset_id=$1 AND r.deleted_at IS NULL AND i.deleted_at IS NULL`,[asset.id])
     ]);
     return {equipmentId:asset.id,...calculateHealth({failures:failureResult.rows,completedWorkOrders:woResult.rows,pm:pmResult.rows[0],checklists:checkResult.rows[0],spares:spareResult.rows})};
   }finally{client.release();}

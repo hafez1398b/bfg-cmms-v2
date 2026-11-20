@@ -10,10 +10,16 @@ test('equipment dossier exposes cross-module creation, edit and archive actions'
   for(const token of ["eqv2Related('wo'","eqv2Related('request'","eqv2Related('pm'",'window.eqv2Edit=edit','eqv2OpenWizard(','eqv2Delete('])assert.ok(equipment.includes(token),token);
   assert.match(equipment,/typeof openWO==='function'&&openWO/);
   assert.match(equipment,/typeof openReq==='function'&&openReq/);
-  assert.match(equipment,/pm:\['openPMForm','pmAsset'\]/);
-  assert.match(read('public/platform-v2/maintenance-client.js'),/\/api\/pm-plans/);
-  assert.match(equipment,/BFGMaintenanceWizards\.openRequest/);
-  assert.match(equipment,/BFGMaintenanceWizards\.openWorkOrder/);
+  assert.match(equipment,/request:\{opener:'openReqForm',argument:\{equipmentId:selected\}\}/);
+  assert.match(equipment,/wo:\{opener:'openWOForm',argument:\{equipmentId:selected\}\}/);
+  assert.match(equipment,/pm:\{opener:'openPMForm',argument:selected\}/);
+  assert.match(equipment,/return opener\.call\(window,entry\.argument\)/);
+  assert.doesNotMatch(equipment,/document\.getElementById\(entry\[1\]\)/);
+  const maintenance=read('public/platform-v2/maintenance-client.js');
+  assert.match(maintenance,/\/api\/pm-plans/);
+  assert.match(maintenance,/BFGMaintenanceWizards\.openRequest\(options\)/);
+  assert.match(maintenance,/BFGMaintenanceWizards\.openWorkOrder\(options\)/);
+  assert.match(read('public/platform-v2/maintenance-pm-ui.js'),/wrap\('openPMForm',assetReference=>/);
   const wizards=read('public/platform-v2/maintenance-wizards.js');
   assert.match(wizards,/async function startWizard\(type,title,rt,selected,initialAnswers=\{\}\)/);
   assert.match(wizards,/prepareExisting\(rt,answers\)/);
@@ -29,13 +35,14 @@ test('operational records provide permission-controlled edit and recoverable arc
   assert.doesNotMatch(actions,/\.splice\(/);
 });
 
-test('backend generic record deletion is audited soft archive with concurrency and RBAC',()=>{
-  const server=read('server.js');
-  const route=server.slice(server.indexOf("app.delete('/api/data/:collection/:id'"),server.indexOf('// SPA fallback'));
-  assert.match(route,/hasPermission/);
-  assert.match(route,/ARCHIVE_REASON_REQUIRED/);
-  assert.match(route,/row_version=row_version\+1/);
-  assert.match(route,/deleted_at=now\(\)/);
-  assert.match(route,/INSERT INTO audit_x/);
-  assert.doesNotMatch(route,/DELETE FROM/i);
+test('backend generic mutations fail closed and equipment archive remains in its domain route',()=>{
+  const server=read('server.js'),generic=read('server/generic-data.js'),equipment=read('server/equipment-routes.js');
+  for(const method of ['post','put','delete'])assert.match(server,new RegExp(`app\\.${method}\\('\\/api\\/data\\/:collection`));
+  assert.match(server,/genericData\.rejectWrite/);
+  assert.doesNotMatch(generic,/INSERT INTO|UPDATE\s+[a-z_]+|DELETE FROM/i);
+  assert.match(equipment,/ARCHIVE_REASON_REQUIRED/);
+  assert.match(equipment,/row_version=row_version\+1/);
+  assert.match(equipment,/deleted_at=now\(\)/);
+  assert.match(equipment,/INSERT INTO audit_x/);
+  assert.doesNotMatch(equipment,/DELETE FROM assets/i);
 });

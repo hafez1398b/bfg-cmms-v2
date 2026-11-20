@@ -44,9 +44,33 @@ function createMaintenanceRouter({ pool, security, requestStorageDir }) {
       } catch (error) {
         const status = error.status && error.status < 500 ? error.status : 500;
         if (status >= 500) console.error('maintenance api', error.code || 'db_error');
-        res.status(status).json({ error: status < 500 ? (error.code || 'REQUEST_FAILED') : 'MAINTENANCE_REQUEST_FAILED' });
+        const payload = { error:status < 500 ? (error.code || 'REQUEST_FAILED') : 'MAINTENANCE_REQUEST_FAILED' };
+        if (status === 403 && error.permission) payload.permission = error.permission;
+        if (error.code === 'PM_SCHEDULE_DATA_REQUIRED' && error.reason) payload.reason = error.reason;
+        res.status(status).json(payload);
       }
     };
+  }
+
+  function routeError(status, code, permission) {
+    const error = new Error(code);
+    error.status = status;
+    error.code = code;
+    if (permission) error.permission = permission;
+    return error;
+  }
+
+  function includeArchivedFrom(req) {
+    const value = req.query.includeArchived;
+    if (value === undefined || value === 'false') return false;
+    if (value === 'true') return true;
+    throw routeError(422, 'INCLUDE_ARCHIVED_INVALID');
+  }
+
+  async function requireArchivedPermission(req) {
+    if (!await security.hasPermission(req.user, 'pm.restore')) {
+      throw routeError(403, 'PERMISSION_DENIED', 'pm.restore');
+    }
   }
 
   const requestWriter = security.authorize('request.create');
@@ -163,14 +187,57 @@ function createMaintenanceRouter({ pool, security, requestStorageDir }) {
   router.post('/work-orders/:id/cancel', security.authorize('work_order.cancel'), send(async req => ({ data: await service.cancelWorkOrder(pool, req.user, req.params.id, req.body || {}) })));
   router.post('/work-orders/:id/corrections', security.authorize('work_order.correct'), send(async req => ({ data: await service.correctRecord(pool, req.user, 'work_order', req.params.id, req.body || {}) })));
 
-  router.get('/pm-plans', security.authorize('pm.view'), send(async req => ({ data: await service.listPmPlans(pool, req.query) })));
-  router.get('/pm-plans/:id', security.authorize('pm.view'), send(async req => ({ data: await service.getPmPlan(pool, req.params.id) })));
-  router.post('/pm-plans', security.authorize('pm.create'), send(async req => ({ data: await service.createPmPlan(pool, req.user, req.body || {}) })));
-  router.patch('/pm-plans/:id', security.authorize('pm.edit'), send(async req => ({ data: await service.updatePmPlan(pool, req.user, req.params.id, req.body || {}) })));
-  router.post('/pm-plans/:id/archive', security.authorize('pm.archive'), send(async req => ({ data: await service.archivePmPlan(pool, req.user, req.params.id, req.body || {}) })));
-  router.post('/pm-plans/:id/cancel', security.authorize('pm.cancel'), send(async req => ({ data: await service.cancelPmPlan(pool, req.user, req.params.id, req.body || {}) })));
-  router.post('/pm-plans/:id/generate-work-order', security.authorize('pm.generate'), send(async req => ({ data: await service.generatePmWorkOrder(pool, req.user, req.params.id, req.body || {}) })));
-  router.post('/pm-plans/:id/corrections', security.authorize('pm.correct'), send(async req => ({ data: await service.correctRecord(pool, req.user, 'pm_plan', req.params.id, req.body || {}) })));
+  router.get('/pm-plans', security.authorize('pm.view'), send(async req => {
+    const includeArchived = includeArchivedFrom(req);
+    if (includeArchived) await requireArchivedPermission(req);
+    return { data:await service.listPmPlans(pool, req.user, { assetId:req.query.assetId || null, includeArchived }) };
+  }));
+  router.get('/pm-plans/:id', security.authorize('pm.view'), send(async req => {
+    const includeArchived = includeArchivedFrom(req);
+    if (includeArchived) await requireArchivedPermission(req);
+    return { data:await service.getPmPlan(pool, req.user, req.params.id, { includeArchived }) };
+  }));
+  router.post('/pm-plans', security.authorize('pm.create'), send(async req => ({ data:await service.createPmPlan(pool, req.user, req.body || {}) })));
+  router.patch('/pm-plans/:id', security.authorize('pm.edit'), send(async req => ({ data:await service.updatePmPlan(pool, req.user, req.params.id, req.body || {}) })));
+  router.post('/pm-plans/:id/archive', security.authorize('pm.archive'), send(async req => {
+    const body = req.body || {};
+    return { data:await service.archivePmPlan(pool, req.user, req.params.id, { rowVersion:body.rowVersion, reason:body.reason }) };
+  }));
+  router.post('/pm-plans/:id/restore', security.authorize('pm.restore'), send(async req => ({
+    data:await service.restorePmPlan(pool, req.user, req.params.id, { rowVersion:(req.body || {}).rowVersion })
+  })));
+  router.post('/pm-plans/:id/cancel', security.authorize('pm.cancel'), send(async req => ({ data:await service.cancelPmPlan(pool, req.user, req.params.id, req.body || {}) })));
+  router.post('/pm-plans/:id/generate-work-order', security.authorize('pm.generate'), send(async req => ({ data:await service.generatePmWorkOrder(pool, req.user, req.params.id, req.body || {}) })));
+  router.post('/pm-plans/:id/corrections', security.authorize('pm.correct'), send(async req => ({ data:await service.correctRecord(pool, req.user, 'pm_plan', req.params.id, req.body || {}) })));
+
+  router.get('/pm-plans/:id/due', security.authorize('pm.schedule'), send(async req => {
+    const includeArchived = includeArchivedFrom(req);
+    if (includeArchived) await requireArchivedPermission(req);
+    return { data:await service.getPmDue(pool, req.user, req.params.id,
+      { evaluatedAt:req.query.evaluatedAt }, { includeArchived }) };
+  }));
+  router.get('/pm-plans/:id/occurrences', security.authorize('pm.view'), send(async req => {
+    const includeArchived = includeArchivedFrom(req);
+    if (includeArchived) await requireArchivedPermission(req);
+    return { data:await service.listPmOccurrences(pool, req.user, req.params.id, { includeArchived }) };
+  }));
+  router.get('/pm-plans/:id/occurrences/:occurrenceId', security.authorize('pm.view'), send(async req => {
+    const includeArchived = includeArchivedFrom(req);
+    if (includeArchived) await requireArchivedPermission(req);
+    return { data:await service.getPmOccurrence(pool, req.user, req.params.id, req.params.occurrenceId, { includeArchived }) };
+  }));
+  router.post('/pm-plans/:id/occurrences', security.authorize('pm.schedule'), send(async req => {
+    const body = req.body || {};
+    return { data:await service.createPmOccurrence(pool, req.user, req.params.id, {
+      rowVersion:body.rowVersion, evaluatedAt:body.evaluatedAt, periodKey:body.periodKey
+    }) };
+  }));
+  router.patch('/pm-plans/:id/occurrences/:occurrenceId/due-status', security.authorize('pm.schedule'), send(async req => {
+    const body = req.body || {};
+    return { data:await service.updatePmOccurrenceDueStatus(pool, req.user, req.params.id, req.params.occurrenceId, {
+      rowVersion:body.rowVersion, evaluatedAt:body.evaluatedAt
+    }) };
+  }));
 
   router.get('/maintenance/equipment/:id/links', security.authorize('equipment.view'), send(async req => ({ data: await service.equipmentLinks(pool, req.params.id) })));
   return router;
