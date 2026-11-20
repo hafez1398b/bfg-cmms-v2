@@ -51,13 +51,14 @@ test('route-level RBAC blocks technician mutation before database access', async
 
 test('detail route derives passport sections and an ancestry breadcrumb', async () => {
   const pool = { query: async (sql, values) => {
-    assert.deepEqual(values, ['eq-1']);
-    if (/WITH RECURSIVE ancestry/.test(sql)) return { rows: [{ id: 'factory-1', code: 'B1', name: 'بسپار ۱', type: 'site', nodeKind: 'factory', depth: 1 }, { id: 'eq-1', code: 'EQ-1', name: 'Pump', type: 'eq', nodeKind: 'equipment', depth: 0 }] };
+    assert.deepEqual(values,['eq-1','tech','test-user']);
+    assert.match(sql,/WITH RECURSIVE ancestry/);
+    assert.match(sql,/FROM user_scopes/);
     assert.match(sql, /pm_plans/);
     assert.match(sql, /asset_spare_parts/);
     assert.match(sql, /maintenance_history/);
     assert.match(sql, /lower\(a\.code\)=lower\(\$1\)/);
-    return { rows: [{ id: 'eq-1', code: 'EQ-1', ext: {}, pm_plans: [], work_orders: [], maintenance_history: [], requests: [], spare_parts: [], children: [], documents: [] }] };
+    return { rows: [{ id: 'eq-1', code: 'EQ-1', path:[{id:'factory-1'},{id:'eq-1'}], ext: {}, pm_plans: [], work_orders: [], maintenance_history: [], requests: [], spare_parts: [], children: [], documents: [] }] };
   }};
   await withApi(pool, 'tech', async base => {
     const response = await fetch(`${base}/eq-1`);

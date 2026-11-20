@@ -232,3 +232,4 @@ td.eqv2-structure-actions .eqv2-structure-row-actions{display:inline-flex;align-
   .eqv2-qr-frame{width:200px;height:200px}
   .eqv2-passport-sheet{max-width:100%}
 }
+bfg-structure-review{display:grid;gap:.45rem;max-width:100%;min-width:0}bfg-structure-review textarea{width:100%;min-height:4rem}bfg-structure-review article{padding:.5rem;border-block-end:1px solid var(--border-2);overflow-wrap:anywhere}bfg-structure-review small{display:block}bfg-structure-review input,bfg-structure-review select{max-width:100%}

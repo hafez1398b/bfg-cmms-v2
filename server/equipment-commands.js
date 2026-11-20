@@ -47,7 +47,7 @@ function profileExtension(proposed = {}) {
 }
 
 async function createEquipment(client, user, proposed) {
-  if (['subsystem', 'main-component', 'sub-component'].includes(String(proposed && proposed.nodeKind || ''))) {
+  if (['sub-equipment', 'subsystem', 'main-component', 'sub-component'].includes(String(proposed && proposed.nodeKind || ''))) {
     throw coded(422, 'STRUCTURE_ACTION_REQUIRED');
   }
   const errors = validateCreate(proposed);
@@ -57,6 +57,10 @@ async function createEquipment(client, user, proposed) {
     ? 'eq'
     : ['company', 'factory', 'factories'].includes(kind) ? 'site' : 'unit';
   const placement = await resolvePlacement(client, proposed);
+  if (placement.parentId) {
+    const parent = await client.query('SELECT type FROM assets WHERE id=$1 AND deleted_at IS NULL', [placement.parentId]);
+    if (parent.rows[0]?.type === 'eq') throw coded(422, 'EQUIPMENT_TREE_RETIRED');
+  }
   const ext = profileExtension(proposed);
   ext.nodeKind = kind;
   const { installDate, legacyInstall } = installValues(proposed);
@@ -191,21 +195,7 @@ async function applyControlledAction(client, user, draft, options = {}) {
   if (draft.actionType === 'equipment.create') return createEquipment(client, user, draft.proposed);
   if (draft.actionType === 'equipment.complete') return completeEquipment(client, user, draft.targetId, draft.proposed, draft.recordVersion);
   if (draft.actionType === 'equipment.retrospective-history') return appendRetrospectiveHistory(client, user, draft.targetId, draft.proposed, draft.recordVersion);
-  if (draft.actionType === 'equipment.structure.add') {
-    return structure.createStructureNode({
-      client,
-      pool: options.pool,
-      security: options.security,
-      user,
-      rootEquipmentId: draft.proposed.rootEquipmentId,
-      permission: 'equipment.structure.approve_ai',
-      input: {
-        ...draft.proposed,
-        parentId: draft.proposed.parentId || draft.targetId,
-        parentRowVersion: draft.recordVersion
-      }
-    });
-  }
+  if (draft.actionType === 'equipment.structure.add') throw coded(409, 'STRUCTURE_REVIEW_REQUIRED');
   if (draft.actionType === 'equipment.spares.link') {
     // Approval re-enters the same Domain API service as a manual link: permission, scope,
     // target-kind rule, real-item check, row_version, audit and realtime are all re-applied.

@@ -9,11 +9,12 @@ const { createEquipment, completeEquipment } = require('./equipment-commands');
 const { createEquipmentIntakeRouter } = require('./equipment-intake-routes');
 const { createSeleneActionRouter } = require('./selene-action-routes');
 const structure = require('./equipment-structure');
+const { review } = require('./structure-review');
 const suggestions = require('./structure-suggestions');
 const spares = require('./equipment-spares');
 const sparesSuggestions = require('./spares-suggestions');
 
-function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry, security }) {
+function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry, security, requestStorageDir }) {
   const router = express.Router();
   router.use(authenticateToken);
   const emit = payload => io?.emit('equipment-changed', payload);
@@ -293,16 +294,16 @@ function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry, securi
     } catch (error) { next(error); }
   });
 
-  router.post('/:id/structure/suggestions', async (req, res, next) => {
-    try {
-      const rootEquipmentId = await resolveStructureRootId(req, res);
-      if (!rootEquipmentId) return;
-      const data = await suggestions.suggestStructures({
-        pool, registry: aiRegistry, security, user: req.user, rootEquipmentId
-      });
-      res.status(201).json({ data, source: 'postgresql' });
-    } catch (error) { next(error); }
-  });
+  for (const stage of ['analyze','confirm']) {
+    router.post(`/:id/structure/review/${stage}`, async (req,res,next) => {
+      try {
+        const data = await review({pool,user:req.user,id:req.params.id,input:req.body||{},execute:stage==='confirm',requestStorageDir});
+        res.json({data});
+      } catch (error) { next(error); }
+    });
+  }
+
+  router.post('/:id/structure/suggestions', (_req,res) => res.status(410).json({error:'STRUCTURE_REVIEW_REQUIRED'}));
 
   // Mission D4 / Phase 3: critical spare parts of the dossier. Links always reference real
   // inventory items; stock and last purchase are read-only ledger facts. Writes are
@@ -380,7 +381,7 @@ function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry, securi
     } catch (error) { next(error); }
   });
 
-  router.get('/:id', requireEquipment('view'), async (req, res, next) => {
+  router.get('/:id', async (req, res, next) => {
     try {
       const { rows } = await pool.query(
         `SELECT a.*,c.name category_name,COALESCE(c.factory_asset_id,ancestry_factory.id) factory_id,f.name factory_name,
@@ -423,6 +424,12 @@ function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry, securi
             ORDER BY execution.started_at DESC)
             FROM checklist_executions execution LEFT JOIN checklist_templates template ON template.id=execution.template_id
             WHERE execution.equipment_id=a.id),'[]'::jsonb) checklist_executions,
+          (WITH RECURSIVE ancestry AS (
+             SELECT a.id,a.parent,a.code,a.name,a.type,a.ext,0 AS depth
+             UNION ALL SELECT p.id,p.parent,p.code,p.name,p.type,p.ext,ancestry.depth+1
+               FROM assets p JOIN ancestry ON p.id=ancestry.parent WHERE ancestry.depth<64
+           ) SELECT jsonb_agg(jsonb_build_object('id',id,'parent',parent,'code',code,'name',name,
+             'type',type,'nodeKind',ext->>'nodeKind','depth',depth) ORDER BY depth DESC) FROM ancestry) AS path,
           COALESCE(a.ext->'documents','[]'::jsonb) documents,
           COALESCE(a.ext->'instructions','[]'::jsonb) instructions,a.history movements
          FROM assets a
@@ -442,22 +449,15 @@ function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry, securi
          WHERE (a.id=$1 OR lower(a.code)=lower($1)) AND a.deleted_at IS NULL
            AND COALESCE(a.ext->>'nodeKind','equipment') NOT IN ('sub-equipment','subsystem','main-component','sub-component')
            AND NOT EXISTS(SELECT 1 FROM assets structural_parent WHERE structural_parent.id=a.parent
-             AND structural_parent.type='eq' AND structural_parent.deleted_at IS NULL)`,
-        [req.params.id]
+             AND structural_parent.type='eq' AND structural_parent.deleted_at IS NULL) AND a.type='eq'
+           AND EXISTS (SELECT 1 FROM role_permissions rp WHERE rp.role=$2 AND rp.granted AND rp.permission IN ('*','equipment.view'))
+           AND ($2='admin' OR EXISTS (SELECT 1 FROM user_scopes scope WHERE scope.user_id=$3 AND
+             (scope.scope_type='company' OR (scope.scope_type='equipment' AND scope.scope_id=a.id)
+              OR (scope.scope_type='factory' AND scope.scope_id=COALESCE(c.factory_asset_id,ancestry_factory.id)))))`,
+        [req.params.id, req.user.role, req.user.id]
       );
       if (!rows[0]) return res.sendStatus(404);
       const data = rows[0];
-      const pathResult = await pool.query(
-        `WITH RECURSIVE ancestry AS (
-           SELECT id,parent,code,name,type,ext,0 depth FROM assets WHERE id=$1
-           UNION ALL
-           SELECT parent_asset.id,parent_asset.parent,parent_asset.code,parent_asset.name,parent_asset.type,parent_asset.ext,ancestry.depth+1
-           FROM assets parent_asset JOIN ancestry ON ancestry.parent=parent_asset.id
-           WHERE ancestry.depth<64
-         ) SELECT id,parent,code,name,type,ext->>'nodeKind' "nodeKind",depth
-           FROM ancestry ORDER BY depth DESC`, [data.id]
-      );
-      data.path = pathResult.rows;
       data.risks = data.ext?.risks || [];
       data.consumed_parts = [];
       data.cost_entries = [];
@@ -500,6 +500,7 @@ function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry, securi
   router.post('/', async (req, res, next) => {
     const body = req.body || {};
     const structureRequest = structure.isStructureKind(body.nodeKind)
+      || body.nodeKind === 'sub-equipment'
       || Object.prototype.hasOwnProperty.call(body, 'structureKind')
       || Object.prototype.hasOwnProperty.call(body, 'rootEquipmentId')
       || Object.prototype.hasOwnProperty.call(body, 'equipmentId')

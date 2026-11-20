@@ -23,6 +23,13 @@ function createClient(asset) {
   };
 }
 
+test('retired sub-equipment and nested equipment writes cannot create a parallel equipment tree', async () => {
+  const unused={query:async()=>{throw new Error('database must not be reached');}};
+  await assert.rejects(()=>createEquipment(unused,user,{nodeKind:'sub-equipment',name:'old level',code:'OLD'}), error=>error.code==='STRUCTURE_ACTION_REQUIRED');
+  const nested={query:async sql=>/SELECT (?:id,\s*parent,\s*type,\s*ext|type) FROM assets/.test(sql)?{rows:[{id:'parent',type:'eq'}]}:{rows:[]}};
+  await assert.rejects(()=>createEquipment(nested,user,{nodeKind:'equipment',name:'nested',code:'NEST',parentId:'parent'}), error=>error.code==='EQUIPMENT_TREE_RETIRED');
+});
+
 test('manual equipment creation stores profile fields and Gregorian installation date in PostgreSQL', async () => {
   const client = createClient({});
   const result = await createEquipment(client, user, {

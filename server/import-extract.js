@@ -27,6 +27,8 @@ function unzip(buffer) {
   const count = buffer.readUInt16LE(eocd + 10);
   let cursor = buffer.readUInt32LE(eocd + 16);
   const files = [];
+  let remaining = 8 * 1024 * 1024;
+  if (count > 2048) throw new Error('XLSX_ENTRY_LIMIT');
   for (let index = 0; index < count && cursor + 46 <= buffer.length; index += 1) {
     if (buffer.readUInt32LE(cursor) !== 0x02014b50) break;
     const method = buffer.readUInt16LE(cursor + 10);
@@ -43,8 +45,10 @@ function unzip(buffer) {
       const compressed = buffer.slice(dataStart, dataStart + compressedSize);
       let data = compressed;
       if (method === 8) {
-        try { data = zlib.inflateRawSync(compressed); } catch (_) { data = Buffer.alloc(0); }
+        data = zlib.inflateRawSync(compressed, { maxOutputLength: Math.max(1, remaining) });
       } else if (method !== 0) data = Buffer.alloc(0);
+      remaining -= data.length;
+      if (remaining < 0) throw new Error('XLSX_SIZE_LIMIT');
       files.push({ name, data });
     }
     cursor += 46 + nameLength + extraLength + commentLength;
@@ -62,6 +66,13 @@ function sheetRows(xml, strings) {
   for (const row of String(xml || '').match(/<row\b[\s\S]*?<\/row>/g) || []) {
     const cells = [];
     for (const cell of row.match(/<c\b[\s\S]*?<\/c>|<c\b[^>]*\/>/g) || []) {
+      const column = cell.match(/\br="([A-Z]+)\d+"/);
+      if (column) {
+        const number = [...column[1]].reduce((v,c)=>v*26+c.charCodeAt(0)-64,0);
+        if (number>16) break;
+        while (cells.length<number-1) cells.push('');
+      }
+      if (/<f\b/.test(cell)) { cells.push(''); continue; }
       const type = (cell.match(/\bt="([^"]+)"/) || [])[1] || '';
       const value = (cell.match(/<v>([\s\S]*?)<\/v>/) || [])[1];
       const inline = [...cell.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)].map(match => decodeXml(match[1])).join('');
