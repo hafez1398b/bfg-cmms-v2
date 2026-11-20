@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>سامانه جامع نت — بسپار فوم غرب | CMMS/EAM</title>
+<script type="importmap">{"imports":{"three":"/vendor/three/three.module.js","three/addons/":"/vendor/three/addons/"}}</script>
 <style>
 @import url('https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css');
 /* ================================================================
@@ -1797,7 +1798,7 @@ async function aiAsk(){
  try{
   const result=await AIBackend.chatWithData({queryType,question,equipmentId});
   const evidence=(result.evidence||[]).map(item=>esc(`${item.sourceType}: ${item.sourceIds?.length?item.sourceIds.join(', '):'بدون Source ID'} · query ${item.queryId}`)).join('<br>')||'بدون شواهد';
-  box.innerHTML=`<b>${esc(result.answer||'N/A — داده کافی ثبت نشده است')}</b><div class="muted" style="margin-top:8px">وضعیت: ${esc(result.status||'unknown')} · اطمینان: ${result.confidence==null?'N/A':Math.round(result.confidence*100)+'٪'} · Provider/Model: ${esc(result.provider||'N/A')} / ${esc(result.model||'N/A')}</div><div class="muted" style="margin-top:6px">منشأ: ${esc(result.provenance?.source||'PostgreSQL')} · ${esc(result.provenance?.queryId||'بدون پرس‌وجوی داده')}</div><div style="margin-top:6px;font-size:11px">${evidence}</div>`;
+  box.innerHTML=`<b>${esc(result.answer||'N/A — داده کافی ثبت نشده است')}</b><div class="muted" style="margin-top:8px">وضعیت: ${esc(result.status||'unknown')} · اطمینان: ${result.confidence==null?'N/A':Math.round(result.confidence*100)+'٪'} · Provider/Model: ${esc(result.provider||'N/A')} / ${esc(result.model||'N/A')}</div><div class="muted" style="margin-top:6px">منشأ: ${esc(result.provenance?.source||'PostgreSQL')} · نوع پرس‌وجو: ${esc(result.queryKind||result.provenance?.queryKind||result.provenance?.queryId||'بدون پرس‌وجوی داده')} · Source IDs: ${esc((result.sourceIds||[]).join(', ')||'بدون شناسه')}</div><div style="margin-top:6px;font-size:11px">${evidence}</div>`;
  }catch(error){box.textContent=error.payload?.error==='EQUIPMENT_REQUIRED'?'ابتدا تجهیز را انتخاب کنید':('پرس‌وجو انجام نشد: '+(error.payload?.error||error.message));}
 }
 
@@ -17023,11 +17024,13 @@ setTimeout(()=>{try{const t=runQA();console.log('BFG CMMS v'+BFG_VERSION_40+' �
 <script src="/data/besepar1-data.js?v=20261004.1"></script>
 <script src="/data/equipment-demo-cleanup.js?v=20261004.1"></script>
 <link rel="stylesheet" href="/equipment-v2/equipment-v2.css?v=20261105.1">
+<link rel="stylesheet" href="/equipment-v2/equipment-dossier.css?v=20261120.1">
 <link rel="stylesheet" href="/equipment-v2/selene-chat.css?v=20261004.9">
 <link rel="stylesheet" href="/design-system/enterprise-compact.css?v=20260930.2">
 <link rel="stylesheet" href="/platform-v2/step-wizard.css?v=20261006.1">
 <link rel="stylesheet" href="/platform-v2/maintenance-pm-ui.css?v=20261028.1">
 <script src="/equipment-v2/equipment-adapter.js?v=20261105.1"></script>
+<script src="/equipment-v2/equipment-dossier.js?v=20261120.1"></script>
 <script src="/equipment-v2/structure-drawer-controller.js?v=20261012.1"></script>
 <script src="/equipment-v2/equipment-identity.js?v=20261105.1"></script>
 <script src="/equipment-v2/structure-review.js"></script>

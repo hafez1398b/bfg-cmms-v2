@@ -12,7 +12,15 @@ test('global PostgreSQL equipment count works without an equipment id and has fi
  const mock=mockPool(async()=>({rows:[{value:7,source_ids:['eq-1','eq-2']}]}));
  const result=await chatWithData({pool:mock.pool,user:{id:'u1',role:'planner'},input:{queryType:'global',question:'فقط براساس PostgreSQL بگو چند تجهیز ثبت شده است'},hasPermission:permissions});
  assert.equal(result.status,'answered');assert.match(result.answer,/7/);assert.equal(result.provider,'PostgreSQL');assert.deepEqual(result.evidence[0].sourceIds,['eq-1','eq-2']);
+ assert.equal(result.queryKind,'equipment.root_count.v1');assert.deepEqual(result.sourceIds,['eq-1','eq-2']);
  assert.equal(mock.calls.length,1);assert.doesNotMatch(mock.calls[0].sql,/\b(assetId|equipmentId)\b/i);assert.equal(mock.calls[0].params[1],'u1');
+});
+
+test('equipment count explicitly reports one authorized root and excludes structural children',async()=>{
+ const mock=mockPool(async()=>({rows:[{value:1,source_ids:['b1-root']}]}));
+ const result=await chatWithData({pool:mock.pool,user:{id:'u1',role:'planner'},input:{queryType:'global',question:'تعداد تجهیزات چقدر است؟'},hasPermission:permissions});
+ assert.match(result.answer,/واقعاً فقط یک تجهیز ریشه/);assert.deepEqual(result.sourceIds,['b1-root']);
+ assert.ok(mock.calls[0].sql.includes("NOT IN ('sub-equipment','subsystem','main-component','sub-component'"));assert.ok(mock.calls[0].sql.includes('NOT EXISTS (SELECT 1 FROM assets structural_parent'));
 });
 
 test('equipment-scoped request without selection fails before database access',async()=>{

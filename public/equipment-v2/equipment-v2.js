@@ -201,8 +201,8 @@
       return`<section class="eqv2-section-heading"><div><span>محتوای موجود در پرونده</span><h2>دستورالعمل‌ها</h2><p>فقط دستورالعمل‌های واقعاً متصل به تجهیز نمایش داده می‌شوند.</p></div></section>${rowsList(instructions,item=>`<article><div><b>${escText(item.title||item.name||'دستورالعمل')}</b><span>${escText(item.code||item.version||'')}</span></div><p>${escText(item.summary||item.description||item.status||'')}</p></article>`,'دستورالعمل متصل از Backend ثبت نشده است.')}`;
     }
     if(E.tab==='documents'){
-      const docs=Array.isArray(a.documents)?a.documents:[];
-      return`<section class="eqv2-section-heading"><div><span>اسناد متصل به همین تجهیز</span><h2>اسناد و فایل‌ها</h2><p>فایل خام سلن ذخیره نمی‌شود؛ فقط پیوندهای واقعیِ ثبت‌شده نمایش داده می‌شوند.</p></div></section>${rowsList(docs,document=>`<article><div><b>${escText(document.title||document.name||'سند')}</b><span>${escText(document.code||document.fmt||document.format||'')}</span></div><p>${escText(document.status||document.version||'')}</p></article>`,'سند متصل از Backend ثبت نشده است.')}`;
+      const caps=E.structure?.capabilities||{};
+      return`<section class="eqv2-section-heading"><div><span>اسناد متصل به همین تجهیز</span><h2>پرونده منبع و اسناد</h2><p>فهرست زیر از Backend خوانده می‌شود؛ اسناد محلی یا نامطمئن منبع تأییدشده تلقی نمی‌شوند.</p></div></section>${equipmentDossierPanel(a.id,caps)}`;
     }
     if(E.tab==='transactions'){
       const requests=a.requests||[],parts=a.consumed_parts||[],costs=a.cost_entries||[],openOrders=workOrders.filter(item=>!['closed','cancel','done','completed'].includes(item.status));
@@ -712,6 +712,9 @@
     if(!caps.suggest&&!caps.approveAi)return'';
     return `<bfg-structure-review class="eqv2-subsection" data-id="${escText(st.rootId)}" ${caps.approveAi?'can-confirm':''}></bfg-structure-review>`;
   }
+  function equipmentDossierPanel(equipmentId,caps={}){
+    return `<bfg-equipment-dossier data-equipment-id="${escText(equipmentId)}" ${caps.suggest?'can-suggest':''} ${caps.approveAi?'can-approve':''}></bfg-equipment-dossier>`;
+  }
   function structureSection(a){
     const st=E.structure;
     const structureId=E.detailId||a.id;
@@ -759,7 +762,7 @@
     </section>`:'';
     const notices=structureNotices(st,caps);
     const rootNotes=notices.length?`<div class="eqv2-wizard-note">${notices.map(escText).join(' ')}</div>`:'';
-    return`${heading}${rootNotes}${structureCrumb()}${focusCard}
+    return`${heading}${rootNotes}${structureCrumb()}${focusCard}${equipmentDossierPanel(st.rootId,caps)}
       <div class="eqv2-structure-level"><b>سطح جاری: ${escText(STRUCTURE_KIND_LABEL[levelNode.nodeKind]||levelNode.nodeKind||'')} — ${escText(levelNode.name||levelNode.code||'')}</b>
       <span class="muted">${faText((levelNode.children||[]).length)} بخش در این سطح</span></div>
       ${visibleChildren.length?structureTable(visibleChildren,caps,!!focusWarningNode):(String(E.structureQuery||'').trim()?empty('با این نام یا کد، جزئی ساختاری پیدا نشد.'):(E.structureArchived?empty('جزء بایگانی‌شده‌ای ثبت نشده است.'):structureEmptyState(caps)))}

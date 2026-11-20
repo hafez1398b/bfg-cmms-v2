@@ -133,6 +133,7 @@ function extractPdfText(buffer) {
   const latin = buffer.toString('latin1');
   const chunks = [];
   let index = 0;
+  let remainingOutput = 1024 * 1024;
   while (index < latin.length) {
     const found = latin.indexOf('stream', index);
     if (found < 0) break;
@@ -143,13 +144,16 @@ function extractPdfText(buffer) {
     const end = latin.indexOf('endstream', start);
     if (end < 0) break;
     let chunk = Buffer.from(latin.slice(start, end), 'latin1');
+    if (remainingOutput <= 0) break;
     if (/FlateDecode/.test(dict)) {
-      try { chunk = zlib.inflateSync(chunk); }
+      try { chunk = zlib.inflateSync(chunk, { maxOutputLength: remainingOutput }); }
       catch (_) {
-        try { chunk = zlib.inflateRawSync(chunk); }
+        try { chunk = zlib.inflateRawSync(chunk, { maxOutputLength: remainingOutput }); }
         catch (_) { chunk = Buffer.alloc(0); }
       }
     }
+    if (chunk.length > remainingOutput) chunk = chunk.subarray(0, remainingOutput);
+    remainingOutput -= chunk.length;
     chunks.push(chunk.toString('latin1'));
     index = end + 9;
   }

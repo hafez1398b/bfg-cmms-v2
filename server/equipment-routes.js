@@ -13,6 +13,7 @@ const { review } = require('./structure-review');
 const suggestions = require('./structure-suggestions');
 const spares = require('./equipment-spares');
 const sparesSuggestions = require('./spares-suggestions');
+const dossier = require('./equipment-dossier');
 
 function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry, security, requestStorageDir }) {
   const router = express.Router();
@@ -303,6 +304,46 @@ function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry, securi
     });
   }
 
+  router.get('/:id/source-documents', async(req,res,next)=>{
+    try{res.json({data:await dossier.listDocuments({pool,user:req.user,security,equipmentId:req.params.id}),source:'postgresql'});}
+    catch(error){next(error);}
+  });
+  router.post('/:id/source-documents', async(req,res,next)=>{
+    try{const data=await dossier.uploadDocument({pool,user:req.user,security,equipmentId:req.params.id,input:req.body||{}});res.status(201).json({data,committed:true,source:'postgresql'});}
+    catch(error){next(error);}
+  });
+  router.post('/:id/source-documents/:documentId/review', async(req,res,next)=>{
+    try{const data=await dossier.reviewDocument({pool,user:req.user,security,equipmentId:req.params.id,documentId:req.params.documentId,input:req.body||{}});res.json({data,committed:true,source:'postgresql'});}
+    catch(error){next(error);}
+  });
+  router.get('/:id/source-documents/:documentId/content', async(req,res,next)=>{
+    try{const file=await dossier.getDocumentBytes({pool,user:req.user,security,equipmentId:req.params.id,documentId:req.params.documentId});
+      const safeInline=file.row.documentType==='image'&&file.row.approvalStatus==='approved';
+      res.setHeader('Content-Type',safeInline?file.mimeType:'application/octet-stream');res.setHeader('Content-Disposition',`${safeInline?'inline':'attachment'}; filename*=UTF-8''${encodeURIComponent(file.filename)}`);res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('X-Source-SHA256',file.row.sha256);res.send(file.bytes);}
+    catch(error){next(error);}
+  });
+  router.post('/:id/structure/dossier/analyze', async(req,res,next)=>{
+    try{const [technical,proposals]=await Promise.all([
+      dossier.analyzeApprovedDocuments({pool,user:req.user,security,equipmentId:req.params.id}),
+      dossier.analyzeStructureStage({pool,user:req.user,security,equipmentId:req.params.id,parentId:req.body?.parentId})
+    ]);res.json({data:{technical,proposals},source:'postgresql',readOnly:true});}
+    catch(error){next(error);}
+  });
+  router.post('/:id/structure/dossier/approve', async(req,res,next)=>{
+    try{const data=await dossier.approveStructureProposal({pool,user:req.user,security,equipmentId:req.params.id,input:req.body||{}});res.status(201).json({data,committed:true,source:'postgresql'});}
+    catch(error){next(error);}
+  });
+  router.get('/:id/structure/scene', async(req,res,next)=>{
+    try{if(!(await structurePermission(req,res,'equipment.structure.view')))return;
+      const rootEquipmentId=await resolveStructureRootId(req,res);if(!rootEquipmentId)return;
+      const data=await structure.getStructure({pool,security,user:req.user,rootEquipmentId,includeArchived:false,depth:3});
+      const scene=dossier.buildSceneGraph(data);
+      const models=await dossier.listDocuments({pool,user:req.user,security,equipmentId:rootEquipmentId});
+      const model=models.filter(file=>file.documentType==='engineering_model'&&file.approvalStatus==='approved').sort((a,b)=>String(a.revision||'').localeCompare(String(b.revision||'')));
+      if(model[0])scene.engineering={available:true,documentId:model[0].id,revision:model[0].revision,sha256:model[0].sha256,source:'approved_equipment_document',contentUrl:`/api/equipment/${encodeURIComponent(rootEquipmentId)}/source-documents/${encodeURIComponent(model[0].id)}/content`};
+      res.json({data:scene,source:'postgresql'});
+    }catch(error){next(error);}
+  });
   router.post('/:id/structure/suggestions', (_req,res) => res.status(410).json({error:'STRUCTURE_REVIEW_REQUIRED'}));
 
   // Mission D4 / Phase 3: critical spare parts of the dossier. Links always reference real

@@ -4,7 +4,7 @@ const { requireEquipmentScope } = require('./ai-service');
 
 const NO_DATA_ANSWER = 'N/A — داده کافی ثبت نشده است';
 const QUERY_ID = Object.freeze({
-  equipment_count: 'portfolio.equipment.count.v1',
+  equipment_count: 'equipment.root_count.v1',
   open_work_orders: 'portfolio.work_orders.open_count.v1',
   overdue_pm: 'portfolio.pm.overdue_count.v1',
   low_stock: 'portfolio.inventory.low_stock_count.v1'
@@ -52,6 +52,11 @@ function authorizedEquipmentCte() {
       ) SELECT id FROM ancestors WHERE lower(COALESCE(node_kind,''))='factory' ORDER BY depth LIMIT 1
     ) factory_ancestor ON true
     WHERE a.type='eq' AND a.deleted_at IS NULL
+      AND COALESCE(NULLIF(a.ext->>'structureKind',''),NULLIF(a.ext->>'nodeKind',''),'equipment')
+        NOT IN ('sub-equipment','subsystem','main-component','sub-component','sub','sys','panel')
+      AND NOT EXISTS (SELECT 1 FROM assets structural_parent WHERE structural_parent.id=a.parent
+        AND structural_parent.type='eq' AND structural_parent.deleted_at IS NULL)
+      AND COALESCE(a.cls,'')<>'زیرتجهیز'
       AND ($1='admin' OR EXISTS (
         SELECT 1 FROM user_scopes s WHERE s.user_id=$2 AND (
           s.scope_type='company' OR (s.scope_type='equipment' AND s.scope_id=a.id)
@@ -111,10 +116,14 @@ function resultEnvelope({ answer, metric, value, sourceIds = [], scope, status, 
       : metric === 'overdue_pm' ? 'pm_occurrence'
         : metric === 'low_stock' ? 'inventory_item' : 'portfolio_metric';
   const hasData = Number(value) > 0;
+  const queryKind = QUERY_ID[metric] || 'portfolio.data_status.v1';
+  const evidenceIds = (sourceIds || []).slice(0, 50);
   return {
     answer,
-    evidence: [{ sourceType, sourceIds: (sourceIds || []).slice(0, 50), observedCount: Number(value) || 0, queryId: QUERY_ID[metric] || 'portfolio.data_status.v1' }],
-    provenance: { source: 'PostgreSQL', queryId: QUERY_ID[metric] || 'portfolio.data_status.v1', scope, readOnly: true, note: note || 'پرس‌وجوی ثابت و ازپیش‌تعریف‌شده؛ SQL از مدل دریافت یا اجرا نمی‌شود.' },
+    queryKind,
+    sourceIds: evidenceIds,
+    evidence: [{ sourceType, sourceIds: evidenceIds, observedCount: Number(value) || 0, queryId: queryKind }],
+    provenance: { source: 'PostgreSQL', queryId: queryKind, queryKind, scope, readOnly: true, note: note || 'پرس‌وجوی ثابت و ازپیش‌تعریف‌شده؛ SQL از مدل دریافت یا اجرا نمی‌شود.' },
     confidence: hasData ? 1 : null,
     provider: 'PostgreSQL',
     model: 'deterministic-query-catalog-v1',
@@ -138,7 +147,9 @@ async function runGlobalMetric({ pool, user, metric }) {
     });
   }
   const labels = {
-    equipment_count: `در PostgreSQL تعداد ${value} تجهیز مجاز ثبت شده است.`,
+    equipment_count: value === 1
+      ? 'در PostgreSQL واقعاً فقط یک تجهیز ریشه در Scope مجاز کاربر ثبت شده است.'
+      : `در PostgreSQL تعداد ${value} تجهیز ریشه در Scope مجاز کاربر ثبت شده است.`,
     open_work_orders: `تعداد دستورکارهای باز در Scope مجاز: ${value}.`,
     overdue_pm: `تعداد PMهای سررسیدشده و تأییدشده در Scope مجاز: ${value}.`,
     low_stock: `تعداد اقلام زیر نقطه سفارش در انبارهای مجاز: ${value}.`

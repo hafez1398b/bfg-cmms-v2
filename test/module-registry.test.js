@@ -423,9 +423,15 @@ test('migration failures log only the PostgreSQL code and filename and keep the 
 
 test('numbered migrations are idempotent and the fresh schema includes the registry', () => {
   const files = updates.listMigrationFiles(path.join(root, 'migrations'));
-  assert.deepEqual(files.map(file => file.version), ['002', '003', '004', '005', '006', '007', '008', '009', '010', '011', '012', '013', '014', '015', '016', '017', '018', '019', '020']);
-  assert.equal(files.at(-1).filename, '020_structure_review.sql');
-  assert.equal(files.at(-1).version, '020');
+  assert.deepEqual(files.map(file => file.version), ['002', '003', '004', '005', '006', '007', '008', '009', '010', '011', '012', '013', '014', '015', '016', '017', '018', '019', '020', '021']);
+  assert.equal(files.at(-1).filename, '021_equipment_source_documents.sql');
+  assert.equal(files.at(-1).version, '021');
+  const dossierMigration = read('migrations/021_equipment_source_documents.sql');
+  assert.match(dossierMigration, /CREATE TABLE IF NOT EXISTS equipment_source_documents/);
+  assert.match(dossierMigration, /UNIQUE\(equipment_id, sha256\)/);
+  assert.match(dossierMigration, /row_version BIGINT NOT NULL DEFAULT 1/);
+  assert.doesNotMatch(dossierMigration, /^\s*(DROP|TRUNCATE|DELETE)\b/im);
+  assert.match(read('schema.sql'), /CREATE TABLE IF NOT EXISTS equipment_source_documents/);
   // Mission D4 / Phase 3: spare-part links gain lifecycle columns and specialized permissions.
   // The migration stays additive, re-runnable and free of any destructive statement.
   const sparesMigration = read('migrations/019_equipment_spares_lifecycle.sql');
