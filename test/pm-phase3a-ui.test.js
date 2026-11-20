@@ -141,13 +141,20 @@ test('generate requires its permission and sends explicit server request only on
 test('Due is a canonical read-only backend response formatted through jDate', async () => {
   const plan={id:'plan-due',title:'PM',rowVersion:2,assetId:'asset-1',intervalDays:30,scheduleBasis:'calendar'};
   const { ui, requests }=createUi({plans:[plan],api:async url=>{
-    if(url.endsWith('/due?evaluatedAt='+encodeURIComponent(new Date().toISOString()))) return {data:{nextDueAt:'2026-10-28T00:00:00.000Z',dueStatus:'due',reason:null}};
+    if(url.startsWith('/api/pm-plans/plan-due/due?')){
+      const evaluatedAt=new URL(url,'http://test.local').searchParams.get('evaluatedAt');
+      assert.ok(evaluatedAt,'Due query must carry evaluatedAt');
+      assert.equal(new Date(evaluatedAt).toISOString(),evaluatedAt,'evaluatedAt must be canonical UTC ISO time');
+      return {data:{nextDueAt:'2026-10-28T00:00:00.000Z',dueStatus:'due',reason:null}};
+    }
     if(url.endsWith('/occurrences')) return {data:[{id:'occ-1',pmPlanId:'plan-due',periodKey:'calendar:2026-10-28',status:'due',dueAt:'2026-10-28T00:00:00Z',rowVersion:1}]};
     return {data:plan};
   }});
   const result=await ui.loadDetails(plan.id);
   assert.equal(requests[0].url,'/api/pm-plans/plan-due');
-  assert.match(requests[1].url,/\/due\?evaluatedAt=/);
+  assert.match(requests[1].url,/^\/api\/pm-plans\/plan-due\/due\?evaluatedAt=/);
+  const evaluatedAt=new URL(requests[1].url,'http://test.local').searchParams.get('evaluatedAt');
+  assert.equal(new Date(evaluatedAt).toISOString(),evaluatedAt);
   assert.equal(requests[1].options.method,undefined);
   assert.match(requests[2].url,/\/occurrences$/);
   assert.equal(requests[2].options.method,undefined);
