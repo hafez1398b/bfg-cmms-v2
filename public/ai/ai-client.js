@@ -14,7 +14,8 @@
   };
   async function refresh(render=false){
     if(state.loading)return;state.loading=true;state.error=null;
-    try{state.status=await bfgApi('/api/ai/status');state.loaded=true;}catch(error){state.error=error;state.status=null;}finally{state.loading=false;if(render&&typeof CUR!=='undefined'&&CUR==='aicfg')go('aicfg');}
+    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),10000);
+    try{state.status=await bfgApi('/api/ai/status',{signal:controller.signal});state.loaded=true;}catch(error){state.error=error;state.status=null;}finally{clearTimeout(timer);state.loading=false;if(render&&typeof CUR!=='undefined'&&CUR==='aicfg')go('aicfg');}
   }
   state.refresh=refresh;
 
@@ -24,18 +25,23 @@
     if(!hasSession())return{ok:false,error:'برای AI واقعی باید با حساب Backend وارد شوید؛ حالت Local پاسخ ساختگی تولید نمی‌کند.'};
     if(!equipmentId)return{ok:false,error:'برای تحلیل نگهداری ابتدا یک تجهیز را انتخاب کنید.'};
     try{
-      const result=await bfgApi('/api/ai/analyze',{method:'POST',body:JSON.stringify({purpose:opts.purpose||'repair_recommendation',equipmentId,question:textOf(last?.content)||'تحلیل وضعیت تجهیز',media:mediaOf(messages),useSearch:!!opts.useSearch,preferredProvider:opts.provider||null})});
+      const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),370000);
+      let result;try{result=await bfgApi('/api/ai/analyze',{method:'POST',body:JSON.stringify({purpose:opts.purpose||'repair_recommendation',equipmentId,question:textOf(last?.content)||'تحلیل وضعیت تجهیز',media:mediaOf(messages),useSearch:!!opts.useSearch,preferredProvider:opts.provider||null}),signal:controller.signal});}finally{clearTimeout(timer);}
       const data=result.data,lines=[data.summary||'تحلیل ثبت شد.'];
       if((data.fallbackChain||[]).length>1)lines.push('مسیر بازیابی Provider: '+data.fallbackChain.map(step=>`${step.provider} (${step.status==='succeeded'?'موفق':step.status==='failed'?'ناموفق':'رد شد'})`).join(' ← '));
       for(const [index,item] of (data.recommendations||[]).entries())lines.push(`${index+1}) ${item.recommendation}\nدلیل: ${item.reason}\nاطمینان: ${item.confidence==null?'N/A':Math.round(item.confidence*100)+'٪'}\nوضعیت: در انتظار تأیید انسانی`);
       return{ok:true,text:lines.join('\n\n'),runId:data.runId,recommendations:data.recommendations,provider:data.provider,model:data.model,fallbackChain:data.fallbackChain||[]};
     }catch(error){return{ok:false,error:error.payload?.message||error.message,code:error.payload?.error};}
   }
+  state.chat=backendAIChat;
+  state.isAvailable=()=>!!state.status&&Object.entries(state.status.providers||{}).some(([name,item])=>item.configured&&(state.status.policies||[]).some(policy=>policy.provider===name&&policy.enabled));
+  state.test=async()=>{try{await refresh(false);if(state.error)throw state.error;const providers=Object.entries(state.status?.providers||{}).filter(([name,item])=>item.configured&&(state.status.policies||[]).some(policy=>policy.provider===name&&policy.enabled)).map(([name])=>name);return providers.length?{ok:true,providers}:{ok:false,error:'هیچ Provider پیکربندی‌شده و مجازی وجود ندارد.'};}catch(error){return{ok:false,error:error.message||'AI Gateway در دسترس نیست'};}};
   window.aiChat=backendAIChat;
-  window.aiOnline=()=>!!state.status&&Object.values(state.status.providers||{}).some(x=>x.configured);
+  window.aiOnline=state.isAvailable;
 
   window.aiProviderPolicy=async function(provider,enabled,sensitive,search,rowVersion){
-    try{await bfgApi('/api/ai/providers/'+encodeURIComponent(provider),{method:'PATCH',body:JSON.stringify({enabled,allowSensitiveContext:sensitive,allowSearch:search,rowVersion})});await refresh(true);toast('سیاست Provider ذخیره شد ✅');}catch(error){toast('ذخیره سیاست AI ناموفق بود: '+error.message,1);}
+    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);
+    try{await bfgApi('/api/ai/providers/'+encodeURIComponent(provider),{method:'PATCH',body:JSON.stringify({enabled,allowSensitiveContext:sensitive,allowSearch:search,rowVersion}),signal:controller.signal});await refresh(true);toast('سیاست Provider ذخیره شد ✅');}catch(error){toast('ذخیره سیاست AI ناموفق بود: '+error.message,1);}finally{clearTimeout(timer);}
   };
 
   window.pgAICfg=function(){
