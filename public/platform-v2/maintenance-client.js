@@ -7,6 +7,10 @@
     pm:{ includeArchived:false, selectedId:null, loading:false, loaded:false, error:null, busy:new Set(), details:null, occurrenceDetails:null }
   };
   const MESSAGES = {
+    PM_CHECKLIST_PHOTO_REQUIRED:'عکس معتبرِ پیوستِ همین دستورکار را برای آیتم مشخص کنید.',
+    PM_DEFECT_REQUIRED:'برای ایجاد درخواست تعمیر، حداقل یک آیتم را معیوب ثبت کنید.',
+    PM_CHECKLIST_RESULTS_REQUIRED:'وضعیت، مقدار و توضیحات لازم برای همهٔ آیتم‌های چک‌لیست PM را ثبت کنید.',
+    PM_CHECKLIST_MEASUREMENT_OUTSIDE_RANGE:'مقدار خارج از حدود مجاز را نمی‌توان سالم ثبت کرد.',
     INVALID_STATUS_TRANSITION:'تغییر وضعیت با گردش کار مجاز نیست.',
     RECORD_LOCKED:'رکورد بسته یا تأییدشده بدون گردش اصلاح بازنویسی نمی‌شود.',
     VERSION_CONFLICT:'این رکورد هم‌زمان تغییر کرده است. فهرست را تازه کنید.',
@@ -97,6 +101,7 @@
   }
 
   function getCollection(name){
+    if (name === 'users') return (state.directory || []).slice();
     const allowed = ['pms','assets','wos'];
     if (!allowed.includes(name)) return [];
     if (!Array.isArray(DB[name])) return [];
@@ -104,6 +109,7 @@
   }
 
   function mergeUsers(rows){
+    state.directory = Array.isArray(rows) ? rows.map(({id,name,role})=>({id,name,role})) : [];
     if (!Array.isArray(DB.users)) DB.users = [];
     (Array.isArray(rows) ? rows : []).forEach(row => {
       const existing = DB.users.find(user => user.id === row.id);
@@ -133,7 +139,7 @@
       replace('pms', plans.data || []);
       state.pm.loaded = true;
       try { mergeAssets((await api(apiBasePath() + '/equipment?limit=200')).data); } catch (_) {}
-      try { mergeUsers((await api(apiBasePath() + '/users/directory')).data || []); } catch (_) {}
+      try { mergeUsers((await api(apiBasePath() + '/users/directory')).data || []); } catch (_) { state.directory=[]; }
       if (!(options && options.quiet) && typeof go === 'function' && ['requests','wos','pm'].includes(window.CUR)) go(window.CUR);
       return plans.data || [];
     } catch (error) {
@@ -246,6 +252,81 @@
     return (voice ? document.getElementById('rpTextV') : document.getElementById('rpText'))?.value.trim() || '';
   }
 
+  const pmResultStatuses = {healthy:'سالم',attention:'نیازمند توجه',defective:'معیوب',not_applicable:'قابل اعمال نیست'};
+  function renderPmResults(id){
+    const checklist=record('wos',id)?.report?.pmChecklist;
+    const host=document.getElementById('rpTxtBox')?.parentElement;
+    if(!host||!Array.isArray(checklist)||!checklist.length)return;
+    const section=document.createElement('section');
+    const title=document.createElement('h4');title.textContent='نتایج چک‌لیست PM';section.append(title);
+    for(const item of checklist){
+      const group=document.createElement('fieldset');group.className='pm-checkpoint';group.dataset.pmResult='';
+      const legend=document.createElement('legend');legend.textContent=item.title;group.append(legend);
+      if(item.description){const help=document.createElement('p');help.textContent=item.description;group.append(help);}
+      const field=(label,control)=>{const wrap=document.createElement('label');wrap.className='pm-form-field';wrap.append(label,control);group.append(wrap);};
+      const status=document.createElement('select');status.dataset.result='status';
+      status.add(new Option('وضعیت را انتخاب کنید',''));
+      for(const [value,label] of Object.entries(pmResultStatuses))status.add(new Option(label,value));
+      field('وضعیت',status);
+      if(item.measurementType==='number'){
+        const measurement=document.createElement('input');measurement.type='number';measurement.step='any';measurement.dataset.result='value';
+        const limits=[['استاندارد',item.standard],['حداقل',item.min],['حداکثر',item.max]].filter(([,value])=>value!=null).map(([key,value])=>key+' '+value);
+        field(['مقدار اندازه‌گیری',item.unit,...limits].filter(Boolean).join(' · '),measurement);
+      }
+      const notes=document.createElement('input');notes.dataset.result='notes';notes.maxLength=1600;field('توضیح',notes);
+      const photo=document.createElement('select');photo.dataset.result='photo';
+      photo.add(new Option('بدون پیوست انتخاب‌شده',''));
+      field(item.photoRequired?'عکس الزامی از پیوست‌های دستورکار':'عکس از پیوست‌های دستورکار',photo);
+      section.append(group);
+    }
+    if(typeof can==='function'&&can('request','create')){
+      const label=document.createElement('label');label.className='pm-toolbar';
+      const checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.id='pmCreateDefectRequest';
+      label.append(checkbox,' ایجاد درخواست تعمیر برای موارد معیوب');section.append(label);
+    }
+    host.append(section);
+    api(apiBasePath()+'/work-orders/'+encodeURIComponent(id)+'/attachments').then(({data})=>{
+      const photos=(Array.isArray(data)?data:[]).filter(file=>file.mediaType?.startsWith('image/'));
+      section.querySelectorAll('[data-result="photo"]').forEach(select=>{
+        photos.forEach(file=>select.add(new Option(file.name,file.id)));
+      });
+    }).catch(()=>{const note=document.createElement('p');note.textContent='دریافت عکس‌های پیوست ممکن نشد.';section.append(note);});
+  }
+  function showSavedPmResults(id){
+    const report=record('wos',id)?.report;
+    const host=document.querySelector('.modal .m-body');
+    if(!host||!Array.isArray(report?.pmChecklistResults)||!report.pmChecklistResults.length)return;
+    const section=document.createElement('section');section.className='pm-checkpoint';
+    const heading=document.createElement('h4');heading.textContent='نتایج ثبت‌شدهٔ PM';section.append(heading);
+    report.pmChecklistResults.forEach((result,index)=>{
+      const row=document.createElement('p');const checkpoint=report.pmChecklist?.[index];
+      row.textContent=[checkpoint?.title,pmResultStatuses[result.status],result.value==null?null:[result.value,checkpoint?.unit].filter(value=>value!=null).join(' '),result.notes].filter(Boolean).join(' · ');
+      if(result.photoId){
+        const link=document.createElement('a');link.textContent=' مشاهدهٔ عکس';link.target='_blank';link.rel='noopener';
+        link.href=apiBasePath()+'/work-orders/'+encodeURIComponent(id)+'/attachments/'+encodeURIComponent(result.photoId);
+        row.append(link);
+      }
+      section.append(row);
+    });
+    if(report.pmSupervisorApproval){
+      const sign=document.createElement('p');
+      sign.textContent='تأیید سرپرست: '+(report.pmSupervisorApproval.name||report.pmSupervisorApproval.userId);
+      section.append(sign);
+    }
+    if(report.pmFollowUpRequestId){
+      const note=document.createElement('p');const followUp=record('requests',report.pmFollowUpRequestId);
+      note.textContent='درخواست تعمیر مرتبط '+(followUp?.no||report.pmFollowUpRequestId);section.append(note);
+    }
+    host.append(section);
+  }
+  function saveWorkReport(id){
+    const pmChecklistResults=Array.from(document.querySelectorAll('[data-pm-result]'),group=>{
+      const value=group.querySelector('[data-result="value"]')?.value;
+      return {status:group.querySelector('[data-result="status"]').value,notes:group.querySelector('[data-result="notes"]').value,value:value?Number(value):null,photoId:group.querySelector('[data-result="photo"]')?.value||null};
+    });
+    return transition(id, {status:'done', report:{text:reportText(),cause:document.getElementById('rpCause')?.value,pmChecklistResults,createDefectRequest:document.getElementById('pmCreateDefectRequest')?.checked===true}},()=>openWO(id));
+  }
+
   async function savePmForm(){
     const title = document.getElementById('pmTitle')?.value.trim();
     if (!title) { if (typeof toast === 'function') toast('عنوان الزامی است', 1); return; }
@@ -329,8 +410,10 @@
       return transition(id, { status:'doing' }, () => openWO(id));
     });
     wrap('holdWO', id => { const why = reason('دلیل تعلیق (الزامی):'); if (why) transition(id, { status:'hold', reason:why }, () => openWO(id)); });
-    wrap('saveReport', id => transition(id, { status:'done', report:{ text:reportText(), cause:document.getElementById('rpCause')?.value } }, () => openWO(id)));
-    wrap('saveReportV2', id => transition(id, { status:'done', report:{ text:reportText(), cause:document.getElementById('rpCause')?.value } }, () => openWO(id)));
+    wrap('openWO', id => { state.originals.openWO?.(id);showSavedPmResults(id); });
+    wrap('finishWO', id => { state.originals.finishWO?.(id);renderPmResults(id); });
+    wrap('saveReport', saveWorkReport);
+    wrap('saveReportV2', saveWorkReport);
     wrap('closeWO', id => transition(id, { status:'closed' }, () => { if (typeof closeModal === 'function') closeModal(); if (typeof go === 'function') go('wos'); }));
     wrap('savePM', savePmForm);
     wrap('genPMWO', async id => {

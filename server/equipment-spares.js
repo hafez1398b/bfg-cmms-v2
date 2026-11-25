@@ -403,6 +403,23 @@ async function updateSparePart({ client, pool, security, user, equipmentId, item
   return { ...(await readLinkRow(client, root.id, target.id, cleanItemId)), committed: true };
 }
 
+async function markStructureSpareCritical({ client, pool, security, user, equipmentId, node }) {
+  const root = await lockRoot(client, equipmentId);
+  const target = await resolveTarget(client, root, node.id);
+  assertCriticalTarget('key-spare', target);
+  const targetId = node.id;
+  const itemId = node.ext?.inventoryItemId;
+  if (!itemId) throw coded(422, 'INVENTORY_ITEM_REQUIRED');
+  const existing = await lockLink(client, targetId, itemId);
+  if (existing?.relation_type === 'key-spare' && !existing.deleted_at) return;
+  const input = { targetId, itemId, relationType: 'key-spare' };
+  if (existing && !existing.deleted_at) {
+    await updateSparePart({ client, pool, security, user, equipmentId, itemId, input: { ...input, rowVersion: existing.row_version } });
+    return;
+  }
+  await linkSparePart({ client, pool, security, user, equipmentId, input: { ...input, quantityRequired: node.ext?.requiredQuantity } });
+}
+
 async function archiveSparePart({ client, pool, security, user, equipmentId, itemId, input }) {
   const context = { pool, security, user };
   await structure.assertPermission(context, 'equipment.spares.archive');
@@ -478,6 +495,8 @@ module.exports = {
   resolveTarget,
   listSpares,
   linkSparePart,
+  lockRoot,
+  markStructureSpareCritical,
   updateSparePart,
   archiveSparePart,
   restoreSparePart

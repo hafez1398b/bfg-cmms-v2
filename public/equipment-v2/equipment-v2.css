@@ -233,3 +233,18 @@ td.eqv2-structure-actions .eqv2-structure-row-actions{display:inline-flex;align-
   .eqv2-passport-sheet{max-width:100%}
 }
 bfg-structure-review{display:grid;gap:.45rem;max-width:100%;min-width:0}bfg-structure-review textarea{width:100%;min-height:4rem}bfg-structure-review article{padding:.5rem;border-block-end:1px solid var(--border-2);overflow-wrap:anywhere}bfg-structure-review small{display:block}bfg-structure-review input,bfg-structure-review select{max-width:100%}
+
+.eqv2-structure-advisor {
+  display: grid;
+  padding: .8rem;
+  border: 1px solid var(--border);
+  border-radius: .6rem;
+  margin-block: .8rem;
+}
+.eqv2-structure-advisor summary { cursor: pointer; font-weight: 700; }
+.eqv2-structure-advisor label { display: block; margin-block: .6rem .25rem; }
+.eqv2-structure-advisor textarea { width: 100%; resize: vertical; }
+.eqv2-structure-advisor > button { display: block; margin-block-start: .6rem; }
+.eqv2-structure-advisor-result { border-block-start: 1px solid var(--border); padding-block: .6rem; }
+.eqv2-structure-advisor-result ul { padding-inline-start: 1.3rem; }
+.eqv2-structure-critical { display: inline-block; font-size: .75rem; margin-inline-start: .4rem; }

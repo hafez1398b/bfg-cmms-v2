@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto = require('crypto');
+const pmPlanning = require('./pm-planning');
 
 const REQUEST_FLOW = {
   new: ['review', 'rejected', 'cancelled'],
@@ -155,7 +156,9 @@ function nextDueAtForPlan(plan = {}) {
   const interval = plan.interval_days ?? plan.intervalDays ?? plan.interval;
   if (lastCompletedAt) {
     if (storedNextDueAt && Date.parse(storedNextDueAt) > Date.parse(lastCompletedAt)) return storedNextDueAt;
-    return calendarDaysFrom(lastCompletedAt, interval);
+    const frequency = asObject(plan.ext).calendarFrequency;
+    if (Object.hasOwn(pmPlanning.calendarMonths, frequency)) return pmPlanning.advancePersianMonths(lastCompletedAt, pmPlanning.calendarMonths[frequency]);
+    return calendarDaysFrom(lastCompletedAt, frequency === 'daily' ? 1 : frequency === 'weekly' ? 7 : interval);
   }
   return storedNextDueAt || firstDueAt;
 }
@@ -265,7 +268,9 @@ function workOrderDto(row) {
 }
 
 function pmDto(row, evaluatedAt = new Date()) {
-  const checklist = asArray(row.checklist).map(item => typeof item === 'string' ? item : (item.text || item.item || item.title || '')).filter(Boolean);
+  const checklistItems = asArray(row.checklist);
+  const checklist = checklistItems.map(pmPlanning.checklistLabel).filter(Boolean);
+  const metadata = asObject(row.ext);
   const due = calculatePmDue(row, evaluatedAt);
   return {
     id:row.id, code:row.code || null, assetId:row.asset_id, equipment:equipmentOf(row), title:row.title,
@@ -279,7 +284,9 @@ function pmDto(row, evaluatedAt = new Date()) {
     requiredTools:asArray(row.required_tools), requiredParts:asArray(row.required_parts),
     safetyRequirements:asArray(row.safety_requirements), lotoRequired:row.loto_required === true,
     ptwRequired:row.ptw_required === true, instructions:row.instructions || '', spec:row.spec || '',
-    owner:row.owner || null, sup:row.sup || null, kind:row.kind || 'PM', checklist,
+    owner:row.owner || null, sup:row.sup || null, kind:row.kind || 'PM', checklist, checklistItems,
+    calendarFrequency:metadata.calendarFrequency || 'custom', targetNodeId:metadata.targetNodeId || null, targetName:row.target_name || null, activityGroup:metadata.activityGroup || null,
+    activityType:metadata.activityType || null, productionStopRequired:metadata.productionStopRequired ?? null,
     status:row.status || 'active', archivedAt:row.archived_at || null, archivedBy:row.archived_by || null,
     archiveReason:row.archive_reason || null, cancelReason:row.cancel_reason || null,
     createdAt:row.created_at, updatedAt:row.updated_at, rowVersion:Number(row.row_version),
@@ -664,8 +671,23 @@ async function transitionRequest(pool, user, id, input) {
   });
 }
 
-async function normalizeRequiredParts(client, value) {
-  if (!Array.isArray(value)) return [];
+async function readPartAvailability(client, itemId) {
+  const { rows } = await client.query(
+    `SELECT i.id, COALESCE(SUM(CASE WHEN l.id IS NOT NULL AND w.id IS NOT NULL THEN b.on_hand - b.reserved ELSE 0 END),0) AS available, i.code, i.name, i.unit
+     FROM items i LEFT JOIN item_balances b ON b.item_id=i.id
+     LEFT JOIN storage_locations l ON l.id=b.location_id AND l.deleted_at IS NULL
+     LEFT JOIN warehouses w ON w.id=l.warehouse_id AND w.deleted_at IS NULL AND w.active=true
+     WHERE i.id=$1 AND i.deleted_at IS NULL
+     GROUP BY i.id`, [itemId]
+  );
+  return rows[0] || null;
+}
+
+async function normalizeRequiredParts(client, value, { allowShortage = false } = {}) {
+  if (!Array.isArray(value)) {
+    if (allowShortage) throw coded(422, 'PM_ACTIVITY_FIELDS_INVALID');
+    return [];
+  }
   if (value.length > 50) throw coded(422, 'TOO_MANY_REQUIRED_PARTS');
   const parts = [];
   const seen = new Set();
@@ -674,19 +696,12 @@ async function normalizeRequiredParts(client, value) {
     const qty = Number(entry && entry.qty);
     if (!itemId) throw coded(422, 'PART_NOT_FOUND');
     if (seen.has(itemId)) continue;
-    if (!Number.isFinite(qty) || qty <= 0 || qty > 100000) throw coded(422, 'INVALID_PART_QUANTITY');
-    const { rows } = await client.query(
-      `SELECT i.id, COALESCE(SUM(CASE WHEN l.id IS NOT NULL AND w.id IS NOT NULL THEN b.on_hand - b.reserved ELSE 0 END),0) AS available
-       FROM items i LEFT JOIN item_balances b ON b.item_id=i.id
-       LEFT JOIN storage_locations l ON l.id=b.location_id AND l.deleted_at IS NULL
-       LEFT JOIN warehouses w ON w.id=l.warehouse_id AND w.deleted_at IS NULL AND w.active=true
-       WHERE i.id=$1 AND i.deleted_at IS NULL
-       GROUP BY i.id`,
-      [itemId]
-    );
-    if (!rows[0]) throw coded(422, 'PART_NOT_FOUND');
-    if (Number(rows[0].available) < qty) throw coded(409, 'INSUFFICIENT_AVAILABLE_STOCK');
-    parts.push({ itemId, qty:Math.round(qty * 1000) / 1000 });
+    if (!Number.isFinite(qty) || qty <= 0 || qty > 100000 || (allowShortage && qty < 0.001)) throw coded(422, 'INVALID_PART_QUANTITY');
+    const row = await readPartAvailability(client, itemId);
+    if (!row) throw coded(422, 'PART_NOT_FOUND');
+    if (!allowShortage && Number(row.available) < qty) throw coded(409, 'INSUFFICIENT_AVAILABLE_STOCK');
+    parts.push({ itemId, qty:Math.round(qty * 1000) / 1000,
+      ...(allowShortage ? { code:row.code, name:row.name, unit:row.unit } : {}) });
     seen.add(itemId);
   }
   return parts;
@@ -781,6 +796,19 @@ async function approveRequestInTransaction(client, user, id, input) {
       fields.confirmedRootCause, fields.recommendedAction, fields.performedAction, JSON.stringify(requiredParts), permitStatus]
   );
   await linkWorkOrderAsset(client, workOrderId, assetId);
+  const pmSourceWorkOrderId = asObject(request.form).pmSourceWorkOrderId;
+  if (pmSourceWorkOrderId && assetId === request.asset_id) {
+    const { rows:[source] } = await client.query(
+      `SELECT report->>'pmTargetNodeId' AS target_id FROM work_orders
+       WHERE id=$1 AND asset_id=$2 AND occurrence_id IS NOT NULL AND report->>'pmFollowUpRequestId'=$3`,
+      [pmSourceWorkOrderId, assetId, request.id]
+    );
+    if (source?.target_id) await client.query(
+      `INSERT INTO work_order_assets(work_order_id,asset_id,relation_type,is_confirmed)
+       SELECT $1,id,'related',true FROM assets WHERE id=$2 ON CONFLICT DO NOTHING`, [workOrderId, source.target_id]
+    );
+  }
+
   const updated = await writeUpdate(client, 'requests', id, rowVersion, user.id, {
     status:'wo', work_order_id:workOrderId, approved_at:new Date().toISOString(),
     history:JSON.stringify(appendHistory(current.history, `تأیید و صدور دستورکار ${workOrderNo} توسط ${user.name || user.username}`))
@@ -1038,6 +1066,18 @@ async function transitionWorkOrder(pool, user, id, input) {
       if (!text) throw coded(422, 'REPORT_REQUIRED');
       if (current.occurrence_id && times.end) throw coded(409, 'WORK_ORDER_COMPLETION_INCONSISTENT');
       times.end = transitionAt;
+      const template = asArray(report.pmChecklist);
+      if (template.length) {
+        report.pmChecklistResults = pmPlanning.completionResults(template, input.report.pmChecklistResults);
+        const photos = [...new Set(report.pmChecklistResults.map(item => item.photoId).filter(Boolean))];
+        if (photos.length) {
+          const {rows} = await client.query(
+            `SELECT id FROM work_order_files WHERE work_order_id=$1 AND id=ANY($2::uuid[])
+             AND deleted_at IS NULL AND media_type LIKE 'image/%'`, [current.id, photos]
+          );
+          if (rows.length !== photos.length) throw coded(422, 'PM_CHECKLIST_PHOTO_REQUIRED');
+        }
+      }
       report.text = text;
       report.cause = input.report.cause || null;
       current.performed_action = text;
@@ -1068,7 +1108,21 @@ async function transitionWorkOrder(pool, user, id, input) {
         assertPmStartConsistency(current, occurrence);
       } else {
         assertPmCompletionConsistency(current, pmContext);
+        report.pmSupervisorApproval = {userId:user.id,name:user.name||user.username,at:new Date().toISOString()};
       }
+    }
+
+    if (status === 'done' && input.report?.createDefectRequest === true) {
+      const defective = asArray(report.pmChecklistResults).flatMap((result, index) =>
+        result.status === 'defective' ? [{ title:report.pmChecklist[index].title, notes:result.notes }] : []);
+      if (!pmContext || !defective.length) throw coded(422, 'PM_DEFECT_REQUIRED');
+      await assertEquipmentScope(client, user, current.asset_id);
+      const request = await createRequestInTransaction(client, user, {
+        assetId:current.asset_id, type:'repair',
+        descr:`پیگیری عیب از دستورکار PM ${current.no}: ${defective.map(item => item.title + ' — ' + item.notes).join('؛ ').slice(0,6000)}`,
+        form:{ pmSourceWorkOrderId:current.id, pmPlanId:current.pm_id, targetNodeId:report.pmTargetNodeId || null }
+      });
+      report.pmFollowUpRequestId = request.id;
     }
 
     const updated = await writeUpdate(client, 'work_orders', id, rowVersion, user.id, {
@@ -1106,7 +1160,7 @@ async function transitionWorkOrder(pool, user, id, input) {
         interval_days:pmContext.plan.interval_days,
         last_completed_at:completionAt,
         next_due_at:null,
-        tolerance_days:pmContext.plan.tolerance_days
+        tolerance_days:pmContext.plan.tolerance_days, ext:pmContext.plan.ext
       }, completionAt);
       const { rows:occurrenceRows } = await client.query(
         `UPDATE pm_occurrences SET status='completed',completed_at=$3,completion_source='work_order',
@@ -1235,17 +1289,22 @@ async function createPmPlan(pool, user, input) {
   const nextDueAt = suppliedNextDueAt || firstDueAt;
   const intervalDays = positiveInteger(input.intervalDays ?? input.interval, 'PM_INTERVAL_DAYS_INVALID') || 30;
   const toleranceDays = nonNegativeInteger(input.toleranceDays ?? input.tolerance_days, 'PM_TOLERANCE_DAYS_INVALID');
-  return withTransaction(pool, async client => {
+  return withPmTransaction(pool, async client => {
     const assetId = input.assetId || null;
     await assertEquipmentScope(client, user, assetId);
     const owner = await requireUser(client, input.owner || null);
+    const fields = await pmPlanning.activityFields(client, assetId, input);
+    if (Object.hasOwn(input, 'requiredParts')) fields.required_parts = JSON.stringify(await normalizeRequiredParts(client, input.requiredParts, { allowShortage:true }));
+    const columns = Object.keys(fields);
+    const extraColumns = columns.length ? ',' + columns.join(',') : '';
+    const extraValues = columns.map((_, index) => ',$' + (13 + index)).join('');
     const id = crypto.randomUUID();
     const { rows } = await client.query(
       `INSERT INTO pm_plans(id,asset_id,title,interval_days,last_run,spec,owner,kind,checklist,status,
-         schedule_basis,first_due_at,next_due_at,last_completed_at,tolerance_days)
-       VALUES($1,$2,$3,$4,NULL,$5,$6,$7,$8,'active',$9,$10,$11,NULL,$12) RETURNING *`,
-      [id, assetId, title, intervalDays, input.spec || null, owner, input.kind || 'PM', JSON.stringify(input.checklist || []),
-        scheduleBasis, firstDueAt, nextDueAt, toleranceDays]
+         schedule_basis,first_due_at,next_due_at,last_completed_at,tolerance_days${extraColumns})
+       VALUES($1,$2,$3,$4,NULL,$5,$6,$7,$8,'active',$9,$10,$11,NULL,$12${extraValues}) RETURNING *`,
+      [id, assetId, title, intervalDays, input.spec || null, owner, input.kind || 'PM', JSON.stringify(pmPlanning.checklist(input.checklist ?? [])),
+        scheduleBasis, firstDueAt, nextDueAt, toleranceDays, ...Object.values(fields)]
     );
     await audit(client, user, 'create', 'pm_plan', id, null, rows[0], 'ثبت برنامه PM');
     await publish(client, user, {
@@ -1258,14 +1317,24 @@ async function createPmPlan(pool, user, input) {
 
 async function readScopedPmPlan(pool, user, id, includeArchived = false) {
   const { rows } = await pool.query(
-    `SELECT p.*, a.id AS equipment_id, a.code AS equipment_code, a.name AS equipment_name
+    `SELECT p.*, a.id AS equipment_id, a.code AS equipment_code, a.name AS equipment_name, target.name AS target_name
      FROM pm_plans p LEFT JOIN assets a ON a.id=p.asset_id
+     LEFT JOIN assets target ON target.id=p.ext->>'targetNodeId'
      WHERE p.id=$1 AND ($2::boolean OR (p.archived_at IS NULL AND p.deleted_at IS NULL))`,
     [id, includeArchived]
   );
   if (!rows[0]) throw coded(404, 'RECORD_NOT_FOUND');
   await assertEquipmentScope(pool, user, rows[0].asset_id);
   return rows[0];
+}
+
+async function pmPartsReadiness(pool, user, id) {
+  const plan = await readScopedPmPlan(pool, user, id);
+  return Promise.all(asArray(plan.required_parts).filter(part => part?.itemId).map(async part => {
+    const row = await readPartAvailability(pool, part.itemId);
+    const available = row ? Number(row.available) : null;
+    return { ...part, available, shortage:available == null ? null : Math.max(0, part.qty - available) };
+  }));
 }
 
 async function getPmDue(pool, user, id, input = {}, options = {}) {
@@ -1413,10 +1482,167 @@ async function updatePmOccurrenceDueStatus(pool, user, planId, occurrenceId, inp
   });
 }
 
+async function reschedulePmPlan(pool, user, id, input) {
+  const rowVersion = versionOf(input.rowVersion);
+  const nextDueAt = parsePmTimestamp(input.nextDueAt, 'PM_NEXT_DUE_AT_INVALID');
+  if (!nextDueAt) throw coded(422, 'PM_NEXT_DUE_AT_INVALID');
+  const reason = reasonOf(input.reason, 'PM_RESCHEDULE_REASON_REQUIRED');
+  return withPmTransaction(pool, async client => {
+    const current = await lockRow(client, 'pm_plans', id);
+    await assertEquipmentScope(client, user, current.asset_id);
+    if (current.archived_at || LOCKED_PM.has(current.status)) throw coded(409, 'RECORD_LOCKED');
+    if (Number(current.row_version) !== rowVersion) throw coded(409, 'VERSION_CONFLICT');
+    const newKey = periodKeyForDueDate(nextDueAt, current.schedule_basis);
+    const previousDueAt = nextDueAtForPlan(current);
+    if (previousDueAt === nextDueAt) return pmDto(current);
+    if (current.last_completed_at && Date.parse(nextDueAt) <= Date.parse(current.last_completed_at)) {
+      throw coded(422, 'PM_NEXT_DUE_BEFORE_COMPLETION');
+    }
+    const previous = previousDueAt && await findPmOccurrence(client, id, periodKeyForDueDate(previousDueAt));
+    if (previous && (!['scheduled','due','overdue'].includes(previous.status) || previous.linked_work_order_id)) {
+      throw coded(409, 'PM_RESCHEDULE_WORK_ORDER_EXISTS');
+    }
+    const existing = await findPmOccurrence(client, id, newKey);
+    if (existing && existing.id !== previous?.id) throw coded(409, 'PM_OCCURRENCE_CONFLICT');
+    const updated = await writeUpdate(client, 'pm_plans', id, rowVersion, user.id, { next_due_at: nextDueAt });
+    if (previous) {
+      const due = calculatePmDue(updated, new Date());
+      const { rows } = await client.query(
+        'UPDATE pm_occurrences SET due_at=$2,period_key=$3,status=$4,updated_at=now(),updated_by=$5,row_version=row_version+1 WHERE id=$1 RETURNING *',
+        [previous.id, nextDueAt, newKey, due.dueStatus, user.id]
+      );
+      await audit(client, user, 'reschedule', 'pm_occurrence', previous.id, previous, rows[0], reason);
+    }
+    await audit(client, user, 'reschedule', 'pm_plan', id, current, updated, reason);
+    await publish(client, user, {
+      type:'pm_plan.updated', aggregateType:'pm_plan', aggregateId:id, permission:'pm.view',
+      equipmentId:current.asset_id, payload:{ id, assetId:current.asset_id, nextDueAt }
+    });
+    return pmDto(updated);
+  });
+}
+
+function summarizePmSchedule(rows, evaluatedAt) {
+  const excluded = new Set(['cancelled', 'skipped']);
+  const planned = rows.filter(row => !excluded.has(row.status));
+  const completed = planned.filter(row => row.status === 'completed' && row.completedAt);
+  const due = planned.filter(row => Date.parse(row.dueAt) <= evaluatedAt);
+  const dueCompleted = due.filter(row => row.status === 'completed' && row.completedAt);
+  const overdue = due.filter(row => row.status !== 'completed' && evaluatedAt > Date.parse(row.deadline));
+  const onTime = completed.filter(row => Date.parse(row.completedAt) <= Date.parse(row.deadline));
+  const sum = (items, key) => {
+    const values = items.map(row => row[key]).filter(value => value != null);
+    return values.length === items.length && values.length ? values.reduce((a,b) => a+b, 0) : null;
+  };
+  return {
+    planned:planned.length, due:due.length, completed:completed.length, overdue:overdue.length,
+    compliance:due.length ? dueCompleted.length / due.length : null,
+    onTimeRate:completed.length ? onTime.length / completed.length : null,
+    plannedMinutes:sum(planned,'plannedMinutes'), elapsedMinutes:sum(completed,'elapsedMinutes')
+  };
+}
+
+async function pmScheduleReport(pool, user, filters = {}) {
+  const from = parsePmTimestamp(filters.from, 'PM_REPORT_RANGE_INVALID');
+  const to = parsePmTimestamp(filters.to, 'PM_REPORT_RANGE_INVALID');
+  if (!from || !to || Date.parse(to) <= Date.parse(from) || Date.parse(to) - Date.parse(from) > 367 * 86400000) {
+    throw coded(422, 'PM_REPORT_RANGE_INVALID');
+  }
+  const { rows } = await pool.query(
+    `SELECT o.id,o.equipment_id,o.due_at,o.status,o.started_at,o.completed_at,p.id AS plan_id,
+       p.title,p.code,p.ext,p.tolerance_days,
+       a.name AS equipment_name, target.name AS target_name,
+       w.id AS work_order_id, COALESCE(w.est,p.estimated_duration_minutes / 60.0) AS est, COALESCE(w.assignee,p.owner) AS owner_id,
+       u.name AS owner_name, location.hall_id, location.hall_name,
+       costs.total AS actual_cost, consumed.parts AS consumed_parts,
+       COALESCE(cat.factory_asset_id,location.factory_id) AS factory_id
+     FROM pm_occurrences o JOIN pm_plans p ON p.id=o.pm_plan_id JOIN assets a ON a.id=o.equipment_id
+     LEFT JOIN asset_categories cat ON cat.id=a.category_id
+     LEFT JOIN work_orders w ON w.occurrence_id=o.id
+     LEFT JOIN users u ON u.id=COALESCE(w.assignee,p.owner)
+     LEFT JOIN assets target ON target.id=COALESCE(w.report->>'pmTargetNodeId',p.ext->>'targetNodeId')
+     LEFT JOIN LATERAL (
+       SELECT SUM(CASE WHEN direction='credit' THEN -amount ELSE amount END) AS total
+       FROM work_order_costs WHERE $10::boolean AND work_order_id=w.id AND voided_at IS NULL
+     ) costs ON true
+     LEFT JOIN LATERAL (
+       SELECT jsonb_agg(jsonb_build_object('name',parts.name,'qty',parts.qty,'unit',parts.unit) ORDER BY parts.name) AS parts
+       FROM (
+         SELECT i.name,i.unit,SUM(CASE WHEN l.movement='return' THEN -l.qty ELSE l.qty END) AS qty
+         FROM inventory_ledger l JOIN items i ON i.id=l.item_id
+         WHERE $11::boolean AND l.work_order_id=w.id AND
+           (l.movement='consume' OR (l.movement='return' AND EXISTS(
+             SELECT 1 FROM inventory_ledger original WHERE original.id=l.reverses_entry_id AND original.movement='consume'
+           )))
+         GROUP BY i.id HAVING SUM(CASE WHEN l.movement='return' THEN -l.qty ELSE l.qty END) > 0
+       ) parts
+     ) consumed ON true
+     LEFT JOIN LATERAL (
+       WITH RECURSIVE parents AS (
+         SELECT a.id,a.parent,a.name,a.ext->>'nodeKind' AS kind,0 AS depth
+         UNION ALL
+         SELECT x.id,x.parent,x.name,x.ext->>'nodeKind',parents.depth+1
+         FROM assets x JOIN parents ON x.id=parents.parent WHERE parents.depth<32
+       )
+       SELECT (SELECT id FROM parents WHERE kind='factory' ORDER BY depth LIMIT 1) AS factory_id,
+         (SELECT id FROM parents WHERE kind IN ('hall','salon') ORDER BY depth LIMIT 1) AS hall_id,
+         (SELECT name FROM parents WHERE kind IN ('hall','salon') ORDER BY depth LIMIT 1) AS hall_name
+     ) location ON true
+     WHERE o.due_at >= $1 AND o.due_at < $2
+       AND a.deleted_at IS NULL
+       AND ($3::text IS NULL OR o.equipment_id=$3)
+       AND ($4::text IS NULL OR COALESCE(w.assignee,p.owner)=$4)
+       AND ($5::text IS NULL OR p.ext->>'activityType'=$5)
+       AND ($6::text IS NULL OR COALESCE(cat.factory_asset_id,location.factory_id)=$6)
+       AND ($7::text IS NULL OR location.hall_id=$7)
+       AND ($8::boolean OR EXISTS (
+         SELECT 1 FROM user_scopes s WHERE s.user_id=$9 AND
+           (s.scope_type='company' OR (s.scope_type='equipment' AND s.scope_id=o.equipment_id)
+             OR (s.scope_type='factory' AND s.scope_id=COALESCE(cat.factory_asset_id,location.factory_id)))
+       ))
+     ORDER BY o.due_at,o.id LIMIT 5001`,
+    [from,to,filters.assetId || null,filters.owner || null,filters.activityType || null,
+      filters.factoryId || null,filters.hallId || null,user.role === 'admin',user.id,filters.includeCosts === true,filters.includeParts === true]
+  );
+  if (rows.length > 5000) throw coded(422, 'PM_REPORT_TOO_MANY_ROWS');
+  const evaluatedAt = Date.now();
+  const items = rows.map(row => {
+    const dueAt = timestampIso(row.due_at);
+    const deadline = new Date((Math.floor(Date.parse(dueAt)/86400000) + 1 + Number(row.tolerance_days || 0)) * 86400000 - 1).toISOString();
+    const startedAt = timestampIso(row.started_at);
+    const completedAt = timestampIso(row.completed_at);
+    const elapsed = Date.parse(completedAt) - Date.parse(startedAt);
+    return {
+      id:row.id, planId:row.plan_id, title:row.title, code:row.code, equipmentId:row.equipment_id,
+      equipmentName:row.equipment_name, targetName:row.target_name, ownerId:row.owner_id, ownerName:row.owner_name,
+      factoryId:row.factory_id, hallId:row.hall_id, hallName:row.hall_name,
+      dueAt, deadline, startedAt, completedAt, status:row.status, activityType:asObject(row.ext).activityType || null,
+      workOrderId:row.work_order_id, plannedMinutes:row.est == null ? null : Number(row.est)*60,
+      elapsedMinutes:startedAt && completedAt && elapsed >= 0 ? elapsed/60000 : null,
+      ...(filters.includeCosts ? {actualCost:row.actual_cost == null ? null : Number(row.actual_cost)} : {}),
+      ...(filters.includeParts ? {consumedParts:asArray(row.consumed_parts)} : {})
+    };
+  });
+  const byTechnicianDay = new Map();
+  for (const item of items) {
+    if (!item.ownerId || PM_OCCURRENCE_FINAL_STATES.has(item.status)) continue;
+    const key = JSON.stringify([item.ownerId, item.dueAt.slice(0,10)]);
+    const group = byTechnicianDay.get(key) || [];
+    group.push(item);
+    byTechnicianDay.set(key, group);
+  }
+  const sharedAssignments = Array.from(byTechnicianDay.values()).filter(group => group.length > 1).map(group => ({
+    ownerName:group[0].ownerName, dueAt:group[0].dueAt, count:group.length
+  }));
+  return { from,to,evaluatedAt:new Date(evaluatedAt).toISOString(),items,sharedAssignments,
+    showCosts:filters.includeCosts === true, showParts:filters.includeParts === true, summary:summarizePmSchedule(items,evaluatedAt) };
+}
+
 async function listPmPlans(pool, user, filters = {}) {
   const { rows } = await pool.query(
-    `SELECT p.*, a.id AS equipment_id, a.code AS equipment_code, a.name AS equipment_name
+    `SELECT p.*, a.id AS equipment_id, a.code AS equipment_code, a.name AS equipment_name, target.name AS target_name
      FROM pm_plans p LEFT JOIN assets a ON a.id=p.asset_id
+     LEFT JOIN assets target ON target.id=p.ext->>'targetNodeId'
      WHERE ($1::boolean OR (p.archived_at IS NULL AND p.deleted_at IS NULL))
        AND ($2::text IS NULL OR p.asset_id=$2)
      ORDER BY p.title LIMIT 500`,
@@ -1436,8 +1662,9 @@ async function listPmPlans(pool, user, filters = {}) {
 
 async function getPmPlan(pool, user, id, options = {}) {
   const { rows } = await pool.query(
-    `SELECT p.*, a.id AS equipment_id, a.code AS equipment_code, a.name AS equipment_name
+    `SELECT p.*, a.id AS equipment_id, a.code AS equipment_code, a.name AS equipment_name, target.name AS target_name
      FROM pm_plans p LEFT JOIN assets a ON a.id=p.asset_id
+     LEFT JOIN assets target ON target.id=p.ext->>'targetNodeId'
      WHERE p.id=$1 AND ($2::boolean OR (p.archived_at IS NULL AND p.deleted_at IS NULL))`,
     [id, options.includeArchived === true]
   );
@@ -1446,9 +1673,14 @@ async function getPmPlan(pool, user, id, options = {}) {
   return pmDto(rows[0]);
 }
 
+async function hasPmOccurrences(client, id) {
+  const { rows } = await client.query('SELECT 1 FROM pm_occurrences WHERE pm_plan_id=$1 LIMIT 1', [id]);
+  return rows.length > 0;
+}
+
 async function updatePmPlan(pool, user, id, input) {
   const rowVersion = versionOf(input.rowVersion);
-  return withTransaction(pool, async client => {
+  return withPmTransaction(pool, async client => {
     const current = await lockRow(client, 'pm_plans', id);
     await assertEquipmentScope(client, user, current.asset_id);
     if (current.deleted_at || current.archived_at || LOCKED_PM.has(current.status)) throw coded(409, 'RECORD_LOCKED');
@@ -1457,12 +1689,20 @@ async function updatePmPlan(pool, user, id, input) {
     if (String(assetId) !== String(current.asset_id)) await assertEquipmentScope(client, user, assetId);
     const title = String(input.title ?? current.title ?? '').trim();
     if (!title) throw coded(422, 'TITLE_REQUIRED');
+    if (assetId !== current.asset_id && await hasPmOccurrences(client, id)) throw coded(409, 'PM_EQUIPMENT_HAS_HISTORY');
+    const fields = await pmPlanning.activityFields(client, assetId, input, current);
+    if (Object.hasOwn(input, 'requiredParts')) fields.required_parts = JSON.stringify(await normalizeRequiredParts(client, input.requiredParts, { allowShortage:true }));
+    const owner = Object.hasOwn(input, 'owner') ? await requireUser(client, input.owner || null) : current.owner;
+    const previousChecklist = asArray(current.checklist);
+    const checklist = Object.hasOwn(input, 'checklist') ? pmPlanning.checklist(input.checklist) : previousChecklist;
+    if (Object.hasOwn(input, 'checklist') && input.preserveLegacyChecklist === true) {
+      checklist.push(...previousChecklist.filter(item => item && typeof item === 'object' && !item.measurementType));
+    }
     const updated = await writeUpdate(client, 'pm_plans', id, rowVersion, user.id, {
-      asset_id: assetId,
-      title,
-      interval_days: Number(input.intervalDays || input.interval || current.interval_days) || 30,
+      ...fields, asset_id: assetId, title, owner,
+      interval_days: positiveInteger(input.intervalDays ?? input.interval ?? current.interval_days, 'PM_INTERVAL_DAYS_INVALID') || 30,
       spec: input.spec === undefined ? current.spec : input.spec,
-      checklist: JSON.stringify(input.checklist || asArray(current.checklist))
+      checklist: JSON.stringify(checklist)
     });
     await audit(client, user, 'edit', 'pm_plan', id, current, updated, 'ویرایش برنامه PM');
     await publish(client, user, {
@@ -1651,17 +1891,26 @@ async function generatePmWorkOrder(pool, user, id, input) {
       const workOrderId = crypto.randomUUID();
       const no = await nextNumber(client, 'work_order', 'WO');
       const checklist = asArray(current.checklist);
-      const descr = `${current.title}${checklist.length ? ' — ' + checklist.join('، ') : ''}`;
+      const labels = checklist.map(pmPlanning.checklistLabel).filter(Boolean);
+      const descr = `${current.title}${labels.length ? ' — ' + labels.join('، ') : ''}`;
+      const targetNodeId = asObject(current.ext).targetNodeId || null;
+      await pmPlanning.assertPlanTarget(client, current.asset_id, targetNodeId);
+      const report = { pmTargetNodeId:targetNodeId, pmChecklist:checklist.filter(item => item && typeof item === 'object' && item.measurementType) };
       const estimatedHours = Number(current.estimated_duration_minutes) > 0
         ? Number(current.estimated_duration_minutes) / 60 : null;
       const created = await client.query(
-        `INSERT INTO work_orders(id,no,type,asset_id,descr,priority,assignee,status,pm_id,occurrence_id,due_at,source_ref,times,parts,report,est)
-         VALUES($1,$2,'PM',$3,$4,'normal',$5,$6,$7,$8,$9,$10,'{}'::jsonb,'[]'::jsonb,'{}'::jsonb,$11) RETURNING *`,
+        `INSERT INTO work_orders(id,no,type,asset_id,descr,priority,assignee,status,pm_id,occurrence_id,due_at,source_ref,times,parts,report,est,ptw,permit_status,required_parts)
+         VALUES($1,$2,'PM',$3,$4,'normal',$5,$6,$7,$8,$9,$10,'{}'::jsonb,'[]'::jsonb,$12,$11,$13,$14,$15) RETURNING *`,
         [workOrderId, no, current.asset_id, descr, current.owner || null, current.owner ? 'assigned' : 'open',
-          current.id, occurrence.id, occurrence.due_at, `pm:${id}:${periodKey}`, estimatedHours]
+          current.id, occurrence.id, occurrence.due_at, `pm:${id}:${periodKey}`, estimatedHours, JSON.stringify(report),
+          current.ptw_required === true, current.ptw_required === true ? 'pending_issuance' : 'not_required', JSON.stringify(asArray(current.required_parts))]
       );
       workOrder = created.rows[0];
       await linkWorkOrderAsset(client, workOrderId, current.asset_id);
+      if (targetNodeId) await client.query(
+        `INSERT INTO work_order_assets(work_order_id,asset_id,relation_type,is_confirmed)
+         VALUES($1,$2,'related',true) ON CONFLICT DO NOTHING`, [workOrderId, targetNodeId]
+      );
       const { rows } = await client.query(
         `UPDATE pm_occurrences SET status='work_order_generated',generated_at=now(),updated_at=now(),
            updated_by=$3,row_version=row_version+1
@@ -2064,6 +2313,10 @@ module.exports = {
   correctRecord,
   createPmPlan,
   listPmPlans,
+  reschedulePmPlan,
+  pmScheduleReport,
+  pmPartsReadiness,
+  summarizePmSchedule,
   getPmPlan,
   getPmDue,
   listPmOccurrences,

@@ -181,12 +181,25 @@ function createMaintenanceRouter({ pool, security, requestStorageDir }) {
       error.code = 'PERMISSION_DENIED';
       throw error;
     }
+    if (status === 'done' && req.body?.report?.createDefectRequest === true
+        && !await security.hasPermission(req.user, 'request.create')) {
+      throw routeError(403, 'PERMISSION_DENIED', 'request.create');
+    }
     return { data: await service.transitionWorkOrder(pool, req.user, req.params.id, req.body || {}) };
   }));
   router.post('/work-orders/:id/archive', security.authorize('work_order.archive'), send(async req => ({ data: await service.archiveWorkOrder(pool, req.user, req.params.id, req.body || {}) })));
   router.post('/work-orders/:id/cancel', security.authorize('work_order.cancel'), send(async req => ({ data: await service.cancelWorkOrder(pool, req.user, req.params.id, req.body || {}) })));
   router.post('/work-orders/:id/corrections', security.authorize('work_order.correct'), send(async req => ({ data: await service.correctRecord(pool, req.user, 'work_order', req.params.id, req.body || {}) })));
 
+  router.get('/pm-schedule', security.authorize('pm.view'), send(async req => {
+    const [includeCosts,includeParts] = await Promise.all([
+      security.hasPermission(req.user, 'cost.view'), security.hasPermission(req.user, 'inventory.view')
+    ]);
+    return { data:await service.pmScheduleReport(pool, req.user, { ...req.query, includeCosts, includeParts }) };
+  }));
+  router.post('/pm-plans/:id/reschedule', security.authorize('pm.schedule'), send(async req => ({
+    data:await service.reschedulePmPlan(pool, req.user, req.params.id, req.body || {})
+  })));
   router.get('/pm-plans', security.authorize('pm.view'), send(async req => {
     const includeArchived = includeArchivedFrom(req);
     if (includeArchived) await requireArchivedPermission(req);
@@ -197,8 +210,15 @@ function createMaintenanceRouter({ pool, security, requestStorageDir }) {
     if (includeArchived) await requireArchivedPermission(req);
     return { data:await service.getPmPlan(pool, req.user, req.params.id, { includeArchived }) };
   }));
-  router.post('/pm-plans', security.authorize('pm.create'), send(async req => ({ data:await service.createPmPlan(pool, req.user, req.body || {}) })));
-  router.patch('/pm-plans/:id', security.authorize('pm.edit'), send(async req => ({ data:await service.updatePmPlan(pool, req.user, req.params.id, req.body || {}) })));
+  async function pmWriteInput(req) {
+    const body = req.body || {};
+    if (Object.hasOwn(body, 'requiredParts') && !await security.hasPermission(req.user, 'inventory.view')) {
+      throw routeError(403, 'PERMISSION_DENIED', 'inventory.view');
+    }
+    return body;
+  }
+  router.post('/pm-plans', security.authorize('pm.create'), send(async req => ({ data:await service.createPmPlan(pool, req.user, await pmWriteInput(req)) })));
+  router.patch('/pm-plans/:id', security.authorize('pm.edit'), send(async req => ({ data:await service.updatePmPlan(pool, req.user, req.params.id, await pmWriteInput(req)) })));
   router.post('/pm-plans/:id/archive', security.authorize('pm.archive'), send(async req => {
     const body = req.body || {};
     return { data:await service.archivePmPlan(pool, req.user, req.params.id, { rowVersion:body.rowVersion, reason:body.reason }) };
@@ -210,6 +230,9 @@ function createMaintenanceRouter({ pool, security, requestStorageDir }) {
   router.post('/pm-plans/:id/generate-work-order', security.authorize('pm.generate'), send(async req => ({ data:await service.generatePmWorkOrder(pool, req.user, req.params.id, req.body || {}) })));
   router.post('/pm-plans/:id/corrections', security.authorize('pm.correct'), send(async req => ({ data:await service.correctRecord(pool, req.user, 'pm_plan', req.params.id, req.body || {}) })));
 
+  router.get('/pm-plans/:id/parts-readiness', security.authorize('pm.view'), security.authorize('inventory.view'), send(async req => ({
+    data:await service.pmPartsReadiness(pool, req.user, req.params.id)
+  })));
   router.get('/pm-plans/:id/due', security.authorize('pm.schedule'), send(async req => {
     const includeArchived = includeArchivedFrom(req);
     if (includeArchived) await requireArchivedPermission(req);

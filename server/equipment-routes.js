@@ -10,6 +10,7 @@ const { createEquipmentIntakeRouter } = require('./equipment-intake-routes');
 const { createSeleneActionRouter } = require('./selene-action-routes');
 const structure = require('./equipment-structure');
 const { review } = require('./structure-review');
+const { adviseStructure } = require('./structure-advisor');
 const suggestions = require('./structure-suggestions');
 const spares = require('./equipment-spares');
 const sparesSuggestions = require('./spares-suggestions');
@@ -303,6 +304,20 @@ function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry, securi
     });
   }
 
+  router.post('/:id/structure/advisor', async (req, res, next) => {
+    try {
+      const rootEquipmentId = await resolveStructureRootId(req, res);
+      if (!rootEquipmentId) return;
+      const data = await adviseStructure({ pool, security, user: req.user, registry: aiRegistry, rootEquipmentId, input: req.body || {} });
+      res.json({ data });
+    } catch (error) {
+      if (['NO_CAPABLE_PROVIDER', 'STRUCTURE_ADVISOR_FAILED', 'STRUCTURE_ADVISOR_RESPONSE_INVALID'].includes(error.code)) {
+        return res.status(error.status).json({ error: error.code });
+      }
+      next(error);
+    }
+  });
+
   router.post('/:id/structure/suggestions', (_req,res) => res.status(410).json({error:'STRUCTURE_REVIEW_REQUIRED'}));
 
   // Mission D4 / Phase 3: critical spare parts of the dossier. Links always reference real
@@ -520,6 +535,7 @@ function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry, securi
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      if (internalNode && body.addCriticalSpare === true) await spares.lockRoot(client, body.rootEquipmentId || body.equipmentId);
       const row = internalNode
         ? await structure.createStructureNode({
           client, pool, security, user: req.user,
@@ -528,6 +544,9 @@ function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry, securi
         })
         : await createEquipment(client, req.user, body);
       const idempotentReplay=internalNode&&row&&row.idempotentReplay===true;
+      if (internalNode && body.addCriticalSpare === true && !idempotentReplay) {
+        await spares.markStructureSpareCritical({ client, pool, security, user: req.user, equipmentId: row.rootEquipmentId, node: row });
+      }
       const responseData=idempotentReplay?Object.fromEntries(Object.entries(row).filter(([key])=>key!=='idempotentReplay')):row;
       await client.query('COMMIT');
       if (!internalNode) emit({ action: 'create', id: row.id });
@@ -556,9 +575,13 @@ function createEquipmentRouter({ pool, io, authenticateToken, aiRegistry, securi
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
+        if (internalNode && body.addCriticalSpare === true) await spares.lockRoot(client, body.rootEquipmentId);
         const row = internalNode
           ? await structure.updateStructureNode({ client, pool, security, user: req.user, id: req.params.id, input: body })
           : await completeEquipment(client, req.user, req.params.id, body, rowVersion);
+        if (internalNode && body.addCriticalSpare === true) {
+          await spares.markStructureSpareCritical({ client, pool, security, user: req.user, equipmentId: row.rootEquipmentId, node: row });
+        }
         await client.query('COMMIT');
         if (!internalNode) emit({ action: 'edit', id: req.params.id });
         res.json({ data: row, committed: true });

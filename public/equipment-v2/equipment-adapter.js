@@ -48,6 +48,7 @@
       method:'DELETE',body:JSON.stringify({reason,rowVersion}),expectedStatus:200
     }),
     structureRestore:(id,data)=>api('/'+encodeURIComponent(id)+'/restore',{method:'POST',body:JSON.stringify(data),expectedStatus:200}),
+    structureAdvisor:(id,data)=>api('/'+encodeURIComponent(id)+'/structure/advisor',{method:'POST',body:JSON.stringify(data)}),
     structureReview:(id,stage,data)=>api('/'+encodeURIComponent(id)+'/structure/review/'+stage,{method:'POST',body:JSON.stringify(data)}),
     spares:(id,options={})=>api('/'+encodeURIComponent(id)+'/spares'+(options.includeArchived?'?includeArchived=true':'')),
     spareLink:(id,data)=>api('/'+encodeURIComponent(id)+'/spares',{method:'POST',body:JSON.stringify(data),expectedStatus:201}),
@@ -79,6 +80,7 @@
     async structureMove(){throw Object.assign(new Error('SERVER_REQUIRED'),{status:503});},
     async structureArchive(){throw Object.assign(new Error('SERVER_REQUIRED'),{status:503});},
     async structureRestore(){throw Object.assign(new Error('SERVER_REQUIRED'),{status:503});},
+    async structureAdvisor(){throw Object.assign(new Error('SERVER_REQUIRED'),{status:503});},
     async structureReview(){throw Object.assign(new Error('SERVER_REQUIRED'),{status:503});},
     async spares(){throw Object.assign(new Error('SERVER_REQUIRED'),{status:503});},
     async spareLink(){throw Object.assign(new Error('SERVER_REQUIRED'),{status:503});},

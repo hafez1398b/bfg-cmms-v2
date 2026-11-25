@@ -16,3 +16,18 @@
 .pm-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
 .pm-error{display:flex;gap:12px;align-items:center;justify-content:space-between;color:var(--red)}
 @media(max-width:620px){.pm-due-panel{grid-template-columns:1fr}.pm-due-panel small{grid-column:auto}.pm-form-grid{grid-template-columns:1fr}.pm-toolbar .muted{width:100%;margin:0}}
+
+.pm-checkpoint { border: 1px solid var(--border); border-radius: 8px; padding: .75rem; margin-block: .75rem; }
+.pm-checkpoint legend { padding-inline: .35rem; }
+.pm-schedule { padding: 1rem; margin-block: .8rem; }
+.pm-schedule summary { cursor: pointer; font-weight: 700; }
+.pm-schedule form { margin-block: .8rem; }
+.pm-calendar { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,16rem),1fr)); gap: .6rem; }
+
+@media print {
+  body:has(.pm-report-output) #content > :not(.pm-schedule),
+  body:has(.pm-report-output) #sidebar,
+  .pm-schedule > summary, .pm-schedule > form, .pm-report-actions { display: none !important; }
+  .pm-report-output { color: #000; background: #fff; }
+  .pm-report-output .pm-occurrence-card { break-inside: avoid; }
+}

@@ -26,31 +26,37 @@
       {id:'manufacturer',label:'سازنده',kind:'text',maxLength:180},
       {id:'model',label:'مدل',kind:'text',maxLength:180},
       {id:'partNumber',label:'شماره فنی',kind:'text',maxLength:180},
+      {id:'serial',label:'شماره سریال',kind:'text',maxLength:180},
       {id:'requiredQuantity',label:'تعداد',kind:'number',min:0,step:0.001},
       {id:'unit',label:'واحد شمارش',kind:'text',maxLength:40},
       {id:'structureNotes',label:'توضیحات',kind:'textarea',maxLength:4000},
       {id:'technicalSpecification',label:'مشخصات فنی',kind:'textarea',maxLength:4000},
       {id:'status',label:'وضعیت',kind:'select',required:true},
       {id:'crit',label:'بحرانیت',kind:'select'},
-      {id:'inventoryItemId',label:'قلم انبار موجود',kind:'inventory'}
+      {id:'inventoryItemId',label:'قلم انبار موجود',kind:'inventory'},
+      {id:'addCriticalSpare',label:'افزودن به قطعات یدکی حیاتی',kind:'checkbox'}
     ],
     'sub-component':[
       {id:'name',label:'نام زیرقطعه قطعه اصلی',kind:'text',required:true,maxLength:240},
       {id:'code',label:'کد',kind:'text',maxLength:120},
       {id:'partNumber',label:'شماره فنی',kind:'text',maxLength:180},
+      {id:'serial',label:'شماره سریال',kind:'text',maxLength:180},
       {id:'requiredQuantity',label:'تعداد',kind:'number',min:0,step:0.001},
       {id:'unit',label:'واحد شمارش',kind:'text',maxLength:40},
       {id:'brand',label:'برند',kind:'text',maxLength:180},
+      {id:'manufacturer',label:'سازنده',kind:'text',maxLength:180},
+      {id:'model',label:'مدل',kind:'text',maxLength:180},
       {id:'structureNotes',label:'توضیحات',kind:'textarea',maxLength:4000},
       {id:'technicalSpecification',label:'مشخصات فنی',kind:'textarea',maxLength:4000},
       {id:'status',label:'وضعیت',kind:'select',required:true},
-      {id:'inventoryItemId',label:'قلم انبار موجود',kind:'inventory'}
+      {id:'inventoryItemId',label:'قلم انبار موجود',kind:'inventory'},
+      {id:'addCriticalSpare',label:'افزودن به قطعات یدکی حیاتی',kind:'checkbox'}
     ]
   });
   const INPUT_FIELDS=Object.freeze({
     subsystem:['name','code','structureNotes','manufacturer','model','status','crit','technicalSpecification'],
-    'main-component':['name','code','componentType','brand','manufacturer','model','partNumber','requiredQuantity','unit','structureNotes','technicalSpecification','status','crit','inventoryItemId'],
-    'sub-component':['name','code','partNumber','requiredQuantity','unit','brand','structureNotes','technicalSpecification','status','inventoryItemId']
+    'main-component':['name','code','componentType','brand','manufacturer','model','partNumber','serial','requiredQuantity','unit','structureNotes','technicalSpecification','status','crit','inventoryItemId','addCriticalSpare'],
+    'sub-component':['name','code','partNumber','serial','requiredQuantity','unit','brand','manufacturer','model','structureNotes','technicalSpecification','status','inventoryItemId','addCriticalSpare']
   });
 
   function clone(value){
@@ -63,7 +69,7 @@
     if(!Object.prototype.hasOwnProperty.call(PARENT_KINDS,kind)||!parent||parent.archived||parent.is_active===false||parent.isActive===false||String(parent.status||'').toLowerCase()==='archived')return false;
     return PARENT_KINDS[kind].includes(kindOf(parent));
   }
-  function formFields(kind){return FORM_FIELDS[kind]||[];}
+  function formFields(kind){return typeof kind==='string'&&Object.hasOwn(FORM_FIELDS,kind)?FORM_FIELDS[kind]:[];}
   function normalizeValue(value){return value==null?'':String(value);}
   function validate(kind,values={}){
     const errors=[];
@@ -74,12 +80,14 @@
       const quantity=Number(values.requiredQuantity);
       if(!Number.isFinite(quantity)||quantity<0||quantity>1_000_000_000)errors.push('requiredQuantity');
     }
+    if(values.addCriticalSpare===true&&!String(values.inventoryItemId||'').trim())errors.push('inventoryItemId');
     return errors;
   }
   function cleanValues(kind,values={}){
     const allowed=new Set(INPUT_FIELDS[kind]||[]),result={};
     for(const [key,value] of Object.entries(values))if(allowed.has(key)){
       if(key==='requiredQuantity')result[key]=value===''||value==null?null:Number(value);
+      else if(key==='addCriticalSpare'){if(value===true)result[key]=true;}
       else result[key]=typeof value==='string'?value.trim()||null:value;
     }
     return result;

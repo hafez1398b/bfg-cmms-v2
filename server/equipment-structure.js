@@ -280,6 +280,7 @@ function buildStructureTree(root, rows = []) {
       ext,
       type: source.type || null,
       status: source.status || null,
+      crit: source.crit || null,
       cls: source.cls || null,
       maker: source.maker || null,
       model: source.model || null,
@@ -320,6 +321,7 @@ function buildStructureTree(root, rows = []) {
       childCount: row.children_count,
       deleteReason: row.delete_reason,
       status: row.status,
+      crit: row.crit,
       cls: row.cls,
       maker: row.maker,
       model: row.model,
@@ -330,9 +332,11 @@ function buildStructureTree(root, rows = []) {
       manufacturer: ext.manufacturer || null,
       technicalSpecification: ext.technicalSpecification || null,
       structureNotes: ext.structureNotes || null,
+      unit: ext.unit || null,
       requiredQuantity: ext.requiredQuantity == null ? null : Number(ext.requiredQuantity),
       inventoryItemId: ext.inventoryItemId || null,
       inventoryItem: row.inventory_item,
+      criticalSpare: source.critical_spare === true,
       stockOnHand: row.inventory_item ? row.stock_on_hand : null,
       stockReserved: row.inventory_item ? row.stock_reserved : null,
       stockAvailable: row.inventory_item ? row.stock_available : null,
@@ -755,12 +759,12 @@ async function getStructure({ pool, security, user, rootEquipmentId, includeArch
   await assertEquipmentScope(pool, user, root.id, root.factory_id);
   const { rows } = await pool.query(
     `WITH RECURSIVE structure AS (
-       SELECT a.id,a.parent AS parent_id,a.code,a.name,a.type,a.status,a.cls,a.maker,a.model,a.serial,
+       SELECT a.id,a.parent AS parent_id,a.code,a.name,a.type,a.status,a.crit,a.cls,a.maker,a.model,a.serial,
          a.ext,a.row_version,a.deleted_at,a.delete_reason,a.is_active,a.sort_order,0 AS depth,
          ARRAY[a.id]::text[] AS path,false AS cycle
        FROM assets a WHERE a.id=$1 AND a.deleted_at IS NULL
        UNION ALL
-       SELECT child.id,child.parent,child.code,child.name,child.type,child.status,child.cls,child.maker,
+       SELECT child.id,child.parent,child.code,child.name,child.type,child.status,child.crit,child.cls,child.maker,
          child.model,child.serial,child.ext,child.row_version,child.deleted_at,child.delete_reason,
          child.is_active,child.sort_order,structure.depth+1,structure.path||child.id,
          child.id=ANY(structure.path)
@@ -784,6 +788,10 @@ async function getStructure({ pool, security, user, rootEquipmentId, includeArch
          'specification',COALESCE(inventory.ext->>'technicalSpecification',inventory.ext->>'specification'),
          'available',COALESCE(availability.available,0),'archived',inventory.deleted_at IS NOT NULL
        ) END AS inventory_item,
+       EXISTS(SELECT 1 FROM asset_spare_parts link
+         WHERE link.asset_id=structure.id AND link.item_id=inventory.id
+           AND link.relation_type='key-spare' AND link.deleted_at IS NULL
+           AND inventory.deleted_at IS NULL) AS critical_spare,
        availability.on_hand AS stock_on_hand,
        availability.reserved AS stock_reserved,
        availability.available AS stock_available,
@@ -981,6 +989,9 @@ async function updateStructureNode({ client, pool, security, user, id, input = {
   if (Object.keys(extPatch).length) {
     values.push(JSON.stringify(extPatch));
     sets.push(`ext=COALESCE(ext,'{}'::jsonb)||$${values.length}::jsonb`);
+  }
+  if (!sets.length && input.addCriticalSpare === true) {
+    return { ...current, rootEquipmentId: root.id, nodeKind: currentKind, canonicalKind: currentKind };
   }
   if (!sets.length) throw coded(422, 'NO_EDITABLE_FIELDS');
   values.push(user.id, rowVersion);

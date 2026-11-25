@@ -36,7 +36,7 @@ async function buildContext(client,user,equipmentId){
   const [workOrders,failures,pms,requests,spares]=await Promise.all([
     client.query(`SELECT id,no,type,status,descr,priority,times,report,costs,created_at FROM work_orders WHERE asset_id=$1 AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 50`,[asset.id]),
     client.query(`SELECT id,failure_no,occurred_at,condition,symptoms,description,failure_type,failure_mode,cause,effect,severity,frequency,detectability,risk_score,downtime_minutes,status,provenance_status FROM failures WHERE equipment_id=$1 AND deleted_at IS NULL ORDER BY occurred_at DESC LIMIT 50`,[asset.id]),
-    client.query(`SELECT id,title,interval_days,last_run,spec,kind,status,checklist,ext FROM pm_plans WHERE asset_id=$1 AND deleted_at IS NULL ORDER BY title LIMIT 100`,[asset.id]),
+    client.query(`SELECT id,title,interval_days,last_run,spec,kind,status,checklist,ext,code,instructions,required_tools,required_skill,required_parts,estimated_duration_minutes,next_due_at,last_completed_at FROM pm_plans WHERE asset_id=$1 AND deleted_at IS NULL ORDER BY title LIMIT 100`,[asset.id]),
     client.query(`SELECT id,no,type,descr,urgency,impact,status,form,created_at FROM requests WHERE asset_id=$1 AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 30`,[asset.id]),
     client.query(`SELECT i.id,i.code,i.name,i.unit,i.stock,i.min_stock,i.price,rel.relation_type FROM asset_spare_parts rel JOIN items i ON i.id=rel.item_id WHERE rel.asset_id=$1 AND rel.deleted_at IS NULL AND i.deleted_at IS NULL ORDER BY i.name LIMIT 100`,[asset.id])
   ]);

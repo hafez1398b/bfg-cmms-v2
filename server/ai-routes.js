@@ -32,6 +32,7 @@ function createAIRouter({pool,authenticateToken,authorize,registry}){
       await client.query('BEGIN');
       const current=await client.query(`SELECT r.*,run.equipment_id FROM ai_recommendations r JOIN ai_runs run ON run.id=r.ai_run_id WHERE r.id=$1 FOR UPDATE`,[req.params.id]);
       if(!current.rows[0]){await client.query('ROLLBACK');return res.sendStatus(404);}
+      await requireEquipmentScope(client,req.user,current.rows[0].equipment_id);
       if(Number(current.rows[0].row_version)!==version){await client.query('ROLLBACK');return res.status(409).json({error:'VERSION_CONFLICT',current:current.rows[0]});}
       if(!['pending_approval','ai_suggested'].includes(current.rows[0].status)){await client.query('ROLLBACK');return res.status(409).json({error:'ALREADY_REVIEWED',current:current.rows[0]});}
       const updated=await client.query(`UPDATE ai_recommendations SET status=$2,reviewed_by=$3,reviewed_at=now(),review_note=$4,row_version=row_version+1 WHERE id=$1 RETURNING *`,[req.params.id,action,req.user.id,note]);
